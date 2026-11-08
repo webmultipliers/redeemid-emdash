@@ -1,0 +1,36 @@
+---
+/**
+ * The message for a `?redeemid_notice=` code that sign-in, Buy, Cart and
+ * Account send readers back with. Renders nothing without one. Pass
+ * `messages` to reword any of them.
+ */
+interface Props {
+	messages?: Record<string, string>;
+}
+
+const DEFAULTS: Record<string, string> = {
+	not_configured: "Sign-in isn't set up on this site yet.",
+	sign_in_unavailable: "Sign-in isn't available right now. Try again in a few minutes.",
+	sign_in_expired: "That sign-in took too long. Try again.",
+	staff_account: "This account can't sign in here. Use a different email.",
+	site_not_ready: "This site isn't ready for sign-in yet.",
+	email_required: "Your account needs an email address to sign in.",
+	token_failed: "Sign-in didn't finish. Try again.",
+	bad_id_token: "Sign-in didn't finish. Try again.",
+	identity_failed: "Sign-in didn't finish. Try again.",
+	plan_unavailable: "That plan isn't available right now.",
+	checkout_failed: "Checkout didn't open. Try again.",
+	cart_empty: "Your cart is empty.",
+	account_unavailable: "Your account page isn't available right now. Try again in a few minutes.",
+};
+
+const { messages = {} } = Astro.props;
+const code = Astro.url.searchParams.get("redeemid_notice") ?? "";
+const text = code ? (messages[code] ?? DEFAULTS[code]) : undefined;
+---
+
+{text && (
+	<div class="redeemid-notice" role="status" data-redeemid-notice={code}>
+		<p>{text}</p>
+	</div>
+)}

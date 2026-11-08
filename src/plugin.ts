@@ -6,7 +6,7 @@
  *     plugins: [redeemidPlugin(config)],
  *   })
  *
- * It adds two Portable Text blocks to the editor, a Members page, a Status
+ * It adds four Portable Text blocks to the editor, a Members page, a Status
  * page and a dashboard widget. Sign-in, webhooks and checkout stay on the
  * auth provider's routes.
  *
@@ -14,6 +14,9 @@
  *   for members. Pick the levels that may read on ("Signed in" for any
  *   member); none picked means the entry's rule, and nothing is locked when
  *   no rule covers the entry, as on WordPress.
+ * - "Members only" (`redeemid-members`) and "Members only: end"
+ *   (`redeemid-members-end`): the part between is for the levels picked on
+ *   the start block; everyone else sees the wall there and reads on after.
  * - "Plan" (`redeemid-plan`): a Shopify product's title and price with a
  *   button that adds it to the cart and opens checkout.
  *
@@ -31,9 +34,9 @@ import { stores, type MemberRecord } from "./storage.js";
 import { PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 
-import { PAYWALL_BLOCK, PLAN_BLOCK } from "./blocks-names.js";
+import { MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK } from "./blocks-names.js";
 
-export { PAYWALL_BLOCK, PLAN_BLOCK };
+export { MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK };
 
 function blocks(config: RedeemIDConfig) {
 	const levelOptions = [
@@ -54,6 +57,27 @@ function blocks(config: RedeemIDConfig) {
 					options: levelOptions,
 				},
 			],
+		},
+		{
+			type: MEMBERS_BLOCK,
+			label: "Members only",
+			icon: "users",
+			description: "What follows, up to \"Members only: end\", is for members",
+			fields: [
+				{
+					type: "checkbox" as const,
+					action_id: "levels",
+					label: "Who can read it (none = the entry's rule, or any signed-in member)",
+					options: levelOptions,
+				},
+			],
+		},
+		{
+			type: MEMBERS_END_BLOCK,
+			label: "Members only: end",
+			icon: "users",
+			description: "Ends the members-only part; everyone reads on from here",
+			fields: [],
 		},
 		{
 			type: PLAN_BLOCK,

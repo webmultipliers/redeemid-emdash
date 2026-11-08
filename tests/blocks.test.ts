@@ -44,3 +44,23 @@ describe("teaser", () => {
 		expect(teaser(null, 5)).toEqual([]);
 	});
 });
+
+describe("members-only sections", () => {
+	it("splits at Members only blocks and drops the markers", async () => {
+		const { sections } = await import("../src/blocks-names.js");
+		const a = { _type: "block", t: "a" };
+		const b = { _type: "block", t: "b" };
+		const c = { _type: "block", t: "c" };
+		expect(sections([a, { _type: "redeemid-members", levels: ["pro", ""] }, b, { _type: "redeemid-members-end" }, c])).toEqual([
+			{ members: false, levels: [], blocks: [a] },
+			{ members: true, levels: ["pro"], blocks: [b] },
+			{ members: false, levels: [], blocks: [c] },
+		]);
+		// No end: runs to the end. Stray end: dropped.
+		expect(sections([{ _type: "redeemid-members-end" }, a, { _type: "redeemid-members" }, b])).toEqual([
+			{ members: false, levels: [], blocks: [a] },
+			{ members: true, levels: [], blocks: [b] },
+		]);
+		expect(sections(null)).toEqual([]);
+	});
+});

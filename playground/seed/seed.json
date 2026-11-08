@@ -484,6 +484,75 @@
 						"general"
 					]
 				}
+			},
+			{
+				"id": "members-section",
+				"slug": "members-section",
+				"status": "published",
+				"data": {
+					"title": "Members section",
+					"excerpt": "Open to the Pro level.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "ms0",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "MS-BEFORE",
+									"_key": "ms0s",
+									"marks": []
+								}
+							]
+						},
+						{
+							"_type": "redeemid-members",
+							"_key": "ms1",
+							"levels": [
+								"pro"
+							]
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "ms2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "MS-INSIDE: only Pro.",
+									"_key": "ms2s",
+									"marks": []
+								}
+							]
+						},
+						{
+							"_type": "redeemid-members-end",
+							"_key": "ms3"
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "ms4",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "MS-AFTER",
+									"_key": "ms4s",
+									"marks": []
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"general"
+					]
+				}
 			}
 		]
 	}

@@ -1,6 +1,7 @@
 ---
 import Account from "@redeemid/emdash/components/Account.astro";
 import Cart from "@redeemid/emdash/components/Cart.astro";
+import Notices from "@redeemid/emdash/components/Notices.astro";
 import { getMenuWithCacheHint, getSiteSettingsWithCacheHint } from "emdash";
 import { EmDashHead, EmDashBodyStart, EmDashBodyEnd } from "emdash/ui";
 import { createPublicPageContext } from "emdash/page";
@@ -97,6 +98,7 @@ const pageCtx = createPublicPageContext({
 		</header>
 
 		<main>
+			<Notices />
 			<slot />
 		</main>
 
