@@ -7,7 +7,7 @@
 import type { APIRoute } from "astro";
 
 import { safeReturn } from "../access.js";
-import { env, ENV, readConfig } from "../config.js";
+import { env, ENV, readConfig, storeDomain } from "../config.js";
 import { authorizeUrl, challengeFor, discover, randomToken } from "../shopify.js";
 import { callbackUrl, fail, SESSION_FLOW, type Flow } from "./shared.js";
 
@@ -20,7 +20,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 	const config = readConfig(emdash?.config);
 	const clientId = env(ENV.clientId);
 
-	if (!config || !clientId || !session) return fail(redirect, returnTo, "not_configured");
+	if (!config || !storeDomain(config) || !clientId || !session) return fail(redirect, returnTo, "not_configured");
 
 	try {
 		const d = await discover(config);

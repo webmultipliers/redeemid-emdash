@@ -21,9 +21,11 @@
  *     ],
  *   })
  *
- * Secrets come from the environment: REDEEMID_CLIENT_ID and
- * REDEEMID_CLIENT_SECRET (Headless customer account client) and
- * REDEEMID_WEBHOOK_SECRET (the app's client secret that signs webhooks).
+ * Secrets come from the environment (see ENV in config.ts):
+ * REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID and, for confidential clients,
+ * REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET (the Headless storefront's
+ * Customer Account API client), and REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET
+ * (the client secret of the Shopify app whose webhooks the site receives).
  */
 
 import type { AstroIntegration } from "astro";
@@ -40,7 +42,7 @@ export type { MemberRecord } from "./storage.js";
 const BASE = "/_emdash/api/auth/redeemid";
 
 export function redeemid(config: RedeemIDConfig): AuthProviderDescriptor {
-	if (!config?.shop) throw new Error("RedeemID: set `shop` to the store's domain.");
+	if (!config) throw new Error("RedeemID: pass a config object.");
 	return {
 		id: PROVIDER_ID,
 		label: config.label ?? "Sign in",
@@ -51,6 +53,7 @@ export function redeemid(config: RedeemIDConfig): AuthProviderDescriptor {
 			{ pattern: `${BASE}/callback`, entrypoint: "@redeemid/emdash/routes/callback.ts" },
 			{ pattern: `${BASE}/logout`, entrypoint: "@redeemid/emdash/routes/logout.ts" },
 			{ pattern: `${BASE}/webhook`, entrypoint: "@redeemid/emdash/routes/webhook.ts" },
+			{ pattern: `${BASE}/buy`, entrypoint: "@redeemid/emdash/routes/buy.ts" },
 		],
 		publicRoutes: [`${BASE}/`],
 		storage: STORAGE_CONFIG,

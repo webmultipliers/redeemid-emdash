@@ -15,7 +15,7 @@ import type { APIRoute } from "astro";
 import { OptionsRepository } from "emdash/api/route-utils";
 import type { Kysely } from "kysely";
 
-import { env, ENV, PROVIDER_ID, readConfig } from "../config.js";
+import { env, ENV, PROVIDER_ID, readConfig, storeDomain } from "../config.js";
 import { discover, exchangeCode, identity, ShopifyError, verifyIdToken } from "../shopify.js";
 import { emptyMember, stores } from "../storage.js";
 import { callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_ID_TOKEN, type Flow } from "./shared.js";
@@ -31,7 +31,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 
 	const config = readConfig(emdash?.config);
 	const clientId = env(ENV.clientId);
-	if (!config || !clientId || !emdash?.db || !session) return fail(redirect, returnTo, "not_configured");
+	if (!config || !storeDomain(config) || !clientId || !emdash?.db || !session) return fail(redirect, returnTo, "not_configured");
 
 	if (url.searchParams.get("error")) return fail(redirect, returnTo, "sign_in_cancelled");
 
@@ -52,6 +52,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 			clientId,
 			clientSecret: env(ENV.clientSecret),
 			redirectUri: callbackUrl(url, emdash.config),
+			origin: new URL(callbackUrl(url, emdash.config)).origin,
 			code,
 			verifier: flow.verifier,
 		});

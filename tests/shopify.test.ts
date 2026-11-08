@@ -13,6 +13,17 @@ describe("store address", () => {
 		expect(() => shopOrigin({ shop: "http://127.0.0.1:9" })).toThrow();
 		expect(shopOrigin({ shop: "http://127.0.0.1:9", allowInsecureShop: true })).toBe("http://127.0.0.1:9");
 	});
+
+	it("falls back to REDEEMID_SHOPIFY_STORE_DOMAIN", () => {
+		process.env.REDEEMID_SHOPIFY_STORE_DOMAIN = "env-store.myshopify.com";
+		try {
+			expect(shopOrigin({})).toBe("https://env-store.myshopify.com");
+			expect(shopOrigin({ shop: "config.myshopify.com" })).toBe("https://config.myshopify.com");
+		} finally {
+			delete process.env.REDEEMID_SHOPIFY_STORE_DOMAIN;
+		}
+		expect(() => shopOrigin({})).toThrow();
+	});
 });
 
 describe("Customer Account API", () => {

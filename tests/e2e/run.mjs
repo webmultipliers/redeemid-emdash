@@ -95,10 +95,11 @@ const site = spawn("pnpm", ["exec", "astro", "dev", "--port", String(SITE_PORT),
 	cwd: join(root, "playground"),
 	env: {
 		...process.env,
-		REDEEMID_SHOP: shop.origin,
-		REDEEMID_CLIENT_ID: CLIENT_ID,
-		REDEEMID_CLIENT_SECRET: CLIENT_SECRET,
-		REDEEMID_WEBHOOK_SECRET: WEBHOOK_SECRET,
+		REDEEMID_SHOPIFY_STORE_DOMAIN: shop.origin,
+		REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID: CLIENT_ID,
+		REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET: CLIENT_SECRET,
+		REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET: WEBHOOK_SECRET,
+		REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN: "storefront-private",
 		REDEEMID_DB: join(tmp, "data.db"),
 		EMDASH_SITE_URL: SITE,
 	},
@@ -132,6 +133,7 @@ try {
 	check("member reads the members post", signIn.text.includes("MEMBER-BODY"), signIn.text.slice(0, 300));
 	check("member page is private", /private/.test(signIn.res.headers.get("cache-control") ?? ""), signIn.res.headers.get("cache-control"));
 	check("token request used Basic auth and PKCE", shop.tokenRequests.at(-1)?.form.code_verifier?.length >= 43);
+	check("token request sent the site origin", shop.tokenRequests.at(-1)?.origin === SITE);
 	check("account box shows the member level", signIn.text.includes("redeemid-account__levels") && signIn.text.includes("Member"));
 	for (const path of ["/_emdash/api/content/posts", "/_emdash/api/content/posts/pro-only", "/_emdash/api/search?q=PRO-BODY"]) {
 		const r = await member.go(path);
@@ -143,6 +145,31 @@ try {
 	check("staff still use the content API", staffApi.res.status === 200, String(staffApi.res.status));
 	const pro = await member.go("/posts/pro-only");
 	check("Pro post asks a member to upgrade", !pro.text.includes("PRO-BODY") && pro.text.includes('data-redeemid-reason="upgrade"'));
+
+	// The Join page shows Shopify's plan and starts a checkout for the member.
+	const join = await member.go("/join");
+	check("plan card shows Shopify's title and price", join.text.includes("Pro plan") && join.text.includes("$12.00"));
+	check("missing plan shows the fallback", join.text.includes("PLAN-FALLBACK"));
+	const bought = await member.go("/_emdash/api/auth/redeemid/buy", {
+		method: "POST",
+		headers: { "content-type": "application/x-www-form-urlencoded" },
+		body: "plan=pro-plan&return=%2Fjoin",
+	});
+	const cart = shop.carts.at(-1);
+	check("Buy goes to Shopify checkout", bought.text === "CHECKOUT", bought.url.href);
+	check(
+		"cart has the plan's variant, the member's email and the private token",
+		cart?.input.lines[0]?.merchandiseId === "gid://shopify/ProductVariant/42" &&
+			cart?.input.buyerIdentity?.email === shop.customer.email &&
+			cart?.privateToken === "storefront-private",
+		JSON.stringify(cart),
+	);
+	const badPlan = await member.go("/_emdash/api/auth/redeemid/buy", {
+		method: "POST",
+		headers: { "content-type": "application/x-www-form-urlencoded" },
+		body: "plan=no-such-plan&return=%2Fjoin",
+	});
+	check("unknown plan returns with a notice", badPlan.url.search.includes("redeemid_notice=plan_unavailable"));
 
 	// Shopify tags the customer Pro (Flow or an app would do this).
 	const gid = `gid://shopify/Customer/${shop.customer.id}`;

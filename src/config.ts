@@ -34,10 +34,11 @@ export interface RuleConfig {
 
 export interface RedeemIDConfig {
 	/**
-	 * The store's domain: its myshopify.com domain or the custom domain its
-	 * customer accounts use. Discovery is read from https://<shop>/.well-known/.
+	 * The store's myshopify.com domain (a custom storefront or customer-account
+	 * domain works too). Discovery is read from https://<shop>/.well-known/.
+	 * Leave it out to read REDEEMID_SHOPIFY_STORE_DOMAIN at request time.
 	 */
-	shop: string;
+	shop?: string;
 	/** Sign-in button label. Members never see "Shopify". */
 	label?: string;
 	levels?: LevelConfig[];
@@ -56,11 +57,23 @@ export interface RedeemIDConfig {
 
 export const PROVIDER_ID = "redeemid";
 
-/** Environment variable names. Values are read at request time. */
+/**
+ * Environment variable names. Values are read at request time, so on Workers
+ * they can be secrets.
+ */
 export const ENV = {
-	clientId: "REDEEMID_CLIENT_ID",
-	clientSecret: "REDEEMID_CLIENT_SECRET",
-	webhookSecret: "REDEEMID_WEBHOOK_SECRET",
+	/** The store's myshopify.com domain, when `shop` isn't set in config. */
+	storeDomain: "REDEEMID_SHOPIFY_STORE_DOMAIN",
+	/** Customer Account API client ID (Headless storefront). */
+	clientId: "REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID",
+	/** Customer Account API client secret. Confidential clients only; public clients leave it unset. */
+	clientSecret: "REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET",
+	/** Client secret of the Shopify (Admin API) app whose webhooks the site receives. Shopify signs webhooks with it. */
+	webhookSecret: "REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET",
+	/** Storefront API private token, for server-side plan and checkout calls. */
+	storefrontPrivateToken: "REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN",
+	/** Storefront API public token, used only when the private token isn't set. */
+	storefrontPublicToken: "REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN",
 } as const;
 
 export function env(name: string): string {
@@ -70,7 +83,8 @@ export function env(name: string): string {
 
 /** The store origin, e.g. https://shop.example.com. */
 export function shopOrigin(config: RedeemIDConfig): string {
-	const raw = config.shop.trim().replace(/\/+$/, "");
+	const raw = storeDomain(config).replace(/\/+$/, "");
+	if (raw === "") throw new Error("RedeemID: no store domain.");
 	if (/^https?:\/\//i.test(raw)) {
 		const url = new URL(raw);
 		if (url.protocol === "http:" && !config.allowInsecureShop) {
@@ -83,11 +97,16 @@ export function shopOrigin(config: RedeemIDConfig): string {
 	return `https://${host.includes(".") ? host : `${host}.myshopify.com`}`;
 }
 
+/** The configured store domain, from config or the environment. */
+export function storeDomain(config: RedeemIDConfig): string {
+	return (config.shop ?? "").trim() || env(ENV.storeDomain);
+}
+
 /** Find this provider's config among EmDash's configured auth providers. */
 export function readConfig(emdashConfig: unknown): RedeemIDConfig | null {
 	const providers = (emdashConfig as { authProviders?: Array<{ id: string; config?: unknown }> } | null)
 		?.authProviders;
 	const found = providers?.find((p) => p.id === PROVIDER_ID);
 	const config = found?.config as RedeemIDConfig | undefined;
-	return config && typeof config.shop === "string" && config.shop !== "" ? config : null;
+	return config && typeof config === "object" ? config : null;
 }
