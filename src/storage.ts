@@ -3,7 +3,7 @@
  *
  * Stored with EmDash's auth-provider storage (namespace `auth:redeemid`), the
  * one plugin-style store that is public API for provider routes and page code
- * alike. WordPress-side grants do not exist here either: a member's levels are
+ * alike. Nothing on the site grants access: a member's levels are
  * computed from these mirrored tags only.
  */
 

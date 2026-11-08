@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.1, foundation.** Sign-in, the member mirror, webhooks, levels, rules, the page gate and plan checkout work end to end against a fake store, and the package runs on Cloudflare Workers in the Harborview Ledger demo. Sign-in hasn't been run against a live store yet. See [docs/feasibility.md](docs/feasibility.md) for what was tested and what is still open.
+**Status: 0.0.1, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the page gate and plan checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -140,4 +140,4 @@ Releases: bump `version` in package.json and merge to main. The Release workflow
 
 ## License
 
-GPL-2.0-or-later, the same as RedeemID for WordPress.
+GPL-2.0-or-later.
