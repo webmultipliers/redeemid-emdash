@@ -19,7 +19,10 @@
 		"./routes/*": "./src/routes/*"
 	},
 	"files": [
-		"src"
+		"src",
+		"README.md",
+		"LICENSE",
+		"docs"
 	],
 	"keywords": [
 		"emdash",
@@ -49,5 +52,11 @@
 		"typescript": "^6.0.3",
 		"vitest": "4.1.10"
 	},
-	"packageManager": "pnpm@10.28.0"
+	"packageManager": "pnpm@10.28.0",
+	"publishConfig": {
+		"access": "public"
+	},
+	"bugs": {
+		"url": "https://github.com/webmultipliers/redeemid-emdash/issues"
+	}
 }

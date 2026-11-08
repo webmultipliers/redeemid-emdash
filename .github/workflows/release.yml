@@ -1,0 +1,65 @@
+name: Release
+
+# Pull requests and pushes to main run the tests. A push to main whose
+# package.json version isn't on npm yet stages that version with
+# `npm stage publish`; a maintainer approves it on npmjs.com (2FA) before it
+# goes live. NPM_TOKEN is a granular "Read and write (stage only)" token for
+# the @redeemid scope, so this workflow can never publish on its own.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm e2e
+
+  stage:
+    name: Stage on npm
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Decide
+        id: decide
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm; nothing to stage."
+            echo "stage=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Staging $name@$version."
+            echo "stage=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Stage
+        if: steps.decide.outputs.stage == 'true'
+        run: npx --yes npm@11.17.0 stage publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
