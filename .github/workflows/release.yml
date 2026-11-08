@@ -1,10 +1,12 @@
 name: Release
 
 # Pull requests and pushes to main run the tests. A push to main whose
-# package.json version isn't on npm yet stages that version with
-# `npm stage publish`; a maintainer approves it on npmjs.com (2FA) before it
-# goes live. NPM_TOKEN is a granular "Read and write (stage only)" token for
-# the @redeemid scope, so this workflow can never publish on its own.
+# package.json version has no GitHub release yet packs the package once,
+# stages that tarball on npm with `npm stage publish`, and cuts the matching
+# GitHub release v<version> with the same tarball attached. A maintainer
+# approves the npm stage on npmjs.com (2FA) before it goes live. NPM_TOKEN is
+# a granular "Read and write (stage only)" token for the @redeemid scope, so
+# this workflow can never publish to npm on its own.
 on:
   push:
     branches: [ main ]
@@ -36,10 +38,12 @@ jobs:
       - run: pnpm e2e
 
   stage:
-    name: Stage on npm
+    name: Stage on npm and cut the release
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,18 +52,45 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: Decide
         id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "Release v$version exists; nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
           if npm view "$name@$version" version >/dev/null 2>&1; then
-            echo "$name@$version is already on npm; nothing to stage."
+            echo "$name@$version is already on npm."
             echo "stage=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Staging $name@$version."
             echo "stage=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Stage
-        if: steps.decide.outputs.stage == 'true'
-        run: npx --yes npm@11.17.0 stage publish --access public
+      - name: Pack
+        if: steps.decide.outputs.release == 'true'
+        id: pack
+        run: |
+          file=$(npm pack --silent)
+          sha256sum "$file" > "$file.sha256"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+      - name: Stage on npm
+        if: steps.decide.outputs.release == 'true' && steps.decide.outputs.stage == 'true'
+        run: npx --yes npm@11.17.0 stage publish "${{ steps.pack.outputs.file }}" --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Cut the GitHub release
+        if: steps.decide.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.decide.outputs.version }}
+          FILE: ${{ steps.pack.outputs.file }}
+        run: |
+          gh release create "v$VERSION" "$FILE" "$FILE.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes \
+            --notes "Staged on npm as @redeemid/emdash@$VERSION. It is live once a maintainer approves the stage."
