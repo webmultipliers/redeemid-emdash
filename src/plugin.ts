@@ -11,8 +11,9 @@
  * auth provider's routes.
  *
  * - "Paywall break" (`redeemid-paywall`): everything after it in the body is
- *   for members. Pick the levels that may read on; none picked means any
- *   signed-in member, or the entry's rule when one covers it.
+ *   for members. Pick the levels that may read on ("Signed in" for any
+ *   member); none picked means the entry's rule, and nothing is locked when
+ *   no rule covers the entry, as on WordPress.
  * - "Plan" (`redeemid-plan`): a Shopify product's title and price with a
  *   button that adds it to the cart and opens checkout.
  *
@@ -23,7 +24,7 @@
 import type { ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
-import { describe, levelsFor } from "./access.js";
+import { describe, levelsFor, SIGNED_IN } from "./access.js";
 import { env, ENV, storeDomain, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord } from "./storage.js";
@@ -35,7 +36,10 @@ import { PAYWALL_BLOCK, PLAN_BLOCK } from "./blocks-names.js";
 export { PAYWALL_BLOCK, PLAN_BLOCK };
 
 function blocks(config: RedeemIDConfig) {
-	const levelOptions = (config.levels ?? []).map((l) => ({ label: l.name, value: l.slug }));
+	const levelOptions = [
+		{ label: "Signed in (any member)", value: SIGNED_IN },
+		...(config.levels ?? []).map((l) => ({ label: l.name, value: l.slug })),
+	];
 	return [
 		{
 			type: PAYWALL_BLOCK,
@@ -46,7 +50,7 @@ function blocks(config: RedeemIDConfig) {
 				{
 					type: "checkbox" as const,
 					action_id: "levels",
-					label: "Who can read on (none = any signed-in member)",
+					label: "Who can read on (none = the entry's rule)",
 					options: levelOptions,
 				},
 			],

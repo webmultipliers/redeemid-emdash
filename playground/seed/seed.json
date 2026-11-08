@@ -435,6 +435,55 @@
 						"insider"
 					]
 				}
+			},
+			{
+				"id": "open-break",
+				"slug": "open-break",
+				"status": "published",
+				"data": {
+					"title": "Open break",
+					"excerpt": "Open to the Pro level.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "ob0",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "OB-INTRO",
+									"_key": "ob0s",
+									"marks": []
+								}
+							]
+						},
+						{
+							"_type": "redeemid-paywall",
+							"_key": "ob1",
+							"levels": []
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "ob2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "OB-REST: no rule covers this post.",
+									"_key": "ob2s",
+									"marks": []
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"general"
+					]
+				}
 			}
 		]
 	}

@@ -27,10 +27,10 @@ const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).em
 const split = splitAtPaywall(content);
 const required = split.paywall && split.levels.length
 	? [split.levels]
-	: ((await entryRequirement(config, collection, terms)) ?? (split.paywall ? [[]] : null));
+	: await entryRequirement(config, collection, terms);
 const label = describe(required, config?.levels, free);
 const locked = required !== null && !(await canRead(Astro, { collection, terms }, { required })).allowed;
-const slugs = required?.flat().join(" ") || (required ? "members" : "free");
+const slugs = required?.flat().join(" ") || (required ? "signed-in" : "free");
 ---
 
 {label && (

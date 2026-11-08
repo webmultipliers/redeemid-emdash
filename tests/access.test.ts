@@ -62,6 +62,8 @@ describe("levels and rules", () => {
 		expect(passes(["pro"], [["member"], ["pro"]])).toBe(false);
 		expect(passes(["member", "pro"], [["member"], ["pro"]])).toBe(true);
 		expect(passes([], [[]])).toBe(true);
+		expect(passes([], [["signed-in"]])).toBe(true);
+		expect(requirement([{ collection: "posts", levels: ["signed-in", "pro"] }], "posts")).toEqual([[]]);
 		// Needing Pro already covers "Member or Pro".
 		const both = [
 			{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
@@ -108,7 +110,8 @@ describe("levels and rules", () => {
 
 	it("words a requirement", () => {
 		expect(wording(null, config.levels)).toBe("Free");
-		expect(wording([[]], config.levels)).toBe("Members");
+		expect(wording([[]], config.levels)).toBe("Signed in");
+		expect(wording([["signed-in"], ["pro"]], config.levels)).toBe("Pro");
 		expect(wording([["member", "pro"]], config.levels)).toBe("Member or Pro");
 		expect(wording([["member"], ["pro"]], config.levels)).toBe("Member + Pro");
 	});

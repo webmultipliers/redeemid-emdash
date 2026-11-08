@@ -13,7 +13,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Teasers and badges.** Locked entries can show their first paragraphs, up to a word count. `<AccessBadge>` names the level an entry needs and shows a lock to readers it keeps out.
 - **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
-- **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on. `<Content>` renders the body and leaves the rest off the page for everyone else.
+- **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on, or leaving it to the entry's rule. `<Content>` renders the body and leaves the rest off the page for everyone else.
 - **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels), a Status page (secrets, store discovery, the URLs to give Shopify, levels and rules) and a dashboard widget.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
@@ -81,7 +81,7 @@ Point webhooks (`customers/create`, `customers/update`, `customers/delete`, `cus
 
 ### Rules
 
-Each rule names a collection and the levels, any of which may read. An empty `levels` list means any signed-in member.
+Each rule names a collection and the levels, any of which may read. An empty `levels` list, or the built-in `signed-in` level, means any signed-in member.
 
 | Rule | Covers |
 | --- | --- |
@@ -105,7 +105,7 @@ import Content from "@redeemid/emdash/components/Content.astro";
 </Content>
 ```
 
-Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it, or when none are picked the entry's rule, or else any signed-in member. A body with no break follows the entry's rule as a whole; readers it keeps out see the collection's `teaser` (the paragraphs within that many words, never half a paragraph), if one is set. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
+Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it ("Signed in" for any member), or when none are picked the entry's rule. With none picked and no rule covering the entry, the break changes nothing, as on WordPress. A body with no break follows the entry's rule as a whole; readers it keeps out see the collection's `teaser` (the paragraphs within that many words, never half a paragraph), if one is set. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
 
 To lock a part of a template that isn't the body, wrap it in `<Gate>` (`<Gate levels={["pro"]}>…</Gate>`).
 

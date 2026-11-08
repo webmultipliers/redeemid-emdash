@@ -41,6 +41,12 @@ export type Reason = "open" | "allowed" | "sign_in" | "upgrade" | "disabled" | "
  */
 export type Requirement = string[][] | null;
 
+/**
+ * The built-in level every signed-in member holds, as on WordPress. A clause
+ * with it passes for any signed-in member, like an empty clause.
+ */
+export const SIGNED_IN = "signed-in";
+
 export interface Verdict {
 	allowed: boolean;
 	reason: Reason;
@@ -78,7 +84,7 @@ function reduce(clauses: string[][]): string[][] {
 	const seen = new Set<string>();
 	const out: string[][] = [];
 	for (const c of clauses) {
-		const sorted = [...new Set(c)].sort();
+		const sorted = c.includes(SIGNED_IN) ? [] : [...new Set(c)].sort();
 		const key = sorted.join("|");
 		if (seen.has(key)) continue;
 		seen.add(key);
@@ -141,18 +147,18 @@ export function requirement(
 
 /** Does someone holding `held` pass `required`? Signed-in membership is checked by the caller. */
 export function passes(held: string[], required: string[][]): boolean {
-	return required.every((clause) => clause.length === 0 || clause.some((l) => held.includes(l)));
+	return required.every((clause) => clause.length === 0 || clause.includes(SIGNED_IN) || clause.some((l) => held.includes(l)));
 }
 
 /**
  * The requirement in words, for badges and admin pages: "Gold + Silver",
- * "Silver or Gold", "Members". `null` gives `open`.
+ * "Silver or Gold", "Signed in". `null` gives `open`.
  */
 export function describe(required: Requirement, levels: LevelConfig[] = [], open = "Free"): string {
 	if (required === null) return open;
 	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
-	const parts = required.filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
-	return parts.length ? parts.join(" + ") : "Members";
+	const parts = reduce(required).filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
+	return parts.length ? parts.join(" + ") : "Signed in";
 }
 
 /**
@@ -198,7 +204,26 @@ export async function entryRequirement(
 	return requirement(config.rules, collection, terms, { combine: config.combine, tree });
 }
 
+const viewers = new WeakMap<object, Promise<Viewer>>();
+
+/** The visitor, read once per request (badges on a list page all ask). */
 export async function viewer(astro: AstroLike): Promise<Viewer> {
+	const key = astro.locals as object;
+	if (key && typeof key === "object") {
+		const known = viewers.get(key);
+		if (known) {
+			const v = await known;
+			if (v.signedIn) astro.response?.headers.set("Cache-Control", "private, no-store");
+			return v;
+		}
+		const fresh = readViewer(astro);
+		viewers.set(key, fresh);
+		return fresh;
+	}
+	return readViewer(astro);
+}
+
+async function readViewer(astro: AstroLike): Promise<Viewer> {
 	const locals = astro.locals as Locals;
 	const user = locals.user;
 	if (!user?.id || user.disabled) return { signedIn: false, member: null, levels: [] };

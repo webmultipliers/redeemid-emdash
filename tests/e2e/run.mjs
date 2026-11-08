@@ -130,6 +130,8 @@ try {
 	const both = await visitor.go("/posts/both-rules");
 	check("word-count teaser shows the paragraphs within 5 words", both.text.includes("TEASE-OPEN") && !both.text.includes("BOTH-BODY"));
 	check("teaser leaves out a longer first paragraph", !locked.text.includes("MEMBER-BODY"));
+	const openBreak = await visitor.go("/posts/open-break");
+	check("a break with no levels changes nothing when no rule covers the post", openBreak.text.includes("OB-INTRO") && openBreak.text.includes("OB-REST"));
 	check("visitor page stays cacheable", !/private/.test(locked.res.headers.get("cache-control") ?? ""), locked.res.headers.get("cache-control"));
 
 	// Member signs in through the store and comes back to the post.
