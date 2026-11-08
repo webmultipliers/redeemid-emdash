@@ -5,7 +5,7 @@
  * the site. Secrets come from the environment and never from config.
  */
 
-/** A member level, held by any Shopify customer who has one of its tags. */
+/** A member level, held by Shopify customers with its tags. */
 export interface LevelConfig {
 	/** Stable slug, used in rules (e.g. "member"). */
 	slug: string;
@@ -13,6 +13,8 @@ export interface LevelConfig {
 	name: string;
 	/** Shopify customer tags that grant this level. Matched case-insensitively. */
 	tags: string[];
+	/** "any" (default): one of the tags is enough. "all": every tag is needed. */
+	match?: "any" | "all";
 }
 
 /**

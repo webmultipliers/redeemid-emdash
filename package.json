@@ -33,9 +33,9 @@
 		"e2e": "node tests/e2e/run.mjs"
 	},
 	"peerDependencies": {
-		"@emdash-cms/auth": ">=1.4.0",
+		"@emdash-cms/auth": ">=1.1.0",
 		"astro": ">=6",
-		"emdash": ">=1.4.0"
+		"emdash": ">=1.1.0"
 	},
 	"dependencies": {
 		"jose": "^6.1.3"
