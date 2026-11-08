@@ -42,7 +42,7 @@ export type { MemberRecord } from "./storage.js";
 const BASE = "/_emdash/api/auth/redeemid";
 
 export function redeemid(config: RedeemIDConfig): AuthProviderDescriptor {
-	if (!config?.shop) throw new Error("RedeemID: set `shop` to the store's domain.");
+	if (!config) throw new Error("RedeemID: pass a config object.");
 	return {
 		id: PROVIDER_ID,
 		label: config.label ?? "Sign in",
