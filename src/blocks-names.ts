@@ -1,6 +1,9 @@
 /** Portable Text block types RedeemID adds to the editor. */
 export const PAYWALL_BLOCK = "redeemid-paywall";
 export const PLAN_BLOCK = "redeemid-plan";
+/** Starts a members-only part of the body; it runs to the next end block. */
+export const MEMBERS_BLOCK = "redeemid-members";
+export const MEMBERS_END_BLOCK = "redeemid-members-end";
 
 type Node = { _type?: unknown; levels?: unknown };
 
@@ -42,5 +45,41 @@ export function teaser<T>(value: T[] | null | undefined, words: number): T[] {
 		if (count > words) break;
 		out.push(b);
 	}
+	return out;
+}
+
+export interface Section<T> {
+	/** True for a part between a "Members only" block and its end. */
+	members: boolean;
+	/** Levels picked on the "Members only" block (empty = none picked). */
+	levels: string[];
+	blocks: T[];
+}
+
+const levelsOf = (raw: unknown) =>
+	Array.isArray(raw) ? raw.filter((l): l is string => typeof l === "string" && l !== "") : [];
+
+/**
+ * Split blocks into open parts and members-only parts. A "Members only" block
+ * starts a part that runs to the next "Members only: end" block (or the end of
+ * the blocks); the marker blocks themselves are dropped. A stray end block is
+ * dropped too.
+ */
+export function sections<T>(value: T[] | null | undefined): Section<T>[] {
+	const out: Section<T>[] = [];
+	let current: Section<T> = { members: false, levels: [], blocks: [] };
+	for (const b of Array.isArray(value) ? value : []) {
+		const type = (b as Node)?._type;
+		if (type === MEMBERS_BLOCK || type === MEMBERS_END_BLOCK) {
+			if (current.blocks.length > 0 || current.members) out.push(current);
+			current =
+				type === MEMBERS_BLOCK
+					? { members: true, levels: levelsOf((b as Node).levels), blocks: [] }
+					: { members: false, levels: [], blocks: [] };
+			continue;
+		}
+		current.blocks.push(b);
+	}
+	if (current.blocks.length > 0 || current.members) out.push(current);
 	return out;
 }

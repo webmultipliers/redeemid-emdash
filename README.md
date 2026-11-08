@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.4, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.5, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -14,6 +14,8 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
 - **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on, or leaving it to the entry's rule. `<Content>` renders the body and leaves the rest off the page for everyone else.
+- **Members only block.** For a members part in the middle of a body: "Members only" (pick the levels) and "Members only: end". Everyone else sees the wall in its place and reads on after it.
+- **The wall.** Readers kept out see why and what to do next: sign in, or join, with each level's own wall text. `<Notices>` shows the messages sign-in, Buy, Cart and Account send readers back with.
 - **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels), a Status page (secrets, store discovery, the URLs to give Shopify, levels and rules) and a dashboard widget.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
@@ -34,7 +36,8 @@ const config = {
 	shop: "my-store.myshopify.com",
 	levels: [
 		{ slug: "member", name: "Member", tags: ["member"] },
-		{ slug: "pro", name: "Pro", tags: ["pro"] },
+		// wall: what the wall says to readers this level would let in; joinUrl overrides join.href.
+		{ slug: "pro", name: "Pro", tags: ["pro"], wall: "Pro members read every report." },
 		// match: "all" needs every tag, e.g. both memberships:
 		{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" },
 	],
@@ -42,6 +45,8 @@ const config = {
 		{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
 		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
 	],
+	// Optional: where the wall's join link goes.
+	join: { href: "/join/", label: "Become a member" },
 	// Optional: locked posts with no paywall break show the paragraphs within their first 40 words.
 	teaser: { posts: 40 },
 };
@@ -107,6 +112,10 @@ import Content from "@redeemid/emdash/components/Content.astro";
 
 Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it ("Signed in" for any member), or when none are picked the entry's rule. With none picked and no rule covering the entry, the break changes nothing, as on WordPress. A body with no break follows the entry's rule as a whole; readers it keeps out see the collection's `teaser` (the paragraphs within that many words, never half a paragraph), if one is set. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
 
+A "Members only" block starts a part for the levels picked on it (none picked: the entry's rule, or any signed-in member) that runs to the next "Members only: end" block. Readers who can't read it see the wall there, and the body goes on after the end block.
+
+The wall is `<LockedPanel>`: it says why the reader is kept out and offers sign-in or the join link, with the wall text of the first level they are missing. `<Content>` and `<Gate>` show it; its default slot (and `<Content>`'s "locked" slot) goes on top.
+
 To lock a part of a template that isn't the body, wrap it in `<Gate>` (`<Gate levels={["pro"]}>…</Gate>`).
 
 Show what an entry needs with `<AccessBadge>`, on cards and on the entry. It reads the entry's rules (and a paywall break's levels when you pass `content`), shows "Free" for open entries (`free=""` hides it), and adds `is-locked` and a lock for readers it keeps out. `data-redeemid-level` holds the level slugs, for colours:
@@ -119,6 +128,8 @@ import AccessBadge from "@redeemid/emdash/components/AccessBadge.astro";
 ```
 
 In your own code (`@redeemid/emdash/access`), `entryRequirement(config, collection, terms)` gives what an entry needs (a list of clauses, each passed by any of its levels, or `null` when open), and `canRead(Astro, entry)` gives the verdict for the visitor.
+
+Put `<Notices />` near the top of your layout. It shows the message for a `?redeemid_notice=` code (see [docs/shopify-setup.md](docs/shopify-setup.md)) and nothing otherwise; pass `messages={{ cart_empty: "…" }}` to reword one.
 
 Add the account box and cart to your header. Visitors see Sign in; members see their name, levels, Account and Sign out. The cart shows how many items are in the visitor's Shopify cart and goes to its checkout:
 

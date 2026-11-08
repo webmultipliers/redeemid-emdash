@@ -15,8 +15,9 @@ const config = {
 	allowInsecureShop: shop.startsWith("http://127.0.0.1"),
 	levels: [
 		{ slug: "member", name: "Member", tags: ["member"] },
-		{ slug: "pro", name: "Pro", tags: ["pro"] },
+		{ slug: "pro", name: "Pro", tags: ["pro"], wall: "PRO-WALL: Pro members read every report." },
 	],
+	join: { href: "/join", label: "Join" },
 	rules: [
 		{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
 		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },

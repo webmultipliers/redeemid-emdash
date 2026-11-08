@@ -15,6 +15,10 @@ export interface LevelConfig {
 	tags: string[];
 	/** "any" (default): one of the tags is enough. "all": every tag is needed. */
 	match?: "any" | "all";
+	/** What the wall says to readers this level would let in, e.g. "Gold members read every investigation." */
+	wall?: string;
+	/** Where the wall's join link goes for this level. Falls back to `join.href`. */
+	joinUrl?: string;
 }
 
 /**
@@ -57,6 +61,8 @@ export interface RedeemIDConfig {
 	label?: string;
 	levels?: LevelConfig[];
 	rules?: RuleConfig[];
+	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
+	join?: { href: string; label?: string };
 	/**
 	 * How several term rules on one entry combine: "all" (default, the most
 	 * restrictive: pass every rule) or "any" (pass one of them).

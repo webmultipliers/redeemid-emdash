@@ -10,7 +10,8 @@
  *
  * Pass `levels` to lock a part of a page to specific levels instead.
  */
-import { canRead, signInUrl, type Terms } from "../access.js";
+import { canRead, type Terms } from "../access.js";
+import LockedPanel from "./LockedPanel.astro";
 
 interface Props {
 	collection?: string;
@@ -20,21 +21,12 @@ interface Props {
 
 const { collection = "", terms, levels } = Astro.props;
 const verdict = await canRead(Astro, { collection, terms }, levels ? { levels } : undefined);
-const here = Astro.url.pathname + Astro.url.search;
 ---
 
 {verdict.allowed ? (
 	<slot />
 ) : (
-	<div class="redeemid-locked" data-redeemid-reason={verdict.reason}>
+	<LockedPanel reason={verdict.reason} required={verdict.required} held={verdict.viewer.levels}>
 		<slot name="locked" />
-		{verdict.reason === "sign_in" && (
-			<p>
-				This is for members. <a href={signInUrl(here)}>Sign in</a> to read it.
-			</p>
-		)}
-		{verdict.reason === "upgrade" && <p>Your membership doesn't include this yet.</p>}
-		{verdict.reason === "disabled" && <p>Your account is turned off. Contact the store for help.</p>}
-		{verdict.reason === "unconfigured" && <p>This is for members.</p>}
-	</div>
+	</LockedPanel>
 )}

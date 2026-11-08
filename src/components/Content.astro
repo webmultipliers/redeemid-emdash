@@ -1,21 +1,27 @@
 ---
 /**
- * An entry's body, with RedeemID's paywall break applied.
+ * An entry's body, with RedeemID's blocks applied.
  *
  *   <Content value={post.data.content} collection="posts" terms={post.data.terms} />
  *
- * Everything before the first "Paywall break" block is shown to everyone.
- * What follows reaches the page only for readers who may read it: the levels
- * picked on the break, or when none are picked the entry's rule (with no rule,
- * the break changes nothing, as on WordPress). Others get the "locked" slot (or a built-in notice).
- * A body with no break follows the entry's rule as a whole; readers who can't
- * read it see the collection's teaser (config `teaser`, in words), if any.
+ * - "Paywall break": everything before the first one is shown to everyone.
+ *   What follows reaches the page only for readers who may read it: the
+ *   levels picked on the break, or when none are picked the entry's rule
+ *   (with no rule, the break changes nothing, as on WordPress).
+ * - "Members only" … "Members only: end": the part between is for the levels
+ *   picked on the start block, or the entry's rule, or any signed-in member.
+ *   Readers who can't read it see the wall in its place, and the body goes on.
+ * - No break: the entry's rule covers the whole body; readers it keeps out see
+ *   the collection's teaser (config `teaser`, in words), if any.
+ *
+ * Readers kept out get the wall (LockedPanel), with the "locked" slot on top.
  */
 import { PortableText } from "emdash/ui";
 
-import { canRead, entryRequirement, signInUrl, type Terms } from "../access.js";
-import { splitAtPaywall, teaser } from "../blocks-names.js";
+import { canRead, entryRequirement, type Terms, type Verdict } from "../access.js";
+import { sections, splitAtPaywall, teaser } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
+import LockedPanel from "./LockedPanel.astro";
 
 interface Props {
 	value?: unknown[] | null;
@@ -26,35 +32,52 @@ interface Props {
 const { value, collection = "", terms } = Astro.props;
 const split = splitAtPaywall(value);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const entryRule = await entryRequirement(config, collection, terms);
 // A break with levels picked locks the rest to them; with none picked it
 // follows the entry's rule, and does nothing when no rule covers the entry.
-const required = split.paywall
-	? split.levels.length
-		? [split.levels]
-		: await entryRequirement(config, collection, terms)
-	: undefined;
-const verdict =
+const required = split.paywall ? (split.levels.length ? [split.levels] : entryRule) : undefined;
+const verdict: Verdict | { allowed: true; reason: "open" } =
 	split.paywall && required === null
-		? { allowed: true, reason: "open" as const }
+		? { allowed: true, reason: "open" }
 		: await canRead(Astro, { collection, terms }, required ? { required } : undefined);
 const words = config?.teaser?.[collection] ?? 0;
 const shown = split.paywall ? split.open : verdict.allowed ? split.open : teaser(split.open, words);
-const here = Astro.url.pathname + Astro.url.search;
+const rest = verdict.allowed ? split.locked : [];
+
+// Each "Members only" part gets its own verdict.
+async function parts(blocks: unknown[]) {
+	const out: Array<{ blocks: unknown[]; verdict?: Verdict }> = [];
+	for (const section of sections(blocks)) {
+		if (!section.members) {
+			out.push({ blocks: section.blocks });
+			continue;
+		}
+		const needs = section.levels.length ? [section.levels] : (entryRule ?? [[]]);
+		out.push({ blocks: section.blocks, verdict: await canRead(Astro, { collection, terms }, { required: needs }) });
+	}
+	return out;
+}
+const before = await parts(shown);
+const after = await parts(rest);
 ---
 
-{shown.length > 0 && <PortableText value={shown} />}
+{before.map((p) =>
+	!p.verdict || p.verdict.allowed ? (
+		p.blocks.length > 0 && <PortableText value={p.blocks} />
+	) : (
+		<LockedPanel reason={p.verdict.reason} required={p.verdict.required} held={p.verdict.viewer.levels} />
+	),
+)}
 {verdict.allowed ? (
-	split.locked.length > 0 && <PortableText value={split.locked} />
+	after.map((p) =>
+		!p.verdict || p.verdict.allowed ? (
+			p.blocks.length > 0 && <PortableText value={p.blocks} />
+		) : (
+			<LockedPanel reason={p.verdict.reason} required={p.verdict.required} held={p.verdict.viewer.levels} />
+		),
+	)
 ) : (
-	<div class="redeemid-locked" data-redeemid-reason={verdict.reason}>
+	<LockedPanel reason={verdict.reason} required={verdict.required} held={verdict.viewer.levels}>
 		<slot name="locked" />
-		{verdict.reason === "sign_in" && (
-			<p>
-				This is for members. <a href={signInUrl(here)}>Sign in</a> to read on.
-			</p>
-		)}
-		{verdict.reason === "upgrade" && <p>Your membership doesn't include the rest of this yet.</p>}
-		{verdict.reason === "disabled" && <p>Your account is turned off. Contact the store for help.</p>}
-		{verdict.reason === "unconfigured" && <p>This is for members.</p>}
-	</div>
+	</LockedPanel>
 )}

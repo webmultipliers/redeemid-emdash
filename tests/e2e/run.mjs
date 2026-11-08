@@ -130,6 +130,15 @@ try {
 	const both = await visitor.go("/posts/both-rules");
 	check("word-count teaser shows the paragraphs within 5 words", both.text.includes("TEASE-OPEN") && !both.text.includes("BOTH-BODY"));
 	check("teaser leaves out a longer first paragraph", !locked.text.includes("MEMBER-BODY"));
+	for (const path of ["/_emdash/api/content/posts", "/_emdash/api/content/posts/pro-only", "/_emdash/api/search?q=PRO-BODY", "/_emdash/api/search?q=MEMBER-BODY", "/rss.xml", "/sitemap.xml", "/search?q=PRO-BODY", "/_emdash/api/search?q=MS-INSIDE", "/_emdash/api/content/posts/members-section", "/search?q=MS-INSIDE"]) {
+		const r = await visitor.go(path);
+		check(`visitors get no locked text from ${path}`, !r.text.includes("PRO-BODY") && !r.text.includes("MEMBER-BODY") && !r.text.includes("BREAK-BODY") && !r.text.includes("MS-INSIDE"), `${r.res.status} ${r.text.slice(0, 160)}`);
+	}
+	const section = await visitor.go("/posts/members-section");
+	check("Members only: visitors read around the part but not inside it", section.text.includes("MS-BEFORE") && section.text.includes("MS-AFTER") && !section.text.includes("MS-INSIDE"));
+	check("Members only: the wall shows the level's text and the join link", section.text.includes("PRO-WALL") && section.text.includes('href="/join"'));
+	const notice = await visitor.go("/?redeemid_notice=cart_empty");
+	check("Notices shows the notice for its code", notice.text.includes('data-redeemid-notice="cart_empty"') && notice.text.includes("Your cart is empty."));
 	const openBreak = await visitor.go("/posts/open-break");
 	check("a break with no levels changes nothing when no rule covers the post", openBreak.text.includes("OB-INTRO") && openBreak.text.includes("OB-REST"));
 	check("visitor page stays cacheable", !/private/.test(locked.res.headers.get("cache-control") ?? ""), locked.res.headers.get("cache-control"));
@@ -153,6 +162,8 @@ try {
 	check("staff still use the content API", staffApi.res.status === 200, String(staffApi.res.status));
 	const pro = await member.go("/posts/pro-only");
 	check("Pro post asks a member to upgrade", !pro.text.includes("PRO-BODY") && pro.text.includes('data-redeemid-reason="upgrade"'));
+	const sectionMember = await member.go("/posts/members-section");
+	check("Members only: a Member sees the Pro wall in place", !sectionMember.text.includes("MS-INSIDE") && sectionMember.text.includes("This is for Pro members.") && sectionMember.text.includes("MS-AFTER"));
 	const bothMember = await member.go("/posts/both-rules");
 	check("two term rules both apply (Member can't read a Members + Pro post)", !bothMember.text.includes("BOTH-BODY") && bothMember.text.includes('data-redeemid-reason="upgrade"'));
 	const insiderMember = await member.go("/posts/insider");
@@ -167,7 +178,7 @@ try {
 
 	// RedeemID is a registered EmDash plugin with its admin pages and blocks.
 	const manifest = await admin.go("/_emdash/api/manifest");
-	check("plugin is in the admin manifest with its blocks", manifest.text.includes('"redeemid"') && manifest.text.includes("redeemid-paywall") && manifest.text.includes("redeemid-plan"), manifest.text.slice(0, 200));
+	check("plugin is in the admin manifest with its blocks", manifest.text.includes('"redeemid"') && manifest.text.includes("redeemid-paywall") && manifest.text.includes("redeemid-plan") && manifest.text.includes("redeemid-members-end"), manifest.text.slice(0, 200));
 	const adminPage = async (page) =>
 		admin.go("/_emdash/api/plugins/redeemid/admin", {
 			method: "POST",
@@ -246,6 +257,7 @@ try {
 	check("Pro post opens after the tag webhook", proNow.text.includes("PRO-BODY"));
 	const breakPro = await member.go("/posts/paywall-break");
 	check("paywall break opens for Pro", breakPro.text.includes("OPEN-INTRO") && breakPro.text.includes("BREAK-BODY"));
+	check("Members only part opens for Pro", (await member.go("/posts/members-section")).text.includes("MS-INSIDE"));
 	check("Members + Pro post opens for a member with both", (await member.go("/posts/both-rules")).text.includes("BOTH-BODY"));
 	check("child term post opens for Pro", (await member.go("/posts/insider")).text.includes("INSIDER-BODY"));
 

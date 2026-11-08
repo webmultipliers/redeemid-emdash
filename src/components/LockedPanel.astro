@@ -1,0 +1,48 @@
+---
+/**
+ * The wall readers see in place of what they can't read: why, and what to do
+ * next (sign in, or join). <Content> and <Gate> show it; use it directly for
+ * your own locked parts.
+ *
+ * The level it offers is the first one the reader is missing. Its `wall` text
+ * and `joinUrl` come from the level's config, the join link from `join`.
+ * Anything in the default slot is shown above the built-in text.
+ */
+import { passes, signInUrl, type Reason } from "../access.js";
+import { siteConfig } from "../site-config.js";
+
+interface Props {
+	reason: Reason;
+	/** What the locked part needs (Verdict.required). */
+	required?: string[][];
+	/** Levels the reader holds (Verdict.viewer.levels). */
+	held?: string[];
+}
+
+const { reason, required = [], held = [] } = Astro.props;
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const missing = required.find((clause) => clause.length > 0 && !passes(held, [clause]));
+const level = missing ? config?.levels?.find((l) => l.slug === missing[0]) : undefined;
+const joinHref = level?.joinUrl ?? config?.join?.href;
+const joinLabel = config?.join?.label ?? "Become a member";
+const here = Astro.url.pathname + Astro.url.search;
+---
+
+<div class="redeemid-locked" data-redeemid-reason={reason} data-redeemid-level={level?.slug}>
+	<slot />
+	{level?.wall && (reason === "sign_in" || reason === "upgrade") && <p class="redeemid-locked__wall">{level.wall}</p>}
+	{reason === "sign_in" && (
+		<p>
+			This is for members. <a href={signInUrl(here)}>Sign in</a> to read on.
+			{joinHref && <> Not a member yet? <a href={joinHref}>{joinLabel}</a>.</>}
+		</p>
+	)}
+	{reason === "upgrade" && (
+		<p>
+			{level ? `This is for ${level.name} members.` : "Your membership doesn't include this yet."}
+			{joinHref && <> <a href={joinHref}>{joinLabel}</a></>}
+		</p>
+	)}
+	{reason === "disabled" && <p>Your account is turned off. Contact the store for help.</p>}
+	{reason === "unconfigured" && <p>This is for members.</p>}
+</div>
