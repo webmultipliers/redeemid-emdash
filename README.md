@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.1, foundation.** Sign-in, the member mirror, webhooks, levels, rules and the page gate work end to end against a fake store. Nothing has run against a live Shopify store or on Cloudflare Workers yet. See [docs/feasibility.md](docs/feasibility.md) for what was tested and what is still open.
+**Status: 0.0.1, foundation.** Sign-in, the member mirror, webhooks, levels, rules, the page gate and plan checkout work end to end against a fake store, and the package runs on Cloudflare Workers in the Harborview Ledger demo. Sign-in hasn't been run against a live store yet. See [docs/feasibility.md](docs/feasibility.md) for what was tested and what is still open.
 
 ## What it does
 
@@ -10,6 +10,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Mirrors the customer.** Email, name, tags and enabled/disabled status, kept current by signed Shopify webhooks.
 - **Levels from tags.** You map Shopify customer tags to levels. Set tags in Shopify Flow or any app; RedeemID only reads them.
 - **Rules per collection or term.** Lock a collection, or only entries in a category or tag.
+- **Plans and checkout.** `<Plan>` shows a Shopify product's price and starts checkout through the Storefront API.
 - **A page gate.** `<Gate>` shows the entry to readers who may read it and a teaser plus "Sign in" to everyone else.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
@@ -132,6 +133,8 @@ pnpm test        # unit tests
 pnpm typecheck
 pnpm e2e         # boots the playground site against a fake Shopify store
 ```
+
+Releases: bump `version` in package.json and merge to main. The Release workflow runs the tests, then stages that version on npm with a stage-only token. A maintainer approves it on npmjs.com or with `npm stage approve <id>` (2FA), and only then is it public.
 
 `playground/` is the EmDash starter template with RedeemID wired in and two locked posts in its seed.
 
