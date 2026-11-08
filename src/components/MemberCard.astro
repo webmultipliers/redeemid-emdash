@@ -1,0 +1,95 @@
+---
+/**
+ * The member's own account card, for an account page: their levels with
+ * when each started, levels they held before, the meter, and links to the
+ * store account, Refresh membership and Sign out. Visitors get a sign-in link.
+ *
+ *   <MemberCard />
+ *
+ * Everything shown comes from the mirrored Shopify customer; Refresh
+ * membership reads it from the store again.
+ */
+import { accountUrl, membership, meterUsage, refreshUrl, signInUrl, signOutUrl, viewer } from "../access.js";
+import { siteConfig } from "../site-config.js";
+
+interface Props {
+	/** Heading text; the member's first name is added after it. */
+	title?: string;
+}
+
+const { title = "Your membership" } = Astro.props;
+const v = await viewer(Astro);
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const here = Astro.url.pathname + Astro.url.search;
+const m = v.member;
+const disabled = m?.status === "disabled";
+const { current, past } = m && !disabled ? membership(m, config?.levels) : { current: [], past: [] };
+const meter = v.signedIn ? await meterUsage(Astro) : null;
+const date = (iso: string | null) => {
+	if (!iso) return null;
+	const t = Date.parse(iso);
+	return Number.isNaN(t) ? null : new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" }).format(new Date(t));
+};
+const name = [m?.firstName, m?.lastName].filter(Boolean).join(" ");
+const join = config?.join;
+---
+
+<section class="redeemid-member" data-redeemid-signed-in={v.signedIn ? "true" : "false"}>
+	{v.signedIn ? (
+		<>
+			<h2 class="redeemid-member__title">{title}</h2>
+			{(name || m?.email) && (
+				<p class="redeemid-member__who">
+					{name && <strong>{name}</strong>}
+					{m?.email && <span>{m.email}</span>}
+				</p>
+			)}
+			{disabled ? (
+				<p class="redeemid-member__disabled">Your account is turned off. Contact the store for help.</p>
+			) : current.length > 0 ? (
+				<ul class="redeemid-member__levels">
+					{current.map((l) => (
+						<li data-redeemid-level={l.slug}>
+							<strong>{l.name}</strong>
+							{date(l.since) && <> since <time datetime={l.since ?? undefined}>{date(l.since)}</time></>}
+						</li>
+					))}
+				</ul>
+			) : (
+				<p class="redeemid-member__none">
+					You don't have a membership yet.{join && <> <a href={join.href}>{join.label ?? "Become a member"}</a></>}
+				</p>
+			)}
+			{past.length > 0 && (
+				<>
+					<h3 class="redeemid-member__subtitle">Before</h3>
+					<ul class="redeemid-member__past">
+						{past.map((l) => (
+							<li data-redeemid-level={l.slug}>
+								{l.name}
+								{date(l.from) ? `, ${date(l.from)} to ${date(l.to)}` : `, until ${date(l.to)}`}
+							</li>
+						))}
+					</ul>
+				</>
+			)}
+			{meter && current.length === 0 && !disabled && (
+				<p class="redeemid-member__meter" data-redeemid-used={meter.used}>
+					Free reads {meter.period === "week" ? "this week" : "this month"}: {meter.used} of {meter.limit} used.
+				</p>
+			)}
+			<p class="redeemid-member__actions">
+				<a href={accountUrl(here)}>Orders and details</a>
+				<a href={refreshUrl(here)}>Refresh membership</a>
+			</p>
+			<form method="post" action={signOutUrl("/")}>
+				<button type="submit">Sign out</button>
+			</form>
+			<p class="redeemid-member__note">Just bought a plan? It can take a minute to show here. Refresh membership checks again.</p>
+		</>
+	) : (
+		<p>
+			<a href={signInUrl(here)}>{config?.label ?? "Sign in"}</a> to see your membership.
+		</p>
+	)}
+</section>

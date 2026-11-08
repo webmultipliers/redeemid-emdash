@@ -3,11 +3,11 @@
 import Plan from "../components/Plan.astro";
 
 interface Props {
-	node: { handle?: string; title?: string; label?: string };
+	node: { handle?: string; title?: string; label?: string; levels?: string[] };
 }
 
 const { node } = Astro.props;
 const handle = (node.handle ?? "").trim();
 ---
 
-{handle && <Plan handle={handle} title={node.title?.trim() || undefined} label={node.label?.trim() || "Join"} />}
+{handle && <Plan handle={handle} title={node.title?.trim() || undefined} label={node.label?.trim() || "Join"} levels={Array.isArray(node.levels) ? node.levels : []} />}

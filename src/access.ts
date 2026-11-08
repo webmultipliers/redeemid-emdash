@@ -187,6 +187,61 @@ export function memberSince(member: MemberRecord, levels: LevelConfig[] = []): s
 	return starts[0] ?? member.linkedAt ?? null;
 }
 
+export interface HeldLevel {
+	slug: string;
+	name: string;
+	/** When the level started (see memberSince), ISO, or null when unknown. */
+	since: string | null;
+}
+
+export interface PastLevel {
+	slug: string;
+	name: string;
+	from: string | null;
+	to: string;
+}
+
+/**
+ * The member's levels now (with when each started) and the levels they held
+ * before (from the tags Shopify has since removed), newest first.
+ */
+export function membership(member: MemberRecord, levels: LevelConfig[] = []): { current: HeldLevel[]; past: PastLevel[] } {
+	const held = levelsFor(member.tags, levels);
+	const current = held.map((slug) => {
+		const level = levels.find((l) => l.slug === slug)!;
+		return { slug, name: level.name, since: memberSince({ ...member, linkedAt: null }, [level]) };
+	});
+	const pastTags = member.pastTags ?? [];
+	const past: PastLevel[] = [];
+	for (const level of levels) {
+		if (held.includes(level.slug)) continue;
+		const wanted = new Set(level.tags.map((t) => t.toLowerCase()));
+		const spans = pastTags.filter((p) => wanted.has(p.tag));
+		if (spans.length === 0) continue;
+		const froms = spans.map((p) => p.from).filter((d): d is string => Boolean(d)).sort();
+		const to = spans.map((p) => p.to).sort().at(-1)!;
+		past.push({ slug: level.slug, name: level.name, from: froms[0] ?? null, to });
+	}
+	past.sort((a, b) => (a.to < b.to ? 1 : a.to > b.to ? -1 : 0));
+	return { current, past };
+}
+
+/** How much of this period's meter the signed-in reader has used, or null when no meter runs. */
+export async function meterUsage(astro: AstroLike): Promise<{ used: number; limit: number; period: "month" | "week" } | null> {
+	const locals = astro.locals as Locals;
+	const meter = siteConfig(locals.emdash?.config)?.meter;
+	const user = locals.user;
+	const db = locals.emdash?.db;
+	if (!meter || !(meter.limit > 0) || !user?.id || !db) return null;
+	const period = meter.period ?? "month";
+	try {
+		const record = await stores(db).meter.get(`${user.id}:${periodKey(new Date(), period)}`);
+		return { used: Math.min(record?.items.length ?? 0, meter.limit), limit: meter.limit, period };
+	} catch {
+		return null;
+	}
+}
+
 /** When drip opens an entry for this member: `since` plus `days`. */
 export function dripOpensAt(since: string | null, days: number): Date | null {
 	if (!since || days <= 0) return null;
@@ -353,6 +408,11 @@ export function cartUrl(returnTo = "/"): string {
 /** Where the Account link goes: the member's Shopify customer account. */
 export function accountUrl(returnTo = "/"): string {
 	return `/_emdash/api/auth/redeemid/account?return=${encodeURIComponent(safeReturn(returnTo))}`;
+}
+
+/** Re-read the member's tags from the store without a sign-in form when their store session is still open. */
+export function refreshUrl(returnTo = "/"): string {
+	return `/_emdash/api/auth/redeemid/login?refresh=1&return=${encodeURIComponent(safeReturn(returnTo))}`;
 }
 
 export function signOutUrl(returnTo = "/"): string {

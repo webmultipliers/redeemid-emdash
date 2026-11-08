@@ -89,6 +89,12 @@ function blocks(config: RedeemIDConfig) {
 				{ type: "text_input" as const, action_id: "handle", label: "Shopify product handle", placeholder: "gold-membership" },
 				{ type: "text_input" as const, action_id: "title", label: "Title (optional, Shopify's title otherwise)" },
 				{ type: "text_input" as const, action_id: "label", label: "Button label", placeholder: "Join" },
+				{
+					type: "checkbox" as const,
+					action_id: "levels",
+					label: "Levels this plan gives (members on them see \"You're on this plan\")",
+					options: (config.levels ?? []).map((l) => ({ label: l.name, value: l.slug })),
+				},
 			],
 		},
 	];

@@ -35,7 +35,18 @@ export interface MemberRecord {
 	tagsSince?: Record<string, string>;
 	/** When the customer first signed in here, ISO. */
 	linkedAt?: string | null;
+	/** Tags Shopify has removed, with when each was held (newest last, at most 50). */
+	pastTags?: PastTag[];
 }
+
+/** A tag the customer held from `from` (when known) until `to`. */
+export interface PastTag {
+	tag: string;
+	from: string | null;
+	to: string;
+}
+
+const PAST_TAGS_KEPT = 50;
 
 /** A signed-in reader's meter for one period: the locked items they opened free. */
 export interface MeterRecord {
@@ -45,11 +56,18 @@ export interface MeterRecord {
 	items: string[];
 }
 
-/** Update `tagsSince` to the record's current tags: new tags start now, removed tags are dropped. */
+/**
+ * Update `tagsSince` to the record's current tags: new tags start now;
+ * removed tags move to `pastTags` with the dates they were held.
+ */
 export function stampTags(m: MemberRecord, now = new Date().toISOString()): MemberRecord {
 	const before = m.tagsSince ?? {};
 	const since: Record<string, string> = {};
 	for (const t of m.tags.map((t) => t.toLowerCase())) since[t] = before[t] ?? now;
+	const removed = Object.keys(before).filter((t) => !(t in since));
+	if (removed.length) {
+		m.pastTags = [...(m.pastTags ?? []), ...removed.map((tag) => ({ tag, from: before[tag] ?? null, to: now }))].slice(-PAST_TAGS_KEPT);
+	}
 	m.tagsSince = since;
 	return m;
 }

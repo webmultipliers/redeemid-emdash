@@ -2,6 +2,9 @@
  * GET /_emdash/api/auth/redeemid/login?return=/path
  *
  * Starts Shopify customer account sign-in (authorization code + PKCE).
+ * With `refresh=1` it asks the store not to show a form (`prompt=none`):
+ * a member whose store session is still open comes straight back with their
+ * tags read again; anyone else is sent through the usual sign-in.
  */
 
 import type { APIRoute } from "astro";
@@ -16,6 +19,7 @@ export const prerender = false;
 export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 	const url = new URL(request.url);
 	const returnTo = safeReturn(url.searchParams.get("return"));
+	const refresh = url.searchParams.get("refresh") === "1";
 	const emdash = (locals as { emdash?: { config?: unknown } }).emdash;
 	const config = readConfig(emdash?.config);
 	const clientId = env(ENV.clientId);
@@ -30,6 +34,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 			verifier: randomToken(48),
 			returnTo,
 			at: Date.now(),
+			...(refresh ? { refresh: true } : {}),
 		};
 		session.set(SESSION_FLOW, flow);
 		return redirect(
@@ -40,6 +45,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 				nonce: flow.nonce,
 				challenge: await challengeFor(flow.verifier),
 				locale: request.headers.get("accept-language")?.split(",")[0]?.trim(),
+				...(refresh ? { prompt: "none" as const } : {}),
 			}),
 		);
 	} catch (e) {

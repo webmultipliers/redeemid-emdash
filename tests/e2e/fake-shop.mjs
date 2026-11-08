@@ -22,6 +22,9 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 		/** Live carts by id; a completed checkout removes its cart, as Shopify does. */
 		cartsById: new Map(),
 		blocked: [],
+		/** Is the customer signed in at the store? `prompt=none` fails when not. */
+		storeSession: true,
+		authorizeRequests: [],
 	};
 
 	const server = createServer(async (req, res) => {
@@ -57,6 +60,14 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 			case "/authorize": {
 				const p = url.searchParams;
 				if (p.get("client_id") !== clientId || p.get("code_challenge_method") !== "S256") return json(400, { error: "bad_request" });
+				shop.authorizeRequests.push(Object.fromEntries(p));
+				if (p.get("prompt") === "none" && !shop.storeSession) {
+					const back = new URL(p.get("redirect_uri"));
+					back.searchParams.set("error", "login_required");
+					back.searchParams.set("state", p.get("state"));
+					res.writeHead(302, { location: back.toString() });
+					return res.end();
+				}
 				const code = `code-${Math.random().toString(36).slice(2)}`;
 				codes.set(code, { nonce: p.get("nonce"), challenge: p.get("code_challenge"), redirect: p.get("redirect_uri") });
 				const back = new URL(p.get("redirect_uri"));
