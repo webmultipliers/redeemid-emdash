@@ -97,7 +97,16 @@ export function base64url(bytes: Uint8Array): string {
 
 export function authorizeUrl(
 	d: Discovery,
-	args: { clientId: string; redirectUri: string; state: string; nonce: string; challenge: string; locale?: string },
+	args: {
+		clientId: string;
+		redirectUri: string;
+		state: string;
+		nonce: string;
+		challenge: string;
+		locale?: string;
+		/** "none": no sign-in form; the store answers with an error when the customer isn't signed in there. */
+		prompt?: "none";
+	},
 ): string {
 	const url = new URL(d.authorizationEndpoint);
 	url.searchParams.set("scope", SCOPES);
@@ -109,6 +118,7 @@ export function authorizeUrl(
 	url.searchParams.set("code_challenge", args.challenge);
 	url.searchParams.set("code_challenge_method", "S256");
 	if (args.locale) url.searchParams.set("ui_locales", args.locale);
+	if (args.prompt) url.searchParams.set("prompt", args.prompt);
 	return url.toString();
 }
 

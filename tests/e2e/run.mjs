@@ -274,6 +274,26 @@ try {
 	check("Members + Pro post opens for a member with both", (await member.go("/posts/both-rules")).text.includes("BOTH-BODY"));
 	check("child term post opens for Pro", (await member.go("/posts/insider")).text.includes("INSIDER-BODY"));
 
+	// Member tools: the account card, plans that know who holds them, Refresh membership.
+	const card = await member.go("/account");
+	check("account card lists the member's levels with their start dates", /data-redeemid-level="member"[^]*?since <time/.test(card.text) && card.text.includes("<strong>Pro</strong>"), (card.text.match(/<section class="redeemid-member[^]*?<\/section>/) ?? [""])[0].slice(0, 400));
+	check("account card links to Refresh membership", card.text.includes("/_emdash/api/auth/redeemid/login?refresh=1&amp;return=%2Faccount"));
+	const joinPro = await member.go("/join");
+	check("a plan the member holds says so instead of Buy", joinPro.text.includes("You&#39;re on this plan.") || joinPro.text.includes("You're on this plan."));
+	shop.customer.tags = ["member"];
+	const refreshed = await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	check("Refresh membership asks the store for no sign-in form", shop.authorizeRequests.at(-1)?.prompt === "none");
+	check("Refresh membership comes back with the store's tags", refreshed.url.pathname === "/account" && refreshed.url.searchParams.get("redeemid_notice") === "refreshed" && refreshed.text.includes("Your membership is up to date."), refreshed.url.href);
+	check("a level Shopify removed shows under Before", /redeemid-member__past[^]*?data-redeemid-level="pro"/.test(refreshed.text));
+	check("the removed level no longer opens Pro posts", !(await member.go("/posts/pro-only")).text.includes("PRO-BODY"));
+	shop.storeSession = false;
+	const before = shop.authorizeRequests.length;
+	const fallback = await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	shop.storeSession = true;
+	check("with no store session, Refresh falls back to the usual sign-in", fallback.url.pathname === "/account" && shop.authorizeRequests.length === before + 2 && !shop.authorizeRequests.at(-1)?.prompt && !fallback.url.search.includes("sign_in_cancelled"), fallback.url.href);
+	shop.customer.tags = ["member", "pro"];
+	await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+
 	// Shopify turns the account off, then on again.
 	await webhook("customers/disable", { id: shop.customer.id, updated_at: "2026-11-08T10:00:00Z" });
 	const off = await member.go("/posts/members-only");

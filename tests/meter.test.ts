@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("emdash/api/route-utils", () => ({ getAuthProviderStorage: () => store.stores }));
 vi.mock("virtual:emdash/config", () => ({ default: {} }));
 
-import { consume, dripDays, dripOpensAt, memberSince, meterable, periodKey, readEntry } from "../src/access.js";
+import { consume, dripDays, dripOpensAt, memberSince, membership, meterable, periodKey, readEntry } from "../src/access.js";
 import type { RedeemIDConfig } from "../src/config.js";
 import { emptyMember, stampTags } from "../src/storage.js";
 import { memoryStores } from "./memory-store.js";
@@ -119,5 +119,31 @@ describe("readEntry", () => {
 		expect((await readEntry(astro("u1"), { collection: "posts", terms: { category: ["reports"] } })).reason).toBe("upgrade");
 		expect((await readEntry(astro("u1"), { collection: "posts", terms: { category: ["archive"] }, id: "1" })).reason).toBe("drip");
 		expect(store.meter.size).toBe(0);
+	});
+});
+
+describe("membership", () => {
+	it("moves removed tags to pastTags with their dates", () => {
+		const m = stampTags({ ...emptyMember("1"), tags: ["member", "pro"] }, "2026-01-01T00:00:00Z");
+		const later = stampTags({ ...m, tags: ["member"] }, "2026-04-01T00:00:00Z");
+		expect(later.pastTags).toEqual([{ tag: "pro", from: "2026-01-01T00:00:00Z", to: "2026-04-01T00:00:00Z" }]);
+	});
+
+	it("lists current levels with start dates and past levels newest first", () => {
+		const m = {
+			...emptyMember("1"),
+			tags: ["member"],
+			tagsSince: { member: "2026-02-01" },
+			pastTags: [
+				{ tag: "pro", from: "2025-01-01", to: "2025-06-01" },
+				{ tag: "a", from: null, to: "2026-03-01" },
+			],
+		};
+		const { current, past } = membership(m, config.levels);
+		expect(current).toEqual([{ slug: "member", name: "Member", since: "2026-02-01" }]);
+		expect(past).toEqual([
+			{ slug: "both", name: "Both", from: null, to: "2026-03-01" },
+			{ slug: "pro", name: "Pro", from: "2025-01-01", to: "2025-06-01" },
+		]);
 	});
 });

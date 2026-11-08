@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.6, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.7, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -13,6 +13,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Meter and drip.** Signed-in readers may open a few locked entries free each month or week. A rule can also drip: members read its entries once they've held their level for so many days.
 - **Teasers and badges.** Locked entries can show their first paragraphs, up to a word count. `<AccessBadge>` names the level an entry needs and shows a lock to readers it keeps out.
 - **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
+- **Member account card.** `<MemberCard>` shows members their levels with when each started, the levels they held before, the meter, and Refresh membership, which reads their tags from the store again.
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
 - **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on, or leaving it to the entry's rule. `<Content>` renders the body and leaves the rest off the page for everyone else.
 - **Members only block.** For a members part in the middle of a body: "Members only" (pick the levels) and "Members only: end". Everyone else sees the wall in its place and reads on after it.
@@ -154,13 +155,15 @@ import Cart from "@redeemid/emdash/components/Cart.astro";
 <Cart />
 ```
 
-Sell a plan. `<Plan>` shows a Shopify product's title and price with a button that adds it to the visitor's Shopify cart and opens checkout (signed-in members check out with their email). Shopify Flow or an app tags the customer after the order, and access follows that tag:
+For an account page, `<MemberCard />` shows the member's levels (with when each started), levels they held before, how much of the meter they've used, and links to their store account, Refresh membership and Sign out. Visitors get a sign-in link. Refresh membership (`refreshUrl(returnTo)` in `@redeemid/emdash/access`) sends the member to the store with no sign-in form; a member still signed in there comes straight back with their tags read again and the `refreshed` notice, and anyone else goes through the usual sign-in. Use it after a purchase, when Shopify's tag webhook hasn't arrived yet.
+
+Sell a plan. `<Plan>` shows a Shopify product's title and price with a button that adds it to the visitor's Shopify cart and opens checkout (signed-in members check out with their email). Shopify Flow or an app tags the customer after the order, and access follows that tag. With `levels`, members who already hold one of them see "You're on this plan." (`heldLabel`) in place of the button; the Plan block has the same choice:
 
 ```astro
 ---
 import Plan from "@redeemid/emdash/components/Plan.astro";
 ---
-<Plan handle="gold-membership" label="Join Gold">
+<Plan handle="gold-membership" label="Join Gold" levels={["gold"]}>
 	<p>Shown if the product can't be loaded.</p>
 </Plan>
 ```

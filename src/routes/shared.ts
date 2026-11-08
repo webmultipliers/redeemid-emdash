@@ -11,6 +11,8 @@ export interface Flow {
 	verifier: string;
 	returnTo: string;
 	at: number;
+	/** Started by Refresh membership (prompt=none). */
+	refresh?: boolean;
 }
 
 export const CALLBACK_PATH = "/_emdash/api/auth/redeemid/callback";

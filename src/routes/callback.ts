@@ -33,7 +33,11 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 	const clientId = env(ENV.clientId);
 	if (!config || !storeDomain(config) || !clientId || !emdash?.db || !session) return fail(redirect, returnTo, "not_configured");
 
-	if (url.searchParams.get("error")) return fail(redirect, returnTo, "sign_in_cancelled");
+	if (url.searchParams.get("error")) {
+		// Refresh found no open store session: sign in as usual.
+		if (flow?.refresh) return redirect(`/_emdash/api/auth/redeemid/login?return=${encodeURIComponent(returnTo)}`);
+		return fail(redirect, returnTo, "sign_in_cancelled");
+	}
 
 	const state = url.searchParams.get("state");
 	const code = url.searchParams.get("code");
@@ -105,7 +109,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 		session.regenerate?.();
 		session.set("user", { id: user.id });
 		session.set(SESSION_ID_TOKEN, tokens.idToken);
-		return redirect(returnTo);
+		return flow.refresh ? fail(redirect, returnTo, "refreshed") : redirect(returnTo);
 	} catch (e) {
 		const code = e instanceof ShopifyError ? e.code : e instanceof OAuthError ? "signup_not_allowed" : "sign_in_failed";
 		console.error("[redeemid] sign-in failed:", (e as Error).message);
