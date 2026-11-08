@@ -58,8 +58,10 @@ Set these secrets in the environment (`.env` locally, `wrangler secret put` on W
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID` | Customer Account API | Client ID of the Headless storefront's Customer Account API client |
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET` | Customer Account API | Its client secret. Confidential clients only; leave unset for a public client. |
 | `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET` | Webhooks (Admin API app) | Client secret of the Shopify app that sends the webhooks. Shopify signs each webhook with it. |
+| `REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN` | Storefront API | Private access token, for the plan cards and checkout (server-side). |
+| `REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN` | Storefront API | Public access token. Only used when the private token isn't set. |
 
-RedeemID finds the authorization, token and logout endpoints itself from the store's discovery documents, so they need no setting. It doesn't use the Storefront API yet.
+RedeemID finds the authorization, token and logout endpoints itself from the store's discovery documents, so they need no setting.
 
 In Shopify, give the Customer Account API client these settings:
 
@@ -90,6 +92,17 @@ Add the account box to your header:
 import Account from "@redeemid/emdash/components/Account.astro";
 ---
 <Account />
+```
+
+Sell a plan. `<Plan>` shows a Shopify product's title and price with a button that starts checkout (signed-in members check out with their email). Shopify Flow or an app tags the customer after the order, and access follows that tag:
+
+```astro
+---
+import Plan from "@redeemid/emdash/components/Plan.astro";
+---
+<Plan handle="gold-membership" label="Join Gold">
+	<p>Shown if the product can't be loaded.</p>
+</Plan>
 ```
 
 Or ask directly:

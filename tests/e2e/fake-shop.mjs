@@ -18,6 +18,7 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 		/** The customer the next sign-in returns. */
 		customer: { id: 1001, email: "member@example.com", firstName: "Mia", lastName: "Member", tags: ["member"] },
 		tokenRequests: [],
+		carts: [],
 	};
 
 	const server = createServer(async (req, res) => {
@@ -92,6 +93,29 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 					},
 				});
 			}
+			case "/api/2026-10/graphql.json": {
+				const { query, variables } = JSON.parse(body || "{}");
+				if (query.includes("cartCreate")) {
+					shop.carts.push({ input: variables.input, privateToken: req.headers["shopify-storefront-private-token"] });
+					return json(200, { data: { cartCreate: { cart: { checkoutUrl: `${origin}/checkout` }, userErrors: [] } } });
+				}
+				const product =
+					variables.handle === "pro-plan"
+						? {
+								handle: "pro-plan",
+								title: "Pro plan",
+								description: "",
+								availableForSale: true,
+								requiresSellingPlan: false,
+								variants: { nodes: [{ id: "gid://shopify/ProductVariant/42", availableForSale: true, price: { amount: "12.0", currencyCode: "USD" } }] },
+								sellingPlanGroups: { nodes: [] },
+							}
+						: null;
+				return json(200, { data: { product } });
+			}
+			case "/checkout":
+				res.writeHead(200, { "content-type": "text/plain" });
+				return res.end("CHECKOUT");
 			case "/logout": {
 				// Like Shopify: only registered logout URIs are honoured.
 				const to = url.searchParams.get("post_logout_redirect_uri");

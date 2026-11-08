@@ -40,6 +40,8 @@ npx wrangler secret put REDEEMID_SHOPIFY_STORE_DOMAIN                   # e.g. m
 npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID     # Customer Account API client ID
 npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET # confidential clients only
 npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET        # the webhook app's client secret
+npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN       # Headless storefront's Storefront API private token (plans, checkout)
+npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN        # optional; used only without the private token
 ```
 
 The Workers free plan is enough: RedeemID is a native plugin and doesn't need sandboxing. Worker secrets reach the code through `nodejs_compat`, which EmDash's Cloudflare templates turn on.
@@ -51,4 +53,4 @@ The Workers free plan is enough: RedeemID is a native plugin and doesn't need sa
 3. Click **Sign in**, sign in with that customer's email, and you come back to the post, unlocked.
 4. Add or remove the tag in Shopify; the post opens or locks again once the webhook arrives.
 
-If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` (secrets or `shop` missing), `sign_in_unavailable` (store discovery failed), `sign_in_expired`, `staff_account`, `site_not_ready`, `email_required`, `token_failed`, `bad_id_token`, `identity_failed`.
+If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` (secrets or `shop` missing), `sign_in_unavailable` (store discovery failed), `sign_in_expired`, `staff_account`, `site_not_ready`, `email_required`, `token_failed`, `bad_id_token`, `identity_failed`. A Buy button can return `plan_unavailable` (no such product, or sold out) or `checkout_failed`.

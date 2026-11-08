@@ -53,6 +53,7 @@ export function redeemid(config: RedeemIDConfig): AuthProviderDescriptor {
 			{ pattern: `${BASE}/callback`, entrypoint: "@redeemid/emdash/routes/callback.ts" },
 			{ pattern: `${BASE}/logout`, entrypoint: "@redeemid/emdash/routes/logout.ts" },
 			{ pattern: `${BASE}/webhook`, entrypoint: "@redeemid/emdash/routes/webhook.ts" },
+			{ pattern: `${BASE}/buy`, entrypoint: "@redeemid/emdash/routes/buy.ts" },
 		],
 		publicRoutes: [`${BASE}/`],
 		storage: STORAGE_CONFIG,
