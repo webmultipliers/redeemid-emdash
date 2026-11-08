@@ -18,7 +18,7 @@ const MAX_BYTES = 1024 * 1024;
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	const emdash = (locals as { emdash?: { db?: unknown } }).emdash;
-	const secret = env(ENV.webhookSecret) || env(ENV.clientSecret);
+	const secret = env(ENV.webhookSecret);
 	if (!emdash?.db || !secret) return new Response("Not configured", { status: 503 });
 
 	const body = new Uint8Array(await request.arrayBuffer());

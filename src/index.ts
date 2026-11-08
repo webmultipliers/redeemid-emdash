@@ -21,9 +21,11 @@
  *     ],
  *   })
  *
- * Secrets come from the environment: REDEEMID_CLIENT_ID and
- * REDEEMID_CLIENT_SECRET (Headless customer account client) and
- * REDEEMID_WEBHOOK_SECRET (the app's client secret that signs webhooks).
+ * Secrets come from the environment (see ENV in config.ts):
+ * REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID and, for confidential clients,
+ * REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET (the Headless storefront's
+ * Customer Account API client), and REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET
+ * (the client secret of the Shopify app whose webhooks the site receives).
  */
 
 import type { AstroIntegration } from "astro";

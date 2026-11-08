@@ -5,9 +5,10 @@ import { defineConfig } from "astro/config";
 import emdash, { local } from "emdash/astro";
 import { sqlite } from "emdash/db";
 
-// A local EmDash site for trying RedeemID. Point REDEEMID_SHOP at a store
-// (or at the fake store the e2e test starts) and set the REDEEMID_* secrets.
-const shop = process.env.REDEEMID_SHOP ?? "redeemid-demo.myshopify.com";
+// A local EmDash site for trying RedeemID. Point REDEEMID_SHOPIFY_STORE_DOMAIN
+// at a store (or at the fake store the e2e test starts) and set the
+// REDEEMID_SHOPIFY_* secrets (see ENV in src/config.ts).
+const shop = process.env.REDEEMID_SHOPIFY_STORE_DOMAIN ?? "redeemid-demo.myshopify.com";
 
 export default defineConfig({
 	output: "server",

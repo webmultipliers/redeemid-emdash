@@ -6,12 +6,16 @@ What to set up in Shopify, and on the site, to run RedeemID on an EmDash site. O
 
 1. In Shopify admin, open **Sales channels → Headless** (add the channel if it isn't there) and **Create storefront**. Name it after the site, for example "EmDash demo".
 2. Open the storefront's **Customer Account API** settings.
-3. Set **Client type** to **Confidential**.
+3. Pick a **Client type**. Both work, because sign-in runs on the server with PKCE either way:
+   - **Confidential** gives a client secret, which the site sends with the token request.
+   - **Public** has no secret. Shopify checks the request's origin instead, so register the site as a JavaScript origin.
 4. Under **Application setup**, add:
    - **Callback URI:** `https://<site>/_emdash/api/auth/redeemid/callback`
+   - **JavaScript origin:** `https://<site>` (public clients)
    - **Logout URI:** `https://<site>/` (members land here after signing out)
-   - JavaScript origins: none needed. Sign-in runs on the server.
-5. Copy the **Client ID** and **Client secret**.
+5. Copy the **Client ID**, and the **Client secret** if the client is confidential.
+
+The Authorization, Token and Logout endpoints Shopify lists need no setting: RedeemID reads them from the store's discovery documents, and they already follow a custom customer-account domain.
 
 Shopify only accepts `https` callback URIs, so a local `astro dev` site needs a tunnel (for example `cloudflared tunnel`) to sign in for real. The end-to-end test uses a fake store instead.
 
@@ -29,12 +33,13 @@ Subscribe them from the same Shopify app the WordPress site already uses (Dev Da
 
 Add the package and config as in the [README](../README.md#install), with `shop` set to the store's domain. A custom customer-account domain works as well as `*.myshopify.com`.
 
-Set three secrets. On Cloudflare Workers:
+Set the secrets. On Cloudflare Workers:
 
 ```sh
-npx wrangler secret put REDEEMID_CLIENT_ID       # Headless storefront client ID
-npx wrangler secret put REDEEMID_CLIENT_SECRET   # Headless storefront client secret
-npx wrangler secret put REDEEMID_WEBHOOK_SECRET  # the webhook app's client secret
+npx wrangler secret put REDEEMID_SHOPIFY_STORE_DOMAIN                   # e.g. my-store.myshopify.com, unless `shop` is in the config
+npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID     # Customer Account API client ID
+npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET # confidential clients only
+npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET        # the webhook app's client secret
 ```
 
 The Workers free plan is enough: RedeemID is a native plugin and doesn't need sandboxing. Worker secrets reach the code through `nodejs_compat`, which EmDash's Cloudflare templates turn on.

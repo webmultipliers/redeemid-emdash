@@ -55,7 +55,7 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 			}
 			case "/token": {
 				const form = new URLSearchParams(body);
-				shop.tokenRequests.push({ auth: req.headers.authorization, form: Object.fromEntries(form) });
+				shop.tokenRequests.push({ auth: req.headers.authorization, origin: req.headers.origin, form: Object.fromEntries(form) });
 				const grant = codes.get(form.get("code"));
 				codes.delete(form.get("code"));
 				const basic = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;

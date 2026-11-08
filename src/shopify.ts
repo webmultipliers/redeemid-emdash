@@ -115,7 +115,7 @@ export interface Tokens {
 
 export async function exchangeCode(
 	d: Discovery,
-	args: { clientId: string; clientSecret: string; redirectUri: string; code: string; verifier: string },
+	args: { clientId: string; clientSecret: string; redirectUri: string; origin?: string; code: string; verifier: string },
 	fetcher: typeof fetch = fetch,
 ): Promise<Tokens> {
 	const body = new URLSearchParams({
@@ -129,6 +129,8 @@ export async function exchangeCode(
 		"Content-Type": "application/x-www-form-urlencoded",
 		Accept: "application/json",
 	};
+	// Public clients are checked against their registered JavaScript origins.
+	if (args.origin) headers.Origin = args.origin;
 	if (args.clientSecret) headers.Authorization = `Basic ${btoa(`${args.clientId}:${args.clientSecret}`)}`;
 
 	const res = await fetcher(d.tokenEndpoint, { method: "POST", headers, body });

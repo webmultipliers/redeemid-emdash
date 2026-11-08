@@ -52,16 +52,20 @@ export default defineConfig({
 
 Set these secrets in the environment (`.env` locally, `wrangler secret put` on Workers). [docs/shopify-setup.md](docs/shopify-setup.md) walks through the Shopify side:
 
-| Variable | What it is |
-| --- | --- |
-| `REDEEMID_CLIENT_ID` | Client ID of the store's Headless customer account client |
-| `REDEEMID_CLIENT_SECRET` | Its client secret (confidential client) |
-| `REDEEMID_WEBHOOK_SECRET` | The client secret of the Shopify app that sends webhooks |
+| Variable | Shopify API | What it is |
+| --- | --- | --- |
+| `REDEEMID_SHOPIFY_STORE_DOMAIN` | Customer Account API discovery | The store's `*.myshopify.com` domain. Only needed when `shop` isn't set in the config. |
+| `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID` | Customer Account API | Client ID of the Headless storefront's Customer Account API client |
+| `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET` | Customer Account API | Its client secret. Confidential clients only; leave unset for a public client. |
+| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET` | Webhooks (Admin API app) | Client secret of the Shopify app that sends the webhooks. Shopify signs each webhook with it. |
 
-In Shopify, give the customer account client this callback and logout URL:
+RedeemID finds the authorization, token and logout endpoints itself from the store's discovery documents, so they need no setting. It doesn't use the Storefront API yet.
 
-- Callback: `https://your-site.example/_emdash/api/auth/redeemid/callback`
-- Logout: `https://your-site.example/`
+In Shopify, give the Customer Account API client these settings:
+
+- Callback URI: `https://your-site.example/_emdash/api/auth/redeemid/callback`
+- JavaScript origin (public clients): `https://your-site.example`
+- Logout URI: `https://your-site.example/`
 
 Point webhooks (`customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`, `customers/redact`) at `https://your-site.example/_emdash/api/auth/redeemid/webhook`.
 

@@ -95,10 +95,10 @@ const site = spawn("pnpm", ["exec", "astro", "dev", "--port", String(SITE_PORT),
 	cwd: join(root, "playground"),
 	env: {
 		...process.env,
-		REDEEMID_SHOP: shop.origin,
-		REDEEMID_CLIENT_ID: CLIENT_ID,
-		REDEEMID_CLIENT_SECRET: CLIENT_SECRET,
-		REDEEMID_WEBHOOK_SECRET: WEBHOOK_SECRET,
+		REDEEMID_SHOPIFY_STORE_DOMAIN: shop.origin,
+		REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID: CLIENT_ID,
+		REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET: CLIENT_SECRET,
+		REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET: WEBHOOK_SECRET,
 		REDEEMID_DB: join(tmp, "data.db"),
 		EMDASH_SITE_URL: SITE,
 	},
@@ -132,6 +132,7 @@ try {
 	check("member reads the members post", signIn.text.includes("MEMBER-BODY"), signIn.text.slice(0, 300));
 	check("member page is private", /private/.test(signIn.res.headers.get("cache-control") ?? ""), signIn.res.headers.get("cache-control"));
 	check("token request used Basic auth and PKCE", shop.tokenRequests.at(-1)?.form.code_verifier?.length >= 43);
+	check("token request sent the site origin", shop.tokenRequests.at(-1)?.origin === SITE);
 	check("account box shows the member level", signIn.text.includes("redeemid-account__levels") && signIn.text.includes("Member"));
 	for (const path of ["/_emdash/api/content/posts", "/_emdash/api/content/posts/pro-only", "/_emdash/api/search?q=PRO-BODY"]) {
 		const r = await member.go(path);
