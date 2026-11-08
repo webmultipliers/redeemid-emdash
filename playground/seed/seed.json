@@ -108,6 +108,10 @@
 					"slug": "insider",
 					"label": "Insider",
 					"parent": "pro"
+				},
+				{
+					"slug": "reports",
+					"label": "Reports"
 				}
 			]
 		},
@@ -551,6 +555,90 @@
 				"taxonomies": {
 					"category": [
 						"general"
+					]
+				}
+			},
+			{
+				"id": "post-report-one",
+				"slug": "report-one",
+				"status": "published",
+				"data": {
+					"title": "Report one",
+					"excerpt": "Report one.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "REPORT-ONE-BODY: a report the meter may open for you.",
+									"_key": "s"
+								}
+							],
+							"_key": "b"
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"reports"
+					]
+				}
+			},
+			{
+				"id": "post-report-two",
+				"slug": "report-two",
+				"status": "published",
+				"data": {
+					"title": "Report two",
+					"excerpt": "Report two.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "REPORT-TWO-BODY: a second report, past the free teaser.",
+									"_key": "s"
+								}
+							],
+							"_key": "b"
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"reports"
+					]
+				}
+			},
+			{
+				"id": "post-drip",
+				"slug": "drip-update",
+				"status": "published",
+				"data": {
+					"title": "A members update",
+					"excerpt": "A members update.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "DRIP-BODY: members read this after 30 days.",
+									"_key": "s"
+								}
+							],
+							"_key": "b"
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"updates"
 					]
 				}
 			}

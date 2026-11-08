@@ -169,6 +169,19 @@ try {
 	const insiderMember = await member.go("/posts/insider");
 	check("a child term takes its parent's rule (Insider needs Pro)", !insiderMember.text.includes("INSIDER-BODY") && insiderMember.text.includes('data-redeemid-reason="upgrade"'));
 
+	// The meter (one a month) opens a locked Reports post, never a Pro post (meter: false).
+	const reportOne = await member.go("/posts/report-one");
+	check("meter opens a locked post for a signed-in reader", reportOne.text.includes("REPORT-ONE-BODY") && reportOne.text.includes("This is your last free read this month."), reportOne.text.slice(0, 200));
+	const reportAgain = await member.go("/posts/report-one");
+	check("a metered post reads again for free", reportAgain.text.includes("REPORT-ONE-BODY"));
+	const reportTwo = await member.go("/posts/report-two");
+	check("the meter stops at its limit", !reportTwo.text.includes("REPORT-TWO-BODY") && /You('|&#39;)ve used your free reads\s*this month\./.test(reportTwo.text));
+	const reportVisitor = await visitor.go("/posts/report-one");
+	check("the meter never opens a post for visitors", !reportVisitor.text.includes("REPORT-ONE-BODY") && reportVisitor.text.includes('data-redeemid-reason="sign_in"'));
+	// Drip: Updates open 30 days after the member's level started (just now).
+	const drip = await member.go("/posts/drip-update");
+	check("drip holds a post until the member has been in long enough", !drip.text.includes("DRIP-BODY") && drip.text.includes('data-redeemid-reason="drip"') && drip.text.includes("This opens for you on"), drip.text.slice(0, 200));
+
 	// One body with a Paywall break block (levels: Pro): the opening is open, the rest isn't.
 	const breakVisitor = await visitor.go("/posts/paywall-break");
 	check("paywall break: visitors read the opening", breakVisitor.text.includes("OPEN-INTRO"));

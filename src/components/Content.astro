@@ -2,12 +2,12 @@
 /**
  * An entry's body, with RedeemID's blocks applied.
  *
- *   <Content value={post.data.content} collection="posts" terms={post.data.terms} />
+ *   <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} />
  *
  * - "Paywall break": everything before the first one is shown to everyone.
  *   What follows reaches the page only for readers who may read it: the
  *   levels picked on the break, or when none are picked the entry's rule
- *   (with no rule, the break changes nothing, as on WordPress).
+ *   (with no rule, the break changes nothing).
  * - "Members only" … "Members only: end": the part between is for the levels
  *   picked on the start block, or the entry's rule, or any signed-in member.
  *   Readers who can't read it see the wall in its place, and the body goes on.
@@ -15,10 +15,15 @@
  *   the collection's teaser (config `teaser`, in words), if any.
  *
  * Readers kept out get the wall (LockedPanel), with the "locked" slot on top.
+ *
+ * Pass `id` on the entry's own page so drip and the meter apply: a rule's
+ * `drip` keeps it shut until the member has held their level that many days,
+ * and config `meter` lets signed-in readers open a few locked entries each
+ * period (each entry counts once). Leave `id` off in lists.
  */
 import { PortableText } from "emdash/ui";
 
-import { canRead, entryRequirement, type Terms, type Verdict } from "../access.js";
+import { canRead, entryRequirement, readEntry, type Terms, type Verdict } from "../access.js";
 import { sections, splitAtPaywall, teaser } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 import LockedPanel from "./LockedPanel.astro";
@@ -27,9 +32,11 @@ interface Props {
 	value?: unknown[] | null;
 	collection?: string;
 	terms?: Terms;
+	/** The entry's id, on its own page: turns on drip and the meter. */
+	id?: string;
 }
 
-const { value, collection = "", terms } = Astro.props;
+const { value, collection = "", terms, id } = Astro.props;
 const split = splitAtPaywall(value);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
 const entryRule = await entryRequirement(config, collection, terms);
@@ -39,7 +46,9 @@ const required = split.paywall ? (split.levels.length ? [split.levels] : entryRu
 const verdict: Verdict | { allowed: true; reason: "open" } =
 	split.paywall && required === null
 		? { allowed: true, reason: "open" }
-		: await canRead(Astro, { collection, terms }, required ? { required } : undefined);
+		: id
+			? await readEntry(Astro, { collection, terms, id }, required ? { required } : undefined)
+			: await canRead(Astro, { collection, terms }, required ? { required } : undefined);
 const words = config?.teaser?.[collection] ?? 0;
 const shown = split.paywall ? split.open : verdict.allowed ? split.open : teaser(split.open, words);
 const rest = verdict.allowed ? split.locked : [];
@@ -59,8 +68,17 @@ async function parts(blocks: unknown[]) {
 }
 const before = await parts(shown);
 const after = await parts(rest);
+const metered = verdict.reason === "metered" ? (verdict as Verdict) : null;
+const per = metered?.meter?.period === "week" ? "this week" : "this month";
 ---
 
+{metered && (
+	<p class="redeemid-meter" role="status" data-redeemid-left={metered.meterLeft}>
+		{metered.meterLeft === 0
+			? `This is your last free read ${per}.`
+			: `You have ${metered.meterLeft} free ${metered.meterLeft === 1 ? "read" : "reads"} left ${per}.`}
+	</p>
+)}
 {before.map((p) =>
 	!p.verdict || p.verdict.allowed ? (
 		p.blocks.length > 0 && <PortableText value={p.blocks} />
@@ -77,7 +95,14 @@ const after = await parts(rest);
 		),
 	)
 ) : (
-	<LockedPanel reason={verdict.reason} required={verdict.required} held={verdict.viewer.levels}>
+	<LockedPanel
+		reason={verdict.reason}
+		required={verdict.required}
+		held={verdict.viewer.levels}
+		opensAt={verdict.opensAt}
+		meterLeft={verdict.meterLeft}
+		meterPeriod={verdict.meter?.period}
+	>
 		<slot name="locked" />
 	</LockedPanel>
 )}

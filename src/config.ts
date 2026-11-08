@@ -22,7 +22,7 @@ export interface LevelConfig {
 }
 
 /**
- * Who may read entries, like RedeemID's content rules on WordPress:
+ * Who may read entries:
  *
  * - A rule with `taxonomy` and `term` covers entries that carry that term, or
  *   a child of it in a hierarchical taxonomy (a child's own rule wins over its
@@ -45,9 +45,30 @@ export interface RuleConfig {
 	levels: string[];
 	/**
 	 * A term rule that opens its entries to everyone, whatever else covers them
-	 * ("Opens" on WordPress). `levels` is ignored.
+	 * `levels` is ignored.
 	 */
 	open?: boolean;
+	/**
+	 * Drip: readers who pass the rule may read its entries only once they have
+	 * been members this many days (from when they first held a level they
+	 * hold now, or else when they first signed in).
+	 */
+	drip?: number;
+	/** `false`: the meter never opens this rule's entries. */
+	meter?: false;
+}
+
+/**
+ * The meter: signed-in readers without access may open a few locked entries
+ * free each month (or week). Guests get the wall; an entry counts once per
+ * period, when its own page renders through <Content> with an `id`.
+ */
+export interface MeterConfig {
+	/** Free entries per period. */
+	limit: number;
+	period?: "month" | "week";
+	/** Collections the meter covers. All of them when left out. */
+	collections?: string[];
 }
 
 export interface RedeemIDConfig {
@@ -61,6 +82,7 @@ export interface RedeemIDConfig {
 	label?: string;
 	levels?: LevelConfig[];
 	rules?: RuleConfig[];
+	meter?: MeterConfig;
 	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
 	join?: { href: string; label?: string };
 	/**

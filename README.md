@@ -2,14 +2,15 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.5, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.6, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
 - **Sign in with the store's customer account.** Members click "Sign in" on your site, sign in on the store's account page and come back signed in. They become EmDash Subscribers. That role only means "signed in"; it never grants content.
 - **Mirrors the customer.** Email, name, tags and enabled/disabled status, kept current by signed Shopify webhooks.
 - **Levels from tags.** You map Shopify customer tags to levels. Set tags in Shopify Flow or any app; RedeemID only reads them.
-- **Rules like RedeemID's on WordPress.** Lock a collection, entries with a term (and its child terms), or set a site default; a term can also open its entries to everyone. When several term rules cover an entry, readers must pass all of them.
+- **Rules.** Lock a collection, entries with a term (and its child terms), or set a site default; a term can also open its entries to everyone. When several term rules cover an entry, readers must pass all of them.
+- **Meter and drip.** Signed-in readers may open a few locked entries free each month or week. A rule can also drip: members read its entries once they've held their level for so many days.
 - **Teasers and badges.** Locked entries can show their first paragraphs, up to a word count. `<AccessBadge>` names the level an entry needs and shows a lock to readers it keeps out.
 - **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
@@ -49,6 +50,8 @@ const config = {
 	join: { href: "/join/", label: "Become a member" },
 	// Optional: locked posts with no paywall break show the paragraphs within their first 40 words.
 	teaser: { posts: 40 },
+	// Optional: signed-in readers may open 3 locked posts a month.
+	meter: { limit: 3, period: "month", collections: ["posts"] },
 };
 
 export default defineConfig({
@@ -95,7 +98,16 @@ Each rule names a collection and the levels, any of which may read. An empty `le
 | `{ collection: "posts", taxonomy: "tag", term: "free-to-read", levels: [], open: true }` | Opens entries with that term to everyone, whatever else covers them |
 | `{ collection: "*", levels: [] }` | The site default, for collections with no rule of their own |
 
+| `{ collection: "posts", taxonomy: "category", term: "archive", levels: ["member"], drip: 30 }` | Drip: members read these entries 30 days after their level started |
+| `{ collection: "posts", taxonomy: "category", term: "exclusive", levels: ["pro"], meter: false }` | The meter never opens these entries |
+
 Term rules beat the collection's rule, which beats the site default. When several term rules cover one entry (a story in Investigations, Gold, and Culture, Silver), readers must pass every one of them, so only Gold + Silver members read it. Set `combine: "any"` to let one of them be enough.
+
+### Meter and drip
+
+The meter lets a signed-in reader who can't read an entry open it anyway, `limit` entries per `period` (`"month"`, the default, or `"week"`, in UTC). Each entry counts once per period, when its own page renders through `<Content>` with an `id`; lists, feeds, search and the content API never count. Visitors get the wall and a nudge to sign in. While it runs, `<Content>` says how many free reads are left; when it runs out, the wall says so. Rules with `meter: false` are never metered, and the meter never opens an entry a member is waiting on by drip.
+
+Drip holds a rule's entries back from members who pass it until they've held their level for `drip` days. A level starts when the customer first had its tag (for a `match: "all"` level, the last of its tags); with several levels the earliest counts, and with none known, the first sign-in. RedeemID notes when each tag first arrives from sign-in and webhooks, and forgets a tag when Shopify removes it. The wall shows the date the entry opens.
 
 ## Use it in templates
 
@@ -105,12 +117,12 @@ EmDash has no content filter hook, so templates decide what to render. Render th
 ---
 import Content from "@redeemid/emdash/components/Content.astro";
 ---
-<Content value={post.data.content} collection="posts" terms={post.data.terms}>
+<Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id}>
 	<a slot="locked" href="/join/">Become a member</a>
 </Content>
 ```
 
-Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it ("Signed in" for any member), or when none are picked the entry's rule. With none picked and no rule covering the entry, the break changes nothing, as on WordPress. A body with no break follows the entry's rule as a whole; readers it keeps out see the collection's `teaser` (the paragraphs within that many words, never half a paragraph), if one is set. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
+Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it ("Signed in" for any member), or when none are picked the entry's rule. With none picked and no rule covering the entry, the break changes nothing. A body with no break follows the entry's rule as a whole; readers it keeps out see the collection's `teaser` (the paragraphs within that many words, never half a paragraph), if one is set. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
 
 A "Members only" block starts a part for the levels picked on it (none picked: the entry's rule, or any signed-in member) that runs to the next "Members only: end" block. Readers who can't read it see the wall there, and the body goes on after the end block.
 
@@ -127,7 +139,7 @@ import AccessBadge from "@redeemid/emdash/components/AccessBadge.astro";
 <AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} />
 ```
 
-In your own code (`@redeemid/emdash/access`), `entryRequirement(config, collection, terms)` gives what an entry needs (a list of clauses, each passed by any of its levels, or `null` when open), and `canRead(Astro, entry)` gives the verdict for the visitor.
+In your own code (`@redeemid/emdash/access`), `entryRequirement(config, collection, terms)` gives what an entry needs (a list of clauses, each passed by any of its levels, or `null` when open), `canRead(Astro, entry)` gives the verdict for the visitor, and `readEntry(Astro, { collection, terms, id })` gives it with drip and the meter applied (and counts a metered read).
 
 Put `<Notices />` near the top of your layout. It shows the message for a `?redeemid_notice=` code (see [docs/shopify-setup.md](docs/shopify-setup.md)) and nothing otherwise; pass `messages={{ cart_empty: "…" }}` to reword one.
 
@@ -160,6 +172,7 @@ import { canRead } from "@redeemid/emdash/access";
 
 const verdict = await canRead(Astro, { collection: "posts", terms: post.data.terms });
 // verdict.allowed, verdict.reason: open | allowed | sign_in | upgrade | disabled
+// readEntry() adds drip (verdict.opensAt) and metered (verdict.meterLeft)
 ```
 
 Pages rendered for a signed-in member are sent with `Cache-Control: private, no-store`; pages for visitors stay cacheable.

@@ -32,7 +32,7 @@ export interface Viewer {
 	levels: string[];
 }
 
-export type Reason = "open" | "allowed" | "sign_in" | "upgrade" | "disabled" | "unconfigured";
+export type Reason = "open" | "allowed" | "sign_in" | "upgrade" | "disabled" | "unconfigured" | "drip" | "metered";
 
 /**
  * What an entry needs, in conjunctive form: every clause must pass, and a
@@ -42,7 +42,7 @@ export type Reason = "open" | "allowed" | "sign_in" | "upgrade" | "disabled" | "
 export type Requirement = string[][] | null;
 
 /**
- * The built-in level every signed-in member holds, as on WordPress. A clause
+ * The built-in level every signed-in member holds. A clause
  * with it passes for any signed-in member, like an empty clause.
  */
 export const SIGNED_IN = "signed-in";
@@ -53,6 +53,12 @@ export interface Verdict {
 	/** What the entry needs (see Requirement). `[]` when it is open. */
 	required: string[][];
 	viewer: Viewer;
+	/** For "drip": when the entry opens for this member. */
+	opensAt?: Date;
+	/** For "metered", and for a locked "upgrade" when a meter runs: free entries left this period. */
+	meterLeft?: number;
+	/** The meter's size and period, when one ran. */
+	meter?: { limit: number; period: "month" | "week" };
 }
 
 /** A term as EmDash hydrates it onto an entry, or just its slug. */
@@ -102,26 +108,14 @@ function combined(rules: RuleConfig[], mode: "all" | "any"): string[][] {
 	return reduce(rules.map((r) => r.levels));
 }
 
-/**
- * What an entry needs (see Requirement), from the site's rules.
- *
- * Each term the entry carries is walked up its taxonomy (with `tree`) to the
- * nearest term that has a rule, so a child term takes its parent's rule unless
- * it has its own. Any matching `open` rule opens the entry.
- */
-export function requirement(
-	rules: RuleConfig[] = [],
-	collection: string,
-	terms: Terms = {},
-	options: { combine?: "all" | "any"; tree?: TermTree } = {},
-): Requirement {
-	const mode = options.combine ?? "all";
+/** The rules that decide an entry: matching term rules, else the collection's, else the site default. */
+function deciding(rules: RuleConfig[], collection: string, terms: Terms, tree?: TermTree): RuleConfig[] | "open" {
 	const forCollection = rules.filter((r) => r.collection === collection);
 	const matched: RuleConfig[] = [];
 	for (const [taxonomy, list] of Object.entries(terms)) {
 		const taxRules = forCollection.filter((r) => r.taxonomy === taxonomy && r.term);
 		if (taxRules.length === 0) continue;
-		const parents = options.tree?.[taxonomy] ?? {};
+		const parents = tree?.[taxonomy] ?? {};
 		for (const ref of list ?? []) {
 			let slug: string | null = slugOf(ref);
 			const seen = new Set<string>();
@@ -136,13 +130,87 @@ export function requirement(
 			}
 		}
 	}
-	if (matched.some((r) => r.open)) return null;
-	if (matched.length > 0) return combined(matched, mode);
+	if (matched.some((r) => r.open)) return "open";
+	if (matched.length > 0) return matched;
 	const whole = forCollection.filter((r) => !r.taxonomy && !r.term && !r.open);
-	if (whole.length > 0) return combined(whole, mode);
-	const site = rules.filter((r) => r.collection === "*" && !r.taxonomy && !r.term && !r.open);
-	if (site.length > 0) return combined(site, mode);
-	return null;
+	if (whole.length > 0) return whole;
+	return rules.filter((r) => r.collection === "*" && !r.taxonomy && !r.term && !r.open);
+}
+
+/**
+ * What an entry needs (see Requirement), from the site's rules.
+ *
+ * Each term the entry carries is walked up its taxonomy (with `tree`) to the
+ * nearest term that has a rule, so a child term takes its parent's rule unless
+ * it has its own. Any matching `open` rule opens the entry.
+ */
+export function requirement(
+	rules: RuleConfig[] = [],
+	collection: string,
+	terms: Terms = {},
+	options: { combine?: "all" | "any"; tree?: TermTree } = {},
+): Requirement {
+	const found = deciding(rules, collection, terms, options.tree);
+	if (found === "open" || found.length === 0) return null;
+	return combined(found, options.combine ?? "all");
+}
+
+/** Days of membership the entry's deciding rules ask for (the largest drip), or 0. */
+export function dripDays(rules: RuleConfig[] = [], collection: string, terms: Terms = {}, tree?: TermTree): number {
+	const found = deciding(rules, collection, terms, tree);
+	if (found === "open") return 0;
+	return Math.max(0, ...found.map((r) => (typeof r.drip === "number" && r.drip > 0 ? r.drip : 0)));
+}
+
+/** May the meter open the entry? Not when a deciding rule says `meter: false`. */
+export function meterable(rules: RuleConfig[] = [], collection: string, terms: Terms = {}, tree?: TermTree): boolean {
+	const found = deciding(rules, collection, terms, tree);
+	return found === "open" || !found.some((r) => r.meter === false);
+}
+
+/**
+ * When a member's membership started, for drip: the earliest start among the
+ * levels they hold now (a level starts when its last needed tag arrived),
+ * else when they first signed in. Null when neither is known.
+ */
+export function memberSince(member: MemberRecord, levels: LevelConfig[] = []): string | null {
+	const since = member.tagsSince ?? {};
+	const starts: string[] = [];
+	for (const slug of levelsFor(member.tags, levels)) {
+		const level = levels.find((l) => l.slug === slug);
+		const dates = (level?.tags ?? []).map((t) => since[t.toLowerCase()]).filter((d): d is string => Boolean(d)).sort();
+		if (dates.length === 0) continue;
+		const pick = level?.match === "all" ? dates[dates.length - 1] : dates[0];
+		if (pick) starts.push(pick);
+	}
+	starts.sort();
+	return starts[0] ?? member.linkedAt ?? null;
+}
+
+/** When drip opens an entry for this member: `since` plus `days`. */
+export function dripOpensAt(since: string | null, days: number): Date | null {
+	if (!since || days <= 0) return null;
+	const t = Date.parse(since);
+	return Number.isNaN(t) ? null : new Date(t + days * 86_400_000);
+}
+
+/** The meter period an instant falls in: "2026-11", or ISO week "2026-W45". UTC. */
+export function periodKey(at: Date, period: "month" | "week" = "month"): string {
+	if (period === "month") return `${at.getUTCFullYear()}-${String(at.getUTCMonth() + 1).padStart(2, "0")}`;
+	const d = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+	const day = d.getUTCDay() || 7;
+	d.setUTCDate(d.getUTCDate() + 4 - day);
+	const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
+	const week = Math.ceil(((d.getTime() - yearStart) / 86_400_000 + 1) / 7);
+	return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+/** Count `id` against a meter: an item already counted stays free; a new one needs room. Pure. */
+export function consume(items: string[], id: string, limit: number): { allowed: boolean; items: string[]; left: number } {
+	if (items.includes(id)) return { allowed: true, items, left: Math.max(0, limit - items.length) };
+	if (items.length >= limit) return { allowed: false, items, left: 0 };
+	const next = [...items, id];
+	return { allowed: true, items: next, left: limit - next.length };
 }
 
 /** Does someone holding `held` pass `required`? Signed-in membership is checked by the caller. */
@@ -289,4 +357,61 @@ export function accountUrl(returnTo = "/"): string {
 
 export function signOutUrl(returnTo = "/"): string {
 	return `/_emdash/api/auth/redeemid/logout?return=${encodeURIComponent(safeReturn(returnTo))}`;
+}
+
+/**
+ * The entry's verdict with drip and the meter applied, for the entry's own
+ * page. Drip narrows a granted verdict; the meter opens a locked one for a
+ * signed-in reader while the period has room, and never opens a drip entry.
+ */
+export async function readEntry(
+	astro: AstroLike,
+	entry: { collection: string; terms?: Terms; id?: string },
+	override?: { required: string[][] },
+): Promise<Verdict> {
+	const verdict = await canRead(astro, entry, override);
+	const locals = astro.locals as Locals;
+	const config = siteConfig(locals.emdash?.config);
+	if (!config) return verdict;
+
+	if (verdict.allowed && verdict.reason === "allowed" && verdict.viewer.member) {
+		const tree = await termTree(config.rules, entry.collection, entry.terms);
+		const days = dripDays(config.rules, entry.collection, entry.terms, tree);
+		const opensAt = dripOpensAt(memberSince(verdict.viewer.member, config.levels), days);
+		if (days > 0 && (!opensAt || opensAt.getTime() > Date.now())) {
+			return { ...verdict, allowed: false, reason: "drip", opensAt: opensAt ?? undefined };
+		}
+		return verdict;
+	}
+
+	const meter = config.meter;
+	const user = locals.user;
+	const db = locals.emdash?.db;
+	if (
+		verdict.reason !== "upgrade" ||
+		!meter ||
+		!(meter.limit > 0) ||
+		!entry.id ||
+		!user?.id ||
+		!db ||
+		(meter.collections && !meter.collections.includes(entry.collection))
+	) {
+		return verdict;
+	}
+	if (!meterable(config.rules, entry.collection, entry.terms, await termTree(config.rules, entry.collection, entry.terms))) {
+		return verdict;
+	}
+	const period = meter.period ?? "month";
+	const key = `${user.id}:${periodKey(new Date(), period)}`;
+	try {
+		const s = stores(db);
+		const record = (await s.meter.get(key)) ?? { userId: user.id, period: periodKey(new Date(), period), items: [] };
+		const used = consume(record.items, `${entry.collection}:${entry.id}`, meter.limit);
+		const info = { limit: meter.limit, period };
+		if (!used.allowed) return { ...verdict, meterLeft: 0, meter: info };
+		if (used.items !== record.items) await s.meter.put(key, { ...record, items: used.items });
+		return { ...verdict, allowed: true, reason: "metered", meterLeft: used.left, meter: info };
+	} catch {
+		return verdict;
+	}
 }

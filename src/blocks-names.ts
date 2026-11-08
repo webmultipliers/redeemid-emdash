@@ -29,7 +29,7 @@ export function splitAtPaywall<T>(value: T[] | null | undefined): {
 type TextNode = { _type?: unknown; children?: Array<{ text?: unknown }> };
 
 /**
- * The text blocks within the first `words` words of a body, as on WordPress:
+ * The text blocks within the first `words` words of a body:
  * a block is never cut in half, so a block that would pass the count ends the
  * teaser. Images and custom blocks are left out. 0 gives nothing.
  */
