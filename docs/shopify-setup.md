@@ -1,10 +1,10 @@
 # Connect a store
 
-What to set up in Shopify, and on the site, to run RedeemID on an EmDash site. One store can serve a WordPress site and an EmDash site at the same time: each site gets its own Headless storefront for sign-in, and both receive webhooks.
+What to set up in Shopify, and on the site, to run RedeemID on an EmDash site. One store can serve several sites: each site gets its own Headless storefront for sign-in, and each receives webhooks.
 
 ## 1. Sign-in: a Headless storefront
 
-1. In Shopify admin, open **Sales channels → Headless** (add the channel if it isn't there) and **Create storefront**. Name it after the site, for example "EmDash demo".
+1. In Shopify admin, open **Sales channels → Headless** (add the channel if it isn't there) and **Create storefront**. Name it after the site.
 2. Open the storefront's **Customer Account API** settings.
 3. Pick a **Client type**. Both work, because sign-in runs on the server with PKCE either way:
    - **Confidential** gives a client secret, which the site sends with the token request.
@@ -27,7 +27,7 @@ RedeemID keeps tags and status current from webhooks. Point these topics at `htt
 
 `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`, `customers/redact`
 
-Subscribe them from the same Shopify app the WordPress site already uses (Dev Dashboard app with an Admin API token). Add the EmDash URL as extra subscriptions; the WordPress ones stay as they are. `customers/merge` needs the `read_customer_merge` scope. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
+Subscribe them from a Shopify app on the store (for example a Dev Dashboard app). If the app already sends webhooks to another site, add this URL as extra subscriptions. `customers/merge` needs the `read_customer_merge` scope. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
 
 ## 3. The site
 

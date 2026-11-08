@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"description": "Shopify customer accounts, member levels and paywalls for EmDash sites. Shopify runs commerce; EmDash runs content.",
 	"type": "module",
-	"license": "GPL-2.0-or-later",
+	"license": "MIT",
 	"author": "Vinny S. Green, LLC",
 	"homepage": "https://www.redeemid.com/",
 	"repository": {
