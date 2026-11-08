@@ -35,6 +35,8 @@ export default defineConfig({
 					levels: [
 						{ slug: "member", name: "Member", tags: ["member"] },
 						{ slug: "pro", name: "Pro", tags: ["pro"] },
+						// match: "all" needs every tag, e.g. both memberships:
+						{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" },
 					],
 					rules: [
 						{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },

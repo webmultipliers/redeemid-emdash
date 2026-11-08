@@ -41,6 +41,13 @@ describe("levels and rules", () => {
 		expect(levelsFor([], config.levels)).toEqual([]);
 	});
 
+	it("needs every tag for an all-of level", () => {
+		const levels = [{ slug: "premium", name: "Gold + Silver", tags: ["gold-member", "silver-member"], match: "all" as const }];
+		expect(levelsFor(["gold-member"], levels)).toEqual([]);
+		expect(levelsFor(["Silver-Member", "gold-member"], levels)).toEqual(["premium"]);
+		expect(levelsFor(["x"], [{ slug: "none", name: "None", tags: [], match: "all" }])).toEqual([]);
+	});
+
 	it("lets term rules beat collection rules and combines term rules", () => {
 		expect(requiredLevels(config.rules, "pages")).toBeNull();
 		expect(requiredLevels(config.rules, "posts")).toEqual([]);

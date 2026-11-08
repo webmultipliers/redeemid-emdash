@@ -46,7 +46,13 @@ export type Terms = Record<string, Array<{ slug: string } | string> | undefined>
 
 export function levelsFor(tags: string[], levels: LevelConfig[] = []): string[] {
 	const held = new Set(tags.map((t) => t.toLowerCase()));
-	return levels.filter((l) => l.tags.some((t) => held.has(t.toLowerCase()))).map((l) => l.slug);
+	return levels
+		.filter((l) => {
+			if (l.tags.length === 0) return false;
+			const has = (t: string) => held.has(t.toLowerCase());
+			return l.match === "all" ? l.tags.every(has) : l.tags.some(has);
+		})
+		.map((l) => l.slug);
 }
 
 /**
