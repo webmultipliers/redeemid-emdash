@@ -124,6 +124,12 @@ try {
 	const locked = await visitor.go("/posts/members-only");
 	check("members post is locked for visitors", locked.res.status === 200 && !locked.text.includes("MEMBER-BODY") && locked.text.includes('data-redeemid-reason="sign_in"'));
 	check("locked page shows the excerpt teaser", locked.text.includes("Open to every member level."));
+	check("badge names the levels and shows the lock", /class="redeemid-badge is-locked"[^>]*data-redeemid-level="member pro"/.test(locked.text) && locked.text.includes("Member or Pro"), (locked.text.match(/<span class="redeemid-badge[^]*?<\/span>\s*<\/span>|<span class="redeemid-badge[^>]*>[^<]*/) ?? [""])[0]);
+	const openBadge = await visitor.go("/posts/welcome");
+	check("open post's badge reads Free", /class="redeemid-badge"[^>]*data-redeemid-level="free"[^>]*>\s*Free/.test(openBadge.text));
+	const both = await visitor.go("/posts/both-rules");
+	check("word-count teaser shows the paragraphs within 5 words", both.text.includes("TEASE-OPEN") && !both.text.includes("BOTH-BODY"));
+	check("teaser leaves out a longer first paragraph", !locked.text.includes("MEMBER-BODY"));
 	check("visitor page stays cacheable", !/private/.test(locked.res.headers.get("cache-control") ?? ""), locked.res.headers.get("cache-control"));
 
 	// Member signs in through the store and comes back to the post.
@@ -145,6 +151,10 @@ try {
 	check("staff still use the content API", staffApi.res.status === 200, String(staffApi.res.status));
 	const pro = await member.go("/posts/pro-only");
 	check("Pro post asks a member to upgrade", !pro.text.includes("PRO-BODY") && pro.text.includes('data-redeemid-reason="upgrade"'));
+	const bothMember = await member.go("/posts/both-rules");
+	check("two term rules both apply (Member can't read a Members + Pro post)", !bothMember.text.includes("BOTH-BODY") && bothMember.text.includes('data-redeemid-reason="upgrade"'));
+	const insiderMember = await member.go("/posts/insider");
+	check("a child term takes its parent's rule (Insider needs Pro)", !insiderMember.text.includes("INSIDER-BODY") && insiderMember.text.includes('data-redeemid-reason="upgrade"'));
 
 	// One body with a Paywall break block (levels: Pro): the opening is open, the rest isn't.
 	const breakVisitor = await visitor.go("/posts/paywall-break");
@@ -234,6 +244,8 @@ try {
 	check("Pro post opens after the tag webhook", proNow.text.includes("PRO-BODY"));
 	const breakPro = await member.go("/posts/paywall-break");
 	check("paywall break opens for Pro", breakPro.text.includes("OPEN-INTRO") && breakPro.text.includes("BREAK-BODY"));
+	check("Members + Pro post opens for a member with both", (await member.go("/posts/both-rules")).text.includes("BOTH-BODY"));
+	check("child term post opens for Pro", (await member.go("/posts/insider")).text.includes("INSIDER-BODY"));
 
 	// Shopify turns the account off, then on again.
 	await webhook("customers/disable", { id: shop.customer.id, updated_at: "2026-11-08T10:00:00Z" });

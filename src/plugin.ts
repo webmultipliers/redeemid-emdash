@@ -23,7 +23,7 @@
 import type { ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
-import { levelsFor } from "./access.js";
+import { describe, levelsFor } from "./access.js";
 import { env, ENV, storeDomain, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord } from "./storage.js";
@@ -255,10 +255,13 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 							{ key: "levels", label: "Who can read" },
 						],
 						rows: rules.map((r) => ({
-							where: r.taxonomy && r.term ? `${r.collection}, ${r.taxonomy}: ${r.term}` : `All ${r.collection}`,
-							levels: r.levels.length
-								? r.levels.map((s) => levels.find((l) => l.slug === s)?.name ?? s).join(" or ")
-								: "Any signed-in member",
+							where:
+								r.taxonomy && r.term
+									? `${r.collection === "*" ? "Every collection" : r.collection}, ${r.taxonomy}: ${r.term} (and its child terms)`
+									: r.collection === "*"
+										? "Site default (collections with no rule)"
+										: `All ${r.collection}`,
+							levels: r.open ? "Everyone (opens the entry)" : r.levels.length ? describe([r.levels], levels) : "Any signed-in member",
 						})),
 					}
 				: { type: "context", text: "No rules. Entries are open unless their body has a paywall break." },

@@ -34,15 +34,27 @@ export interface Viewer {
 
 export type Reason = "open" | "allowed" | "sign_in" | "upgrade" | "disabled" | "unconfigured";
 
+/**
+ * What an entry needs, in conjunctive form: every clause must pass, and a
+ * clause passes when the reader holds any of its levels. An empty clause means
+ * any signed-in member. `null` means the entry is open to everyone.
+ */
+export type Requirement = string[][] | null;
+
 export interface Verdict {
 	allowed: boolean;
 	reason: Reason;
-	/** Levels any of which would unlock the entry. Empty = any signed-in member. */
-	required: string[];
+	/** What the entry needs (see Requirement). `[]` when it is open. */
+	required: string[][];
 	viewer: Viewer;
 }
 
-export type Terms = Record<string, Array<{ slug: string } | string> | undefined>;
+/** A term as EmDash hydrates it onto an entry, or just its slug. */
+export type TermRef = { slug: string; id?: string; parentId?: string | null } | string;
+export type Terms = Record<string, TermRef[] | undefined>;
+
+/** Parent slug by term slug, per taxonomy, for walking up a hierarchy. */
+export type TermTree = Record<string, Record<string, string | null>>;
 
 export function levelsFor(tags: string[], levels: LevelConfig[] = []): string[] {
 	const held = new Set(tags.map((t) => t.toLowerCase()));
@@ -55,22 +67,135 @@ export function levelsFor(tags: string[], levels: LevelConfig[] = []): string[] 
 		.map((l) => l.slug);
 }
 
+const slugOf = (t: TermRef) => (typeof t === "string" ? t : t.slug);
+
 /**
- * Required levels for an entry, or null when no rule covers it.
- * Term rules beat collection rules; several matching term rules combine.
+ * The clauses, simplified: duplicates go, a clause that contains another
+ * clause goes (needing Pro already passes "Member or Pro"), and an empty
+ * clause goes when a level clause is there (any level implies signed in).
  */
-export function requiredLevels(rules: RuleConfig[] = [], collection: string, terms: Terms = {}): string[] | null {
+function reduce(clauses: string[][]): string[][] {
+	const seen = new Set<string>();
+	const out: string[][] = [];
+	for (const c of clauses) {
+		const sorted = [...new Set(c)].sort();
+		const key = sorted.join("|");
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(sorted);
+	}
+	const levelled = out.filter((c) => c.length > 0);
+	if (levelled.length === 0) return out;
+	return levelled.filter((c) => !levelled.some((o) => o !== c && o.length < c.length && o.every((l) => c.includes(l))));
+}
+
+function combined(rules: RuleConfig[], mode: "all" | "any"): string[][] {
+	if (mode === "any") {
+		return rules.some((r) => r.levels.length === 0) ? [[]] : [[...new Set(rules.flatMap((r) => r.levels))]];
+	}
+	return reduce(rules.map((r) => r.levels));
+}
+
+/**
+ * What an entry needs (see Requirement), from the site's rules.
+ *
+ * Each term the entry carries is walked up its taxonomy (with `tree`) to the
+ * nearest term that has a rule, so a child term takes its parent's rule unless
+ * it has its own. Any matching `open` rule opens the entry.
+ */
+export function requirement(
+	rules: RuleConfig[] = [],
+	collection: string,
+	terms: Terms = {},
+	options: { combine?: "all" | "any"; tree?: TermTree } = {},
+): Requirement {
+	const mode = options.combine ?? "all";
 	const forCollection = rules.filter((r) => r.collection === collection);
-	const termRules = forCollection.filter((r) => {
-		if (!r.taxonomy || !r.term) return false;
-		const list = terms[r.taxonomy] ?? [];
-		return list.some((t) => (typeof t === "string" ? t : t.slug) === r.term);
+	const matched: RuleConfig[] = [];
+	for (const [taxonomy, list] of Object.entries(terms)) {
+		const taxRules = forCollection.filter((r) => r.taxonomy === taxonomy && r.term);
+		if (taxRules.length === 0) continue;
+		const parents = options.tree?.[taxonomy] ?? {};
+		for (const ref of list ?? []) {
+			let slug: string | null = slugOf(ref);
+			const seen = new Set<string>();
+			while (slug && !seen.has(slug)) {
+				seen.add(slug);
+				const own = taxRules.filter((r) => r.term === slug);
+				if (own.length > 0) {
+					matched.push(...own);
+					break;
+				}
+				slug = parents[slug] ?? null;
+			}
+		}
+	}
+	if (matched.some((r) => r.open)) return null;
+	if (matched.length > 0) return combined(matched, mode);
+	const whole = forCollection.filter((r) => !r.taxonomy && !r.term && !r.open);
+	if (whole.length > 0) return combined(whole, mode);
+	const site = rules.filter((r) => r.collection === "*" && !r.taxonomy && !r.term && !r.open);
+	if (site.length > 0) return combined(site, mode);
+	return null;
+}
+
+/** Does someone holding `held` pass `required`? Signed-in membership is checked by the caller. */
+export function passes(held: string[], required: string[][]): boolean {
+	return required.every((clause) => clause.length === 0 || clause.some((l) => held.includes(l)));
+}
+
+/**
+ * The requirement in words, for badges and admin pages: "Gold + Silver",
+ * "Silver or Gold", "Members". `null` gives `open`.
+ */
+export function describe(required: Requirement, levels: LevelConfig[] = [], open = "Free"): string {
+	if (required === null) return open;
+	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
+	const parts = required.filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
+	return parts.length ? parts.join(" + ") : "Members";
+}
+
+/**
+ * Parent slugs for the taxonomies whose rules could cover an entry through a
+ * parent term. Reads EmDash's term lists (cached by EmDash) only when a term
+ * on the entry has no rule of its own.
+ */
+export async function termTree(rules: RuleConfig[] = [], collection: string, terms: Terms = {}): Promise<TermTree> {
+	const tree: TermTree = {};
+	const forCollection = rules.filter((r) => r.collection === collection && r.taxonomy && r.term);
+	const wanted = Object.entries(terms).filter(([taxonomy, list]) => {
+		const own = new Set(forCollection.filter((r) => r.taxonomy === taxonomy).map((r) => r.term));
+		return own.size > 0 && (list ?? []).some((t) => !own.has(slugOf(t)));
 	});
-	const chosen = termRules.length > 0 ? termRules : forCollection.filter((r) => !r.taxonomy && !r.term);
-	if (chosen.length === 0) return null;
-	// Any rule that admits every member wins.
-	if (chosen.some((r) => r.levels.length === 0)) return [];
-	return [...new Set(chosen.flatMap((r) => r.levels))];
+	if (wanted.length === 0) return tree;
+	try {
+		const { getTaxonomyTerms } = await import("emdash");
+		for (const [taxonomy] of wanted) {
+			type Node = { id: string; slug: string; parentId?: string | null; children?: Node[] };
+			const flat: Node[] = [];
+			const walk = (list: Node[]) => list.forEach((n) => (flat.push(n), walk(n.children ?? [])));
+			walk((await getTaxonomyTerms(taxonomy)) as Node[]);
+			const byId = new Map(flat.map((n) => [n.id, n.slug]));
+			const byGroup = new Map(flat.map((n) => [(n as { translationGroup?: string | null }).translationGroup ?? n.id, n.slug]));
+			tree[taxonomy] = Object.fromEntries(
+				flat.map((n) => [n.slug, n.parentId ? (byId.get(n.parentId) ?? byGroup.get(n.parentId) ?? null) : null]),
+			);
+		}
+	} catch {
+		// No term lists (outside an EmDash request): only direct term rules apply.
+	}
+	return tree;
+}
+
+/** The entry's requirement with the site's config, walking term parents. */
+export async function entryRequirement(
+	config: RedeemIDConfig | null,
+	collection: string,
+	terms: Terms = {},
+): Promise<Requirement> {
+	if (!config) return null;
+	const tree = await termTree(config.rules, collection, terms);
+	return requirement(config.rules, collection, terms, { combine: config.combine, tree });
 }
 
 export async function viewer(astro: AstroLike): Promise<Viewer> {
@@ -90,14 +215,22 @@ export async function viewer(astro: AstroLike): Promise<Viewer> {
 	return { signedIn: true, member, levels };
 }
 
+/**
+ * May this visitor read the entry? `override` replaces the entry's rule, for a
+ * part of a page locked to its own levels (a paywall break with levels).
+ */
 export async function canRead(
 	astro: AstroLike,
 	entry: { collection: string; terms?: Terms },
-	override?: { levels: string[] },
+	override?: { levels: string[] } | { required: string[][] },
 ): Promise<Verdict> {
 	const locals = astro.locals as Locals;
 	const config: RedeemIDConfig | null = siteConfig(locals.emdash?.config);
-	const required = override ? override.levels : requiredLevels(config?.rules, entry.collection, entry.terms);
+	const required: Requirement = override
+		? "required" in override
+			? override.required
+			: [override.levels]
+		: await entryRequirement(config, entry.collection, entry.terms);
 	const v = await viewer(astro);
 
 	if (required === null) return { allowed: true, reason: "open", required: [], viewer: v };
@@ -105,7 +238,7 @@ export async function canRead(
 	if (!v.signedIn) return { allowed: false, reason: "sign_in", required, viewer: v };
 	if (v.member?.status === "disabled") return { allowed: false, reason: "disabled", required, viewer: v };
 	if (!v.member) return { allowed: false, reason: "upgrade", required, viewer: v };
-	const ok = required.length === 0 || required.some((l) => v.levels.includes(l));
+	const ok = passes(v.levels, required);
 	return { allowed: ok, reason: ok ? "allowed" : "upgrade", required, viewer: v };
 }
 

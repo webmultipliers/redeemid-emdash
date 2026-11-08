@@ -22,3 +22,25 @@ export function splitAtPaywall<T>(value: T[] | null | undefined): {
 	const levels = Array.isArray(raw) ? raw.filter((l): l is string => typeof l === "string" && l !== "") : [];
 	return { open: blocks.slice(0, at), locked: blocks.slice(at + 1), levels, paywall: true };
 }
+
+type TextNode = { _type?: unknown; children?: Array<{ text?: unknown }> };
+
+/**
+ * The text blocks within the first `words` words of a body, as on WordPress:
+ * a block is never cut in half, so a block that would pass the count ends the
+ * teaser. Images and custom blocks are left out. 0 gives nothing.
+ */
+export function teaser<T>(value: T[] | null | undefined, words: number): T[] {
+	if (!Array.isArray(value) || !(words > 0)) return [];
+	const out: T[] = [];
+	let count = 0;
+	for (const b of value) {
+		const node = b as TextNode;
+		if (node?._type !== "block") continue;
+		const text = (node.children ?? []).map((c) => (typeof c.text === "string" ? c.text : "")).join("");
+		count += text.split(/\s+/).filter(Boolean).length;
+		if (count > words) break;
+		out.push(b);
+	}
+	return out;
+}

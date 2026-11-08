@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("emdash/api/route-utils", () => ({ getAuthProviderStorage: () => store.stores }));
 vi.mock("virtual:emdash/config", () => ({ default: {} }));
 
-import { canRead, levelsFor, requiredLevels, safeReturn } from "../src/access.js";
+import { canRead, describe as wording, levelsFor, passes, requirement, safeReturn } from "../src/access.js";
 import type { RedeemIDConfig } from "../src/config.js";
 import { emptyMember } from "../src/storage.js";
 import { memoryStores } from "./memory-store.js";
@@ -48,13 +48,69 @@ describe("levels and rules", () => {
 		expect(levelsFor(["x"], [{ slug: "none", name: "None", tags: [], match: "all" }])).toEqual([]);
 	});
 
-	it("lets term rules beat collection rules and combines term rules", () => {
-		expect(requiredLevels(config.rules, "pages")).toBeNull();
-		expect(requiredLevels(config.rules, "posts")).toEqual([]);
-		expect(requiredLevels(config.rules, "posts", { category: [{ slug: "pro" }] })).toEqual(["pro"]);
-		expect(requiredLevels(config.rules, "guides", { tag: ["a", "b"] })).toEqual(["member", "pro"]);
-		expect(requiredLevels(config.rules, "guides", { tag: ["c"] })).toBeNull();
-		expect(requiredLevels(config.rules, "posts", { category: [{ slug: "pro" }, { slug: "open-house" }] })).toEqual([]);
+	it("lets term rules beat collection rules", () => {
+		expect(requirement(config.rules, "pages")).toBeNull();
+		expect(requirement(config.rules, "posts")).toEqual([[]]);
+		expect(requirement(config.rules, "posts", { category: [{ slug: "pro" }] })).toEqual([["pro"]]);
+		expect(requirement(config.rules, "guides", { tag: ["c"] })).toBeNull();
+	});
+
+	it("needs every matching term rule by default (most restrictive), like WordPress", () => {
+		expect(requirement(config.rules, "guides", { tag: ["a", "b"] })).toEqual([["member"], ["pro"]]);
+		// An any-member rule adds nothing next to a level rule.
+		expect(requirement(config.rules, "posts", { category: [{ slug: "pro" }, { slug: "open-house" }] })).toEqual([["pro"]]);
+		expect(passes(["pro"], [["member"], ["pro"]])).toBe(false);
+		expect(passes(["member", "pro"], [["member"], ["pro"]])).toBe(true);
+		expect(passes([], [[]])).toBe(true);
+		// Needing Pro already covers "Member or Pro".
+		const both = [
+			{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
+			{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
+		];
+		expect(requirement(both, "posts", { category: ["members", "pro"] })).toEqual([["pro"]]);
+	});
+
+	it("passes one of them with combine: any", () => {
+		const any = { combine: "any" as const };
+		expect(requirement(config.rules, "guides", { tag: ["a", "b"] }, any)).toEqual([["member", "pro"]]);
+		expect(requirement(config.rules, "posts", { category: ["pro", "open-house"] }, any)).toEqual([[]]);
+	});
+
+	it("walks up to the nearest parent term with a rule", () => {
+		const rules = [
+			{ collection: "reports", levels: ["member"] },
+			{ collection: "reports", taxonomy: "series", term: "money", levels: ["pro"] },
+			{ collection: "reports", taxonomy: "series", term: "pensions", levels: ["member"] },
+		];
+		const tree = { series: { money: null, budgets: "money", pensions: "money", deep: "budgets" } };
+		expect(requirement(rules, "reports", { series: ["budgets"] }, { tree })).toEqual([["pro"]]);
+		expect(requirement(rules, "reports", { series: ["deep"] }, { tree })).toEqual([["pro"]]);
+		// A child's own rule beats its parent's.
+		expect(requirement(rules, "reports", { series: ["pensions"] }, { tree })).toEqual([["member"]]);
+		// Without the tree, only direct rules count.
+		expect(requirement(rules, "reports", { series: ["budgets"] })).toEqual([["member"]]);
+		// A loop in the tree ends.
+		expect(requirement(rules, "reports", { series: ["x"] }, { tree: { series: { x: "y", y: "x" } } })).toEqual([["member"]]);
+	});
+
+	it("opens entries with an open term rule and falls back to the site default", () => {
+		const rules = [
+			{ collection: "*", levels: [] },
+			{ collection: "posts", taxonomy: "category", term: "investigations", levels: ["pro"] },
+			{ collection: "posts", taxonomy: "tag", term: "free-to-read", levels: [], open: true },
+			{ collection: "corrections", taxonomy: "tag", term: "x", levels: ["pro"] },
+		];
+		expect(requirement(rules, "posts", { category: ["investigations"], tag: ["free-to-read"] })).toBeNull();
+		expect(requirement(rules, "posts", { category: ["investigations"] })).toEqual([["pro"]]);
+		expect(requirement(rules, "pages")).toEqual([[]]);
+		expect(requirement(rules, "corrections")).toEqual([[]]);
+	});
+
+	it("words a requirement", () => {
+		expect(wording(null, config.levels)).toBe("Free");
+		expect(wording([[]], config.levels)).toBe("Members");
+		expect(wording([["member", "pro"]], config.levels)).toBe("Member or Pro");
+		expect(wording([["member"], ["pro"]], config.levels)).toBe("Member + Pro");
 	});
 
 	it("only returns same-site paths", () => {
@@ -76,7 +132,7 @@ describe("canRead", () => {
 		expect((await canRead(a, { collection: "posts" })).allowed).toBe(true);
 		expect(a.response.headers.get("cache-control")).toBe("private, no-store");
 		const pro = await canRead(a, { collection: "posts", terms: { category: [{ slug: "pro" }] } });
-		expect(pro).toMatchObject({ allowed: false, reason: "upgrade", required: ["pro"] });
+		expect(pro).toMatchObject({ allowed: false, reason: "upgrade", required: [["pro"]] });
 	});
 
 	it("treats a signed-in user with no linked customer as having no levels", async () => {

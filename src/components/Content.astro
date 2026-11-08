@@ -8,12 +8,13 @@
  * What follows reaches the page only for readers who may read it: the levels
  * picked on the break, or when none are picked the entry's rule, or else any
  * signed-in member. Others get the "locked" slot (or a built-in notice).
- * A body with no break follows the entry's rule as a whole.
+ * A body with no break follows the entry's rule as a whole; readers who can't
+ * read it see the collection's teaser (config `teaser`, in words), if any.
  */
 import { PortableText } from "emdash/ui";
 
-import { canRead, requiredLevels, signInUrl, type Terms } from "../access.js";
-import { splitAtPaywall } from "../blocks-names.js";
+import { canRead, entryRequirement, signInUrl, type Terms } from "../access.js";
+import { splitAtPaywall, teaser } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 
 interface Props {
@@ -25,13 +26,14 @@ interface Props {
 const { value, collection = "", terms } = Astro.props;
 const split = splitAtPaywall(value);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
-const levels = split.paywall
+const required = split.paywall
 	? split.levels.length
-		? split.levels
-		: (requiredLevels(config?.rules, collection, terms) ?? [])
+		? [split.levels]
+		: ((await entryRequirement(config, collection, terms)) ?? [[]])
 	: undefined;
-const verdict = await canRead(Astro, { collection, terms }, levels ? { levels } : undefined);
-const shown = split.paywall ? split.open : verdict.allowed ? split.open : [];
+const verdict = await canRead(Astro, { collection, terms }, required ? { required } : undefined);
+const words = config?.teaser?.[collection] ?? 0;
+const shown = split.paywall ? split.open : verdict.allowed ? split.open : teaser(split.open, words);
 const here = Astro.url.pathname + Astro.url.search;
 ---
 

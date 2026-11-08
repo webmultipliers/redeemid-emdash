@@ -2,14 +2,15 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.3, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.4, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
 - **Sign in with the store's customer account.** Members click "Sign in" on your site, sign in on the store's account page and come back signed in. They become EmDash Subscribers. That role only means "signed in"; it never grants content.
 - **Mirrors the customer.** Email, name, tags and enabled/disabled status, kept current by signed Shopify webhooks.
 - **Levels from tags.** You map Shopify customer tags to levels. Set tags in Shopify Flow or any app; RedeemID only reads them.
-- **Rules per collection or term.** Lock a collection, or only entries in a category or tag.
+- **Rules like RedeemID's on WordPress.** Lock a collection, entries with a term (and its child terms), or set a site default; a term can also open its entries to everyone. When several term rules cover an entry, readers must pass all of them.
+- **Teasers and badges.** Locked entries can show their first paragraphs, up to a word count. `<AccessBadge>` names the level an entry needs and shows a lock to readers it keeps out.
 - **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
 - **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on. `<Content>` renders the body and leaves the rest off the page for everyone else.
@@ -41,6 +42,8 @@ const config = {
 		{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
 		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
 	],
+	// Optional: locked posts with no paywall break show the paragraphs within their first 40 words.
+	teaser: { posts: 40 },
 };
 
 export default defineConfig({
@@ -76,6 +79,19 @@ In Shopify, give the Customer Account API client these settings:
 
 Point webhooks (`customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`, `customers/redact`) at `https://your-site.example/_emdash/api/auth/redeemid/webhook`.
 
+### Rules
+
+Each rule names a collection and the levels, any of which may read. An empty `levels` list means any signed-in member.
+
+| Rule | Covers |
+| --- | --- |
+| `{ collection: "reports", levels: ["gold"] }` | Every entry in the collection |
+| `{ collection: "posts", taxonomy: "category", term: "investigations", levels: ["gold"] }` | Entries with that term, or with a child of it in a hierarchical taxonomy. A child's own rule wins over its parent's. |
+| `{ collection: "posts", taxonomy: "tag", term: "free-to-read", levels: [], open: true }` | Opens entries with that term to everyone, whatever else covers them |
+| `{ collection: "*", levels: [] }` | The site default, for collections with no rule of their own |
+
+Term rules beat the collection's rule, which beats the site default. When several term rules cover one entry (a story in Investigations, Gold, and Culture, Silver), readers must pass every one of them, so only Gold + Silver members read it. Set `combine: "any"` to let one of them be enough.
+
 ## Use it in templates
 
 EmDash has no content filter hook, so templates decide what to render. Render the entry body with `<Content>` instead of `<PortableText>`:
@@ -89,9 +105,20 @@ import Content from "@redeemid/emdash/components/Content.astro";
 </Content>
 ```
 
-Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it, or when none are picked the entry's rule, or else any signed-in member. A body with no break follows the entry's rule as a whole. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
+Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it, or when none are picked the entry's rule, or else any signed-in member. A body with no break follows the entry's rule as a whole; readers it keeps out see the collection's `teaser` (the paragraphs within that many words, never half a paragraph), if one is set. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
 
 To lock a part of a template that isn't the body, wrap it in `<Gate>` (`<Gate levels={["pro"]}>…</Gate>`).
+
+Show what an entry needs with `<AccessBadge>`, on cards and on the entry. It reads the entry's rules (and a paywall break's levels when you pass `content`), shows "Free" for open entries (`free=""` hides it), and adds `is-locked` and a lock for readers it keeps out. `data-redeemid-level` holds the level slugs, for colours:
+
+```astro
+---
+import AccessBadge from "@redeemid/emdash/components/AccessBadge.astro";
+---
+<AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} />
+```
+
+In your own code (`@redeemid/emdash/access`), `entryRequirement(config, collection, terms)` gives what an entry needs (a list of clauses, each passed by any of its levels, or `null` when open), and `canRead(Astro, entry)` gives the verdict for the visitor.
 
 Add the account box and cart to your header. Visitors see Sign in; members see their name, levels, Account and Sign out. The cart shows how many items are in the visitor's Shopify cart and goes to its checkout:
 

@@ -18,18 +18,32 @@ export interface LevelConfig {
 }
 
 /**
- * Who may read entries. A rule with `term` applies to entries that carry that
- * term; a rule without one applies to the whole collection. Term rules win
- * over collection rules for the same entry.
+ * Who may read entries, like RedeemID's content rules on WordPress:
+ *
+ * - A rule with `taxonomy` and `term` covers entries that carry that term, or
+ *   a child of it in a hierarchical taxonomy (a child's own rule wins over its
+ *   parent's).
+ * - A rule with neither covers the whole collection.
+ * - `collection: "*"` is the site default, for collections with no rule.
+ *
+ * Term rules beat the collection rule, which beats the site default. When
+ * several term rules cover one entry, a reader must pass every one of them
+ * (most restrictive), unless `combine` is "any".
  */
 export interface RuleConfig {
+	/** Collection slug, or "*" for the site default. */
 	collection: string;
 	/** Taxonomy slug, e.g. "category". Requires `term`. */
 	taxonomy?: string;
 	/** Term slug, e.g. "premium". */
 	term?: string;
-	/** Level slugs that may read. An empty list means signed-in members of any level. */
+	/** Level slugs, any of which may read. An empty list means any signed-in member. */
 	levels: string[];
+	/**
+	 * A term rule that opens its entries to everyone, whatever else covers them
+	 * ("Opens" on WordPress). `levels` is ignored.
+	 */
+	open?: boolean;
 }
 
 export interface RedeemIDConfig {
@@ -43,6 +57,17 @@ export interface RedeemIDConfig {
 	label?: string;
 	levels?: LevelConfig[];
 	rules?: RuleConfig[];
+	/**
+	 * How several term rules on one entry combine: "all" (default, the most
+	 * restrictive: pass every rule) or "any" (pass one of them).
+	 */
+	combine?: "all" | "any";
+	/**
+	 * Teaser length in words, per collection, for locked entries with no paywall
+	 * break: readers who can't read on see this many words of the body. Without
+	 * one they see none of it.
+	 */
+	teaser?: Record<string, number>;
 	/**
 	 * Extra /_emdash path prefixes signed-in members may use. Everything else
 	 * under /_emdash is refused to Subscribers (see guard.ts).
