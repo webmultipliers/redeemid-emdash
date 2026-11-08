@@ -140,4 +140,4 @@ Releases: bump `version` in package.json and merge to main. The Release workflow
 
 ## License
 
-GPL-2.0-or-later.
+MIT, the same as EmDash.
