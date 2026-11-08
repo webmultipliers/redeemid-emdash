@@ -34,9 +34,17 @@ import { stores, type MemberRecord } from "./storage.js";
 import { PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 
-import { MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK } from "./blocks-names.js";
+import {
+	COLLECTION_BLOCK,
+	CONTRIBUTION_BLOCK,
+	MEMBERS_BLOCK,
+	MEMBERS_END_BLOCK,
+	PAYWALL_BLOCK,
+	PLAN_BLOCK,
+	PRODUCT_BLOCK,
+} from "./blocks-names.js";
 
-export { MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK };
+export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PRODUCT_BLOCK };
 
 function blocks(config: RedeemIDConfig) {
 	const levelOptions = [
@@ -95,6 +103,39 @@ function blocks(config: RedeemIDConfig) {
 					label: "Levels this plan gives (members on them see \"You're on this plan\")",
 					options: (config.levels ?? []).map((l) => ({ label: l.name, value: l.slug })),
 				},
+			],
+		},
+		{
+			type: PRODUCT_BLOCK,
+			label: "Product",
+			icon: "tag",
+			description: "A Shopify product with Add to cart and Buy now",
+			placeholder: "Shopify product handle",
+			fields: [{ type: "text_input" as const, action_id: "handle", label: "Shopify product handle", placeholder: "harbor-tote" }],
+		},
+		{
+			type: COLLECTION_BLOCK,
+			label: "Collection",
+			icon: "grid",
+			description: "A Shopify collection's products as cards",
+			placeholder: "Shopify collection handle",
+			fields: [
+				{ type: "text_input" as const, action_id: "handle", label: "Shopify collection handle", placeholder: "shop" },
+				{ type: "text_input" as const, action_id: "limit", label: "How many products (up to 50)", placeholder: "12" },
+				{ type: "text_input" as const, action_id: "link", label: "Product page link, with {handle}", placeholder: "/shop/{handle}/" },
+			],
+		},
+		{
+			type: CONTRIBUTION_BLOCK,
+			label: "Contribution",
+			icon: "star",
+			description: "Pay what you want, with a Shopify product priced at 1.00",
+			placeholder: "Shopify product handle",
+			fields: [
+				{ type: "text_input" as const, action_id: "handle", label: "Shopify product handle (priced at 1.00)", placeholder: "support" },
+				{ type: "text_input" as const, action_id: "title", label: "Title (optional, Shopify's title otherwise)" },
+				{ type: "text_input" as const, action_id: "amounts", label: "Suggested amounts, comma separated", placeholder: "5, 10, 25" },
+				{ type: "text_input" as const, action_id: "label", label: "Button label", placeholder: "Give" },
 			],
 		},
 	];

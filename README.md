@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.7, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.8, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -19,6 +19,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Members only block.** For a members part in the middle of a body: "Members only" (pick the levels) and "Members only: end". Everyone else sees the wall in its place and reads on after it.
 - **The wall.** Readers kept out see why and what to do next: sign in, or join, with each level's own wall text. `<Notices>` shows the messages sign-in, Buy, Cart and Account send readers back with.
 - **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
+- **Shop.** `<Product>`, `<Collection>` and `<CartView>` (with the Product and Collection blocks) give the site product pages, collection grids and a cart page with quantities and discount codes. `<Contribution>` (and its block) takes pay-what-you-want amounts. Carts note the page each sale started on.
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels), a Status page (secrets, store discovery, the URLs to give Shopify, levels and rules) and a dashboard widget.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
@@ -167,6 +168,34 @@ import Plan from "@redeemid/emdash/components/Plan.astro";
 	<p>Shown if the product can't be loaded.</p>
 </Plan>
 ```
+
+### Shop
+
+Products, collections and the cart come from the Storefront API; Shopify works out prices, discounts, taxes and stock.
+
+```astro
+---
+import Product from "@redeemid/emdash/components/Product.astro";
+import Collection from "@redeemid/emdash/components/Collection.astro";
+import CartView from "@redeemid/emdash/components/CartView.astro";
+import Contribution from "@redeemid/emdash/components/Contribution.astro";
+---
+<!-- /shop/ -->
+<Collection handle="shop" productHref="/shop/{handle}/" showTitle />
+<!-- /shop/[handle]/ -->
+<Product handle={Astro.params.handle} heading="h1"><p>No such product.</p></Product>
+<!-- /cart/ -->
+<CartView productHref="/shop/{handle}/" />
+<!-- anywhere -->
+<Contribution handle="support" amounts={[5, 10, 25]} />
+```
+
+- `<Product>`: image, title, price, description, the variants (sold-out ones shown but not choosable), a quantity, Add to cart (back to the page with the `cart_added` notice) and Buy now (straight to checkout).
+- `<Collection>`: the collection's products (`limit`, up to 50) as cards linking to `productHref`.
+- `<CartView>`: each line with its price, a quantity to change (0 removes it) and Remove, a discount code field, the subtotal and total, and Checkout. Pages with it are sent `Cache-Control: private, no-store`.
+- `<Contribution>`: pay what you want. Make a Shopify product priced at 1.00; the amount the reader picks becomes the quantity, so Shopify charges exactly that.
+
+The forms post to `/_emdash/api/auth/redeemid/cart-edit`, which reads every product and variant from Shopify again and only changes lines in the visitor's own cart. A new cart carries the `_redeemid_page` attribute (the page the first item was added on), which shows on the order in Shopify admin; Shopify hides attributes starting with `_` at checkout. Editors get the same with the Product, Collection and Contribution blocks.
 
 Or ask directly:
 

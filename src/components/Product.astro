@@ -1,0 +1,78 @@
+---
+/**
+ * A Shopify product: image, title, price, description, a variant choice
+ * when it has several, a quantity, and "Add to cart" and "Buy now".
+ * Everything comes from the Storefront API; the default slot shows if the
+ * product can't be loaded.
+ *
+ *   <Product handle="harbor-tote" />
+ */
+import { siteConfig } from "../site-config.js";
+import { money, product as loadProduct, type Product } from "../storefront.js";
+
+interface Props {
+	handle: string;
+	/** Heading level for the title. */
+	heading?: "h1" | "h2" | "h3";
+	/** Leave out the description (for cards). */
+	compact?: boolean;
+	addLabel?: string;
+	buyLabel?: string;
+}
+
+const { handle, heading = "h2", compact = false, addLabel = "Add to cart", buyLabel = "Buy now" } = Astro.props;
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+let p: Product | null = null;
+if (config) {
+	try {
+		p = await loadProduct(config, handle);
+	} catch {
+		p = null;
+	}
+}
+const available = p?.variants.filter((v) => v.availableForSale) ?? [];
+const first = available[0] ?? p?.variants[0];
+const here = Astro.url.pathname + Astro.url.search;
+const Heading = heading;
+const id = `redeemid-product-${handle}`;
+---
+
+{p ? (
+	<div class="redeemid-product" data-redeemid-product={p.handle}>
+		{p.image && <img class="redeemid-product__image" src={p.image.url} alt={p.image.altText ?? ""} loading="lazy" />}
+		<Heading class="redeemid-product__title">{p.title}</Heading>
+		{first && <p class="redeemid-product__price">{money(first.price)}</p>}
+		{!compact && p.description && <p class="redeemid-product__description">{p.description}</p>}
+		{available.length > 0 ? (
+			<form method="post" action="/_emdash/api/auth/redeemid/cart-edit">
+				<input type="hidden" name="action" value="add" />
+				<input type="hidden" name="product" value={p.handle} />
+				<input type="hidden" name="return" value={here} />
+				{p.variants.length > 1 ? (
+					<p>
+						<label for={`${id}-variant`}>Option</label>
+						<select id={`${id}-variant`} name="variant">
+							{p.variants.map((v) => (
+								<option value={v.id} disabled={!v.availableForSale}>
+									{v.title} ({money(v.price)}){!v.availableForSale && " sold out"}
+								</option>
+							))}
+						</select>
+					</p>
+				) : (
+					<input type="hidden" name="variant" value={first?.id} />
+				)}
+				<p>
+					<label for={`${id}-quantity`}>Quantity</label>
+					<input id={`${id}-quantity`} name="quantity" type="number" min="1" max="1000" value="1" inputmode="numeric" />
+				</p>
+				<button type="submit" name="then" value="back">{addLabel}</button>
+				<button type="submit" name="then" value="checkout">{buyLabel}</button>
+			</form>
+		) : (
+			<p class="redeemid-product__unavailable">Sold out.</p>
+		)}
+	</div>
+) : (
+	<slot />
+)}

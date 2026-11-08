@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { checkoutUrl, plan, resetStorefrontCache } from "../src/storefront.js";
+import { addToCart, checkoutUrl, collection, money, plan, product as loadProduct, resetStorefrontCache } from "../src/storefront.js";
 
 afterEach(() => {
 	resetStorefrontCache();
@@ -71,5 +71,32 @@ describe("Storefront API", () => {
 	it("surfaces cart errors", async () => {
 		const { fetcher } = fake({ cartCreate: { cart: null, userErrors: [{ message: "Sold out" }] } });
 		await expect(checkoutUrl(config, { variantId: "v1" }, { fetcher })).rejects.toThrow("Sold out");
+	});
+});
+
+describe("shop", () => {
+	it("reads a product's variants and its selling plan", async () => {
+		const { fetcher } = fake({ product: { ...product.product, featuredImage: null, variants: { nodes: [{ id: "v1", title: "Navy", availableForSale: true, price: { amount: "20.0", currencyCode: "USD" } }] } } });
+		const p = await loadProduct(config, "gold", fetcher);
+		expect(p).toMatchObject({ handle: "gold", sellingPlanId: "gid://shopify/SellingPlan/7", variants: [{ id: "v1", title: "Navy" }] });
+	});
+
+	it("clamps a collection's size to 1-50", async () => {
+		const { calls, fetcher } = fake({ collection: { handle: "c", title: "C", description: "", products: { nodes: [] } } });
+		await collection(config, "c", 500, fetcher);
+		expect(calls[0]?.body.variables).toEqual({ handle: "c", first: 50 });
+	});
+
+	it("gives a new cart its quantity and attributes", async () => {
+		const { calls, fetcher } = fake({ cartCreate: { cart: { id: "c1", checkoutUrl: "https://x", totalQuantity: 15 }, userErrors: [] } });
+		await addToCart(config, null, { variantId: "v1", quantity: 15 }, { attributes: { _redeemid_page: "/support", empty: "" }, fetcher });
+		expect(calls[0]?.body.variables).toEqual({
+			input: { lines: [{ merchandiseId: "v1", quantity: 15 }], attributes: [{ key: "_redeemid_page", value: "/support" }] },
+		});
+	});
+
+	it("formats money", () => {
+		expect(money({ amount: "12.0", currencyCode: "USD" })).toBe("$12.00");
+		expect(money(null)).toBeNull();
 	});
 });
