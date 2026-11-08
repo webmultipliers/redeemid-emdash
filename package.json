@@ -1,0 +1,52 @@
+{
+	"name": "@redeemid/emdash",
+	"version": "0.0.1",
+	"description": "Shopify customer accounts, member levels and paywalls for EmDash sites. Shopify runs commerce; EmDash runs content.",
+	"type": "module",
+	"license": "GPL-2.0-or-later",
+	"author": "Vinny S. Green, LLC",
+	"homepage": "https://www.redeemid.com/",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/webmultipliers/redeemid-emdash.git"
+	},
+	"exports": {
+		".": "./src/index.ts",
+		"./access": "./src/access.ts",
+		"./guard.ts": "./src/guard.ts",
+		"./components/*": "./src/components/*",
+		"./routes/*": "./src/routes/*"
+	},
+	"files": [
+		"src"
+	],
+	"keywords": [
+		"emdash",
+		"shopify",
+		"paywall",
+		"membership",
+		"customer-accounts"
+	],
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"e2e": "node tests/e2e/run.mjs"
+	},
+	"peerDependencies": {
+		"@emdash-cms/auth": ">=1.4.0",
+		"astro": ">=6",
+		"emdash": ">=1.4.0"
+	},
+	"dependencies": {
+		"jose": "^6.1.3"
+	},
+	"devDependencies": {
+		"@emdash-cms/auth": "^1.4.0",
+		"astro": "^7.3.2",
+		"emdash": "^1.4.0",
+		"kysely": "^0.29.0",
+		"typescript": "^6.0.3",
+		"vitest": "4.1.10"
+	},
+	"packageManager": "pnpm@10.28.0"
+}
