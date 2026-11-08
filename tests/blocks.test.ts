@@ -30,3 +30,17 @@ describe("version", () => {
 		expect(VERSION).toBe(pkg.version);
 	});
 });
+
+describe("teaser", () => {
+	const block = (text: string) => ({ _type: "block", children: [{ _type: "span", text }] });
+	it("keeps the whole text blocks within the word count", async () => {
+		const { teaser } = await import("../src/blocks-names.js");
+		const body = [block("one two three"), { _type: "image" }, block("four five"), block("six")];
+		expect(teaser(body, 0)).toEqual([]);
+		expect(teaser(body, 2)).toEqual([]);
+		expect(teaser(body, 3)).toEqual([body[0]]);
+		expect(teaser(body, 5)).toEqual([body[0], body[2]]);
+		expect(teaser(body, 99)).toEqual([body[0], body[2], body[3]]);
+		expect(teaser(null, 5)).toEqual([]);
+	});
+});

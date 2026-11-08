@@ -6,6 +6,7 @@ import {
 	getSiteSettings,
 } from "emdash";
 import { Image, PortableText, WidgetArea } from "emdash/ui";
+import AccessBadge from "@redeemid/emdash/components/AccessBadge.astro";
 import Content from "@redeemid/emdash/components/Content.astro";
 import Base from "../../layouts/Base.astro";
 import { resolveStarterSiteIdentity } from "../../utils/site-identity";
@@ -55,6 +56,8 @@ const categories = post.data.terms?.category ?? [];
 		}
 
 		<h1 {...post.edit.title}>{post.data.title}</h1>
+
+		<AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} />
 
 		{
 			post.data.publishedAt && (

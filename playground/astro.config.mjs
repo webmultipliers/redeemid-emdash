@@ -21,6 +21,8 @@ const config = {
 		{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
 		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
 	],
+	// Locked posts with no paywall break show the paragraphs within their first 5 words.
+	teaser: { posts: 5 },
 };
 
 export default defineConfig({

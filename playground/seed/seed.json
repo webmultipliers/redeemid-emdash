@@ -103,6 +103,11 @@
 				{
 					"slug": "pro",
 					"label": "Pro"
+				},
+				{
+					"slug": "insider",
+					"label": "Insider",
+					"parent": "pro"
 				}
 			]
 		},
@@ -353,6 +358,130 @@
 							],
 							"_key": "b2"
 						}
+					]
+				}
+			},
+			{
+				"id": "both-rules",
+				"slug": "both-rules",
+				"status": "published",
+				"data": {
+					"title": "Both rules",
+					"excerpt": "Open to the Pro level.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "both-rules0",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "TEASE-OPEN one two.",
+									"_key": "both-rules0s",
+									"marks": []
+								}
+							]
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "both-rules1",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "BOTH-BODY: needs every matching rule.",
+									"_key": "both-rules1s",
+									"marks": []
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"members",
+						"pro"
+					]
+				}
+			},
+			{
+				"id": "insider",
+				"slug": "insider",
+				"status": "published",
+				"data": {
+					"title": "Insider",
+					"excerpt": "Open to the Pro level.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "insider0",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "INSIDER-BODY: the Pro rule covers this child term.",
+									"_key": "insider0s",
+									"marks": []
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"insider"
+					]
+				}
+			},
+			{
+				"id": "open-break",
+				"slug": "open-break",
+				"status": "published",
+				"data": {
+					"title": "Open break",
+					"excerpt": "Open to the Pro level.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "ob0",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "OB-INTRO",
+									"_key": "ob0s",
+									"marks": []
+								}
+							]
+						},
+						{
+							"_type": "redeemid-paywall",
+							"_key": "ob1",
+							"levels": []
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"_key": "ob2",
+							"markDefs": [],
+							"children": [
+								{
+									"_type": "span",
+									"text": "OB-REST: no rule covers this post.",
+									"_key": "ob2s",
+									"marks": []
+								}
+							]
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"general"
 					]
 				}
 			}
