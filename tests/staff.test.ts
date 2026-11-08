@@ -90,11 +90,12 @@ describe("events", () => {
 	});
 	it("sends member.levels_changed only when the levels change", async () => {
 		const { calls, fetcher } = fakeFetch(() => ({}));
-		const after = { customerId: "1", email: "a@b.test", tags: ["member", "pro"], status: "enabled" };
+		const after = { customerId: "1", tags: ["member", "pro"], status: "enabled" };
 		await levelChange(config, ["pro", "member", "newsletter"], after, "webhook", fetcher);
 		expect(calls).toHaveLength(0);
 		await levelChange(config, ["member"], after, "webhook", fetcher);
 		expect(JSON.parse(String(calls[0]!.init.body)).data).toMatchObject({ levels: ["member", "pro"], added: ["pro"], removed: [], source: "webhook" });
+		expect(JSON.parse(String(calls[0]!.init.body)).data).not.toHaveProperty("email");
 		await levelChange(config, ["member"], { ...after, status: "disabled" }, "webhook", fetcher);
 		expect(JSON.parse(String(calls[1]!.init.body)).data).toMatchObject({ levels: [], added: [], removed: ["member"] });
 	});

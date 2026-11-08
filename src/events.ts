@@ -8,6 +8,7 @@
  * X-RedeemID-Signature: sha256=<hex HMAC of the raw body>. Events:
  * member.signed_in, member.levels_changed, meter.used, meter.exhausted.
  * Sending never blocks or breaks the page: failures are logged and dropped.
+ * No event carries an email address or a name; match people by `customerId`.
  */
 
 import { env, ENV, type RedeemIDConfig } from "./config.js";
@@ -55,7 +56,7 @@ export async function emit(config: RedeemIDConfig | null, name: EventName, data:
 export async function levelChange(
 	config: RedeemIDConfig | null,
 	beforeTags: string[] | null,
-	after: { customerId: string; email: string | null; tags: string[]; status: string },
+	after: { customerId: string; tags: string[]; status: string },
 	source: string,
 	fetcher: typeof fetch = fetch,
 ): Promise<void> {
@@ -67,7 +68,7 @@ export async function levelChange(
 	await emit(
 		config,
 		"member.levels_changed",
-		{ customerId: after.customerId, email: after.email, levels: now, added: now.filter((l) => !was.includes(l)), removed: was.filter((l) => !now.includes(l)), source },
+		{ customerId: after.customerId, levels: now, added: now.filter((l) => !was.includes(l)), removed: was.filter((l) => !now.includes(l)), source },
 		fetcher,
 	);
 }

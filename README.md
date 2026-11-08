@@ -145,12 +145,12 @@ With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to t
 
 | Event | `data` |
 | --- | --- |
-| `member.signed_in` | `customerId`, `email`, `levels`, `first` (first sign-in), `refresh` |
-| `member.levels_changed` | `customerId`, `email`, `levels`, `added`, `removed`, `source` (`sign-in`, the webhook topic, or a staff resync or tag edit) |
+| `member.signed_in` | `customerId`, `levels`, `first` (first sign-in), `refresh` |
+| `member.levels_changed` | `customerId`, `levels`, `added`, `removed`, `source` (`sign-in`, the webhook topic, or a staff resync or tag edit) |
 | `meter.used` | `userId` (EmDash), `entry` (`collection:id`), `used`, `limit`, `period` (`2026-11`, or `2026-W45` by week) |
 | `meter.exhausted` | the same, sent with the last free read |
 
-`only` limits which events are sent; leave it out for all of them.
+No event carries an email address or a name: match people by the Shopify `customerId`. `only` limits which events are sent; leave it out for all of them.
 
 ### Staff tools
 
