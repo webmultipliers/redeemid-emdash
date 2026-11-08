@@ -20,7 +20,7 @@ function product(handle, title, variants) {
 	};
 }
 
-export async function startFakeShop({ port, clientId, clientSecret, logoutUris = [] }) {
+export async function startFakeShop({ port, clientId, clientSecret, logoutUris = [], adminClientId = "admin-client", adminSecret = "" }) {
 	const origin = `http://127.0.0.1:${port}`;
 	const { privateKey, publicKey } = await generateKeyPair("RS256");
 	const jwk = { ...(await exportJWK(publicKey)), kid: "k1", alg: "RS256", use: "sig" };
@@ -44,6 +44,11 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 			]),
 			support: product("support", "Support the newsroom", [["gid://shopify/ProductVariant/601", "Default Title", 1, true]]),
 		},
+		/** Admin API: token requests, webhook subscriptions, tag edits, and events RedeemID sent. */
+		adminTokens: 0,
+		subscriptions: [],
+		tagEdits: [],
+		events: [],
 		/** Is the customer signed in at the store? `prompt=none` fails when not. */
 		storeSession: true,
 		authorizeRequests: [],
@@ -229,6 +234,46 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				}
 				return json(200, { data: { product: shop.products[variables.handle] ?? null } });
 			}
+			case "/admin/oauth/access_token": {
+				const form = new URLSearchParams(body);
+				if (form.get("grant_type") !== "client_credentials" || form.get("client_id") !== adminClientId || form.get("client_secret") !== adminSecret) {
+					return json(400, { error: "invalid_client" });
+				}
+				shop.adminTokens++;
+				return json(200, { access_token: "admin-token", scope: "read_customers,write_customers", expires_in: 86399 });
+			}
+			case "/admin/api/2026-10/graphql.json": {
+				if (req.headers["x-shopify-access-token"] !== "admin-token") return json(401, { errors: [{ message: "Invalid API key or access token" }] });
+				const { query, variables } = JSON.parse(body || "{}");
+				const c = shop.customer;
+				if (query.includes("nodes(ids")) {
+					const nodes = variables.ids.map((id) =>
+						id === `gid://shopify/Customer/${c.id}`
+							? { id, firstName: c.firstName, lastName: c.lastName, tags: c.tags, updatedAt: new Date().toISOString(), defaultEmailAddress: { emailAddress: c.email } }
+							: null,
+					);
+					return json(200, { data: { nodes } });
+				}
+				for (const m of ["tagsAdd", "tagsRemove"]) {
+					if (query.includes(`${m}(`)) {
+						shop.tagEdits.push({ m, ...variables });
+						if (variables.id === `gid://shopify/Customer/${c.id}`) {
+							const low = variables.tags.map((t) => t.toLowerCase());
+							c.tags = m === "tagsAdd" ? [...new Set([...c.tags, ...variables.tags])] : c.tags.filter((t) => !low.includes(t.toLowerCase()));
+						}
+						return json(200, { data: { [m]: { userErrors: [] } } });
+					}
+				}
+				if (query.includes("webhookSubscriptionCreate")) {
+					shop.subscriptions.push({ id: `gid://shopify/WebhookSubscription/${shop.subscriptions.length + 1}`, topic: variables.topic, uri: variables.uri });
+					return json(200, { data: { webhookSubscriptionCreate: { userErrors: [] } } });
+				}
+				if (query.includes("webhookSubscriptions")) return json(200, { data: { webhookSubscriptions: { nodes: shop.subscriptions } } });
+				return json(400, { errors: [{ message: "unknown query" }] });
+			}
+			case "/events":
+				shop.events.push({ headers: req.headers, body });
+				return json(200, { ok: true });
 			case "/":
 				res.writeHead(200, { "content-type": "text/plain" });
 				return res.end("CUSTOMER-ACCOUNT");

@@ -10,6 +10,7 @@
  * membership reads it from the store again.
  */
 import { accountUrl, membership, meterUsage, refreshUrl, signInUrl, signOutUrl, viewer } from "../access.js";
+import { featuresFor } from "../features.js";
 import { siteConfig } from "../site-config.js";
 
 interface Props {
@@ -25,6 +26,8 @@ const m = v.member;
 const disabled = m?.status === "disabled";
 const { current, past } = m && !disabled ? membership(m, config?.levels) : { current: [], past: [] };
 const meter = v.signedIn ? await meterUsage(Astro) : null;
+const held = m ? featuresFor(m, config?.features, config?.levels) : [];
+const features = (config?.features ?? []).filter((f) => held.includes(f.slug));
 const date = (iso: string | null) => {
 	if (!iso) return null;
 	const t = Date.parse(iso);
@@ -58,6 +61,11 @@ const join = config?.join;
 			) : (
 				<p class="redeemid-member__none">
 					You don't have a membership yet.{join && <> <a href={join.href}>{join.label ?? "Become a member"}</a></>}
+				</p>
+			)}
+			{features.length > 0 && (
+				<p class="redeemid-member__features">
+					Includes: {features.map((f) => f.name).join(", ")}
 				</p>
 			)}
 			{past.length > 0 && (

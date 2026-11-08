@@ -11,6 +11,7 @@ import { VERSION } from "./version.js";
 export const PAGES = [
 	{ path: "/", label: "Members", icon: "users" },
 	{ path: "/status", label: "Status", icon: "pulse" },
+	{ path: "/test", label: "Access test", icon: "search" },
 ];
 export const WIDGETS = [{ id: "status", title: "RedeemID", size: "half" as const }];
 

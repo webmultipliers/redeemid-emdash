@@ -78,7 +78,7 @@ export interface DeliveryRecord {
 }
 
 export const STORAGE_CONFIG = {
-	members: { indexes: ["email", "userId"] },
+	members: { indexes: ["email", "userId", "syncedAt"] },
 	deliveries: { indexes: ["receivedAt"] },
 	meter: { indexes: ["userId"] },
 };

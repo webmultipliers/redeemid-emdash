@@ -3,6 +3,7 @@
  * a fake Shopify store. Run with `pnpm e2e`.
  */
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,7 @@ const SITE = `http://127.0.0.1:${SITE_PORT}`;
 const CLIENT_ID = "e2e-client";
 const CLIENT_SECRET = "e2e-secret";
 const WEBHOOK_SECRET = "e2e-webhook-secret";
+const EVENTS_SECRET = "e2e-events-secret";
 
 let failures = 0;
 function check(name, ok, detail = "") {
@@ -90,7 +92,7 @@ async function waitFor(url, ms = 90_000) {
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
 
-const shop = await startFakeShop({ port: SHOP_PORT, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, logoutUris: [`${SITE}/`] });
+const shop = await startFakeShop({ port: SHOP_PORT, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, logoutUris: [`${SITE}/`], adminClientId: "admin-client", adminSecret: WEBHOOK_SECRET });
 const site = spawn("pnpm", ["exec", "astro", "dev", "--port", String(SITE_PORT), "--host", "127.0.0.1", "--ignore-lock"], {
 	cwd: join(root, "playground"),
 	env: {
@@ -99,6 +101,8 @@ const site = spawn("pnpm", ["exec", "astro", "dev", "--port", String(SITE_PORT),
 		REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID: CLIENT_ID,
 		REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET: CLIENT_SECRET,
 		REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET: WEBHOOK_SECRET,
+		REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID: "admin-client",
+		REDEEMID_EVENTS_SECRET: EVENTS_SECRET,
 		REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN: "storefront-private",
 		REDEEMID_DB: join(tmp, "data.db"),
 		EMDASH_SITE_URL: SITE,
@@ -208,6 +212,44 @@ try {
 		body: JSON.stringify({ type: "page_load", page: "/" }),
 	});
 	check("members can't open the plugin's admin pages", memberAdmin.res.status === 401 || memberAdmin.res.status === 403, String(memberAdmin.res.status));
+
+	// Staff tools: member detail, resync, tag edits written to Shopify, bulk resync, webhooks, access test.
+	const adminAct = async (input) =>
+		admin.go("/_emdash/api/plugins/redeemid/admin", {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+			body: JSON.stringify(input),
+		});
+	const cid = String(shop.customer.id);
+	check("Members page has an Open button per member", membersPage.text.includes('"action_id":"member_open"') && membersPage.text.includes("Resync 50 from Shopify"));
+	const detail = await adminAct({ type: "block_action", action_id: "member_open", value: cid, page: "/" });
+	check("member detail shows levels, tags and the tag form", detail.text.includes("Shopify customer") && detail.text.includes("member_tag_add") && detail.text.includes("Remove in Shopify"), detail.text.slice(0, 300));
+	shop.customer.tags = ["member", "supporter"];
+	const resynced = await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
+	check("Resync reads the customer from Shopify with a client-credentials token", resynced.text.includes("Read again from Shopify.") && resynced.text.includes("supporter") && shop.adminTokens >= 1, resynced.text.slice(0, 300));
+	const tokensAfterResync = shop.adminTokens;
+	const tagged = await adminAct({ type: "form_submit", action_id: "member_tag_add", block_id: `tags:${cid}`, values: { tags: "pro, vip" }, page: "/" });
+	check("adding tags writes them to Shopify and reads them back", shop.tagEdits.at(-1)?.m === "tagsAdd" && JSON.stringify(shop.tagEdits.at(-1)?.tags) === JSON.stringify(["pro", "vip"]) && tagged.text.includes("Tags added in Shopify.") && tagged.text.includes("vip") && shop.adminTokens === tokensAfterResync);
+	const untagged = await adminAct({ type: "block_action", action_id: "member_tag_remove", value: { customerId: cid, tag: "vip" }, page: "/" });
+	check("removing a tag removes it in Shopify", shop.tagEdits.at(-1)?.m === "tagsRemove" && !shop.customer.tags.includes("vip") && untagged.text.includes("Tag removed in Shopify."));
+	const levelEvent = shop.events.find((e) => e.headers["x-redeemid-event"] === "member.levels_changed" && JSON.parse(e.body).data.added.includes("pro"));
+	const sig = levelEvent ? createHmac("sha256", EVENTS_SECRET).update(levelEvent.body).digest("hex") : "";
+	check("a level change sends a signed member.levels_changed event", Boolean(levelEvent) && levelEvent.headers["x-redeemid-signature"] === `sha256=${sig}`, JSON.stringify(shop.events.map((e) => e.headers["x-redeemid-event"])));
+	check("sign-in sent member.signed_in", shop.events.some((e) => e.headers["x-redeemid-event"] === "member.signed_in"));
+	check("the meter sent meter.used and meter.exhausted", shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.used") && shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.exhausted"));
+	const bulk = await adminAct({ type: "block_action", action_id: "members_resync", page: "/" });
+	check("bulk resync reads a batch from Shopify", bulk.text.includes("Read 1 members again"), bulk.text.slice(0, 300));
+	const statusNow = await adminPage("/status");
+	check("Status lists missing webhooks with a Register button", statusNow.text.includes("webhooks_register") && statusNow.text.includes("Missing"));
+	const registered = await adminAct({ type: "block_action", action_id: "webhooks_register", value: "", page: "/status" });
+	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks."), JSON.stringify(shop.subscriptions.slice(0, 2)));
+	check("Status lists recent deliveries", statusNow.text.includes("Recent deliveries"));
+	const test = await adminAct({ type: "form_submit", action_id: "access_test", values: { collection: "posts", terms: "category:members, category:pro", tags: "member", signed_in: true }, page: "/test" });
+	check("access test shows what an entry needs and the verdict", test.text.includes("Member or Pro + Pro") || test.text.includes("Pro"), test.text.slice(0, 400));
+	check("access test says a Member is kept out of a Members + Pro post", test.text.includes("This reader is kept out"));
+	// Put the store's customer back as the rest of the run expects.
+	shop.customer.tags = ["member"];
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
 
 	// The Join page shows Shopify's plan and starts a checkout for the member.
 	const join = await member.go("/join");

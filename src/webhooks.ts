@@ -88,7 +88,13 @@ export type Outcome = "processed" | "skipped" | "stale" | "ignored";
  * Apply one webhook to the mirror. Throws on storage errors so the caller can
  * answer 500 and let Shopify retry.
  */
-export async function apply(s: Stores, topic: string, payload: Record<string, unknown>): Promise<Outcome> {
+export async function apply(
+	s: Stores,
+	topic: string,
+	payload: Record<string, unknown>,
+	/** Called after a member is written, with their tags before (null when new). */
+	onWrite?: (beforeTags: string[] | null, after: MemberRecord) => Promise<void> | void,
+): Promise<Outcome> {
 	const kind = kindOf(topic);
 	if (!kind || kind === "ignored") return "ignored";
 
@@ -128,7 +134,9 @@ export async function apply(s: Stores, topic: string, payload: Record<string, un
 		return "processed";
 	}
 
-	const current: MemberRecord = (await s.members.get(id)) ?? emptyMember(id);
+	const existing = await s.members.get(id);
+	const beforeTags = existing ? [...existing.tags] : null;
+	const current: MemberRecord = existing ?? emptyMember(id);
 	const updatedAt = time(payload.updated_at);
 
 	if (kind === "profile") {
@@ -157,5 +165,6 @@ export async function apply(s: Stores, topic: string, payload: Record<string, un
 	current.syncedAt = new Date().toISOString();
 	current.source = topic;
 	await s.members.put(id, stampTags(current));
+	await onWrite?.(beforeTags, current);
 	return "processed";
 }
