@@ -134,7 +134,7 @@ pnpm typecheck
 pnpm e2e         # boots the playground site against a fake Shopify store
 ```
 
-Releases: bump `version` in package.json and merge to main. The Release workflow runs the tests, then stages that version on npm with a stage-only token. A maintainer approves it on npmjs.com or with `npm stage approve <id>` (2FA), and only then is it public.
+Releases: bump `version` in package.json and merge to main. The Release workflow runs the tests, then stages that version on npm with a stage-only token. A maintainer approves it on npmjs.com or with `npm stage approve <id>` (2FA), and only then is it public. The same run cuts a matching GitHub release, `v<version>`, with the exact tarball it staged and a `.sha256`.
 
 `playground/` is the EmDash starter template with RedeemID wired in and two locked posts in its seed.
 
