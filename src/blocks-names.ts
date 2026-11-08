@@ -1,6 +1,9 @@
 /** Portable Text block types RedeemID adds to the editor. */
 export const PAYWALL_BLOCK = "redeemid-paywall";
 export const PLAN_BLOCK = "redeemid-plan";
+export const PRODUCT_BLOCK = "redeemid-product";
+export const COLLECTION_BLOCK = "redeemid-collection";
+export const CONTRIBUTION_BLOCK = "redeemid-contribution";
 /** Starts a members-only part of the body; it runs to the next end block. */
 export const MEMBERS_BLOCK = "redeemid-members";
 export const MEMBERS_END_BLOCK = "redeemid-members-end";

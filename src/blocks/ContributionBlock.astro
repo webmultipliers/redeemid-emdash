@@ -1,0 +1,24 @@
+---
+/** The "Contribution" block: pay what you want with a 1.00 Shopify product. */
+import Contribution from "../components/Contribution.astro";
+
+interface Props {
+	node: { handle?: string; title?: string; label?: string; amounts?: string };
+}
+
+const { node } = Astro.props;
+const handle = (node.handle ?? "").trim();
+const amounts = (node.amounts ?? "")
+	.split(",")
+	.map((a) => Number.parseInt(a.trim(), 10))
+	.filter((a) => Number.isFinite(a) && a > 0 && a <= 1000);
+---
+
+{handle && (
+	<Contribution
+		handle={handle}
+		title={node.title?.trim() || undefined}
+		label={node.label?.trim() || "Give"}
+		amounts={amounts.length ? amounts : undefined}
+	/>
+)}

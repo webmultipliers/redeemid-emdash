@@ -243,7 +243,8 @@ try {
 		body: "plan=pro-plan&return=%2Fjoin",
 	});
 	const cartId = [...shop.cartsById.keys()].at(-1);
-	check("a second Buy adds to the same Shopify cart", shop.carts.length === 1 && shop.cartsById.get(cartId)?.lines.length === 2, String(shop.carts.length));
+	check("a second Buy adds to the same Shopify cart", shop.carts.length === 1 && shop.cartsById.get(cartId)?.lines[0]?.quantity === 2, String(shop.carts.length));
+	check("the cart notes the page the sale came from", JSON.stringify(shop.cartsById.get(cartId)?.attributes) === JSON.stringify([{ key: "_redeemid_page", value: "/join" }]), JSON.stringify(shop.cartsById.get(cartId)?.attributes));
 	const toCart = await member.go("/_emdash/api/auth/redeemid/cart?return=%2Fjoin");
 	check("Cart goes to that cart's checkout", toCart.text === "CHECKOUT" && toCart.url.searchParams.get("cart") === cartId, toCart.url.href);
 	await fetch(`http://127.0.0.1:${SHOP_PORT}/checkout?cart=${encodeURIComponent(cartId)}&complete=1`);
@@ -251,6 +252,45 @@ try {
 	check("a completed checkout empties the cart", done.url.searchParams.get("redeemid_notice") === "cart_empty", done.url.href);
 	const cleared = await member.go("/join");
 	check("Cart count resets after checkout", cleared.text.includes('data-redeemid-cart-count="0"'));
+
+	// Commerce: a collection, product pages, a cart page and a contribution.
+	const shopper = new Browser();
+	const shopPage = await shopper.go("/shop/");
+	check("collection lists its products with links and prices", shopPage.text.includes('href="/shop/harbor-tote/"') && shopPage.text.includes("From $20.00") && shopPage.text.includes("Support the newsroom"));
+	check("missing collection shows the fallback", (await shopper.go("/shop/")).text.includes("redeemid-collection") && !(await shopper.go("/shop/no-such/")).text.includes("redeemid-collection"));
+	const tote = await shopper.go("/shop/harbor-tote/");
+	check("product page shows variants and marks sold-out ones", tote.text.includes("Navy ($20.00)") && /<option[^>]*disabled[^>]*>\s*Sand/.test(tote.text) && tote.text.includes("Add to cart"));
+	const edit = (fields) =>
+		shopper.go("/_emdash/api/auth/redeemid/cart-edit", {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams(fields).toString(),
+		});
+	const addedTote = await edit({ action: "add", product: "harbor-tote", variant: "gid://shopify/ProductVariant/501", quantity: "2", return: "/shop/harbor-tote/" });
+	check("Add to cart comes back with a notice", addedTote.url.pathname === "/shop/harbor-tote/" && addedTote.url.searchParams.get("redeemid_notice") === "cart_added", addedTote.url.href);
+	const soldOut = await edit({ action: "add", product: "harbor-tote", variant: "gid://shopify/ProductVariant/502", return: "/shop/harbor-tote/" });
+	check("a sold-out variant isn't added", soldOut.url.searchParams.get("redeemid_notice") === "plan_unavailable");
+	const foreign = await edit({ action: "add", product: "harbor-tote", variant: "gid://shopify/ProductVariant/42", return: "/shop/harbor-tote/" });
+	check("a variant from another product isn't added", foreign.url.searchParams.get("redeemid_notice") === "plan_unavailable");
+	let cartPage = await shopper.go("/cart");
+	check("cart page lists the line, its price and the subtotal", cartPage.text.includes("Harbor tote") && cartPage.text.includes("$20.00 each") && cartPage.text.includes("$40.00") && /private/.test(cartPage.res.headers.get("cache-control") ?? ""));
+	const lineId = (cartPage.text.match(/data-redeemid-line="([^"]+)"/) ?? [])[1];
+	await edit({ action: "update", line: lineId, quantity: "3", return: "/cart" });
+	cartPage = await shopper.go("/cart");
+	check("changing the quantity updates the cart", cartPage.text.includes("$60.00") && cartPage.text.includes('data-redeemid-cart-count="3"'));
+	const bad = await edit({ action: "discount", code: "NOPE", return: "/cart" });
+	check("a code that doesn't apply says so", bad.url.searchParams.get("redeemid_notice") === "discount_not_applicable");
+	const good = await edit({ action: "discount", code: "HARBOR10", return: "/cart" });
+	check("a discount code applies and the total drops", good.url.searchParams.get("redeemid_notice") === "discount_applied" && good.text.includes("$54.00"), good.url.href);
+	await edit({ action: "update", line: "gid://shopify/CartLine/999", quantity: "50", return: "/cart" });
+	check("a line from another cart is ignored", (await shopper.go("/cart")).text.includes('data-redeemid-cart-count="3"'));
+	await edit({ action: "remove", line: lineId, return: "/cart" });
+	check("Remove empties the cart", (await shopper.go("/cart")).text.includes("Your cart is empty."));
+	const support = await shopper.go("/support");
+	check("contribution offers amounts for a 1.00 product", support.text.includes("$5") && support.text.includes("Another amount (USD)"));
+	const gave = await edit({ action: "add", product: "support", quantity: "15", then: "checkout", return: "/support" });
+	const gift = [...shop.cartsById.values()].at(-1);
+	check("a contribution of 15 checks out 15 units of the 1.00 product", gave.text === "CHECKOUT" && gift?.lines.some((l) => l.merchandiseId === "gid://shopify/ProductVariant/601" && l.quantity === 15), JSON.stringify(gift?.lines));
 
 	// Account goes to the member's Shopify customer account.
 	check("account box links to the Shopify account", cleared.text.includes("/_emdash/api/auth/redeemid/account"));

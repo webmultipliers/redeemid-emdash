@@ -39,7 +39,7 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 			config,
 			current?.id ?? null,
 			{ variantId: p.variantId, sellingPlanId: p.sellingPlanId },
-			{ email: member?.email ?? null, buyerIp: request.headers.get("cf-connecting-ip") },
+			{ email: member?.email ?? null, attributes: { _redeemid_page: returnTo }, buyerIp: request.headers.get("cf-connecting-ip") },
 		);
 		saveCart(session, { id: cart.id, count: cart.totalQuantity });
 		return redirect(cart.checkoutUrl, 303);

@@ -1,0 +1,22 @@
+---
+/** The "Collection" block: a Shopify collection's products as cards. */
+import Collection from "../components/Collection.astro";
+
+interface Props {
+	node: { handle?: string; limit?: string; link?: string };
+}
+
+const { node } = Astro.props;
+const handle = (node.handle ?? "").trim();
+const limit = Number.parseInt(node.limit ?? "", 10);
+const link = (node.link ?? "").trim();
+---
+
+{handle && (
+	<Collection
+		handle={handle}
+		limit={Number.isFinite(limit) ? limit : 12}
+		productHref={link.startsWith("/") && link.includes("{handle}") ? link : undefined}
+		showTitle
+	/>
+)}

@@ -1,0 +1,12 @@
+---
+/** The "Product" block: a Shopify product with Add to cart and Buy now. */
+import Product from "../components/Product.astro";
+
+interface Props {
+	node: { handle?: string };
+}
+
+const handle = (Astro.props.node.handle ?? "").trim();
+---
+
+{handle && <Product handle={handle} heading="h3" />}

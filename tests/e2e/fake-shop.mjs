@@ -7,6 +7,19 @@ import { createServer } from "node:http";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
+function product(handle, title, variants) {
+	return {
+		handle,
+		title,
+		description: "",
+		availableForSale: variants.some((v) => v[3]),
+		requiresSellingPlan: false,
+		featuredImage: null,
+		variants: { nodes: variants.map(([id, t, price, ok]) => ({ id, title: t, availableForSale: ok, price: { amount: price.toFixed(1), currencyCode: "USD" } })) },
+		sellingPlanGroups: { nodes: [] },
+	};
+}
+
 export async function startFakeShop({ port, clientId, clientSecret, logoutUris = [] }) {
 	const origin = `http://127.0.0.1:${port}`;
 	const { privateKey, publicKey } = await generateKeyPair("RS256");
@@ -22,6 +35,15 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 		/** Live carts by id; a completed checkout removes its cart, as Shopify does. */
 		cartsById: new Map(),
 		blocked: [],
+		lineSeq: 0,
+		products: {
+			"pro-plan": product("pro-plan", "Pro plan", [["gid://shopify/ProductVariant/42", "Default Title", 12, true]]),
+			"harbor-tote": product("harbor-tote", "Harbor tote", [
+				["gid://shopify/ProductVariant/501", "Navy", 20, true],
+				["gid://shopify/ProductVariant/502", "Sand", 22, false],
+			]),
+			support: product("support", "Support the newsroom", [["gid://shopify/ProductVariant/601", "Default Title", 1, true]]),
+		},
 		/** Is the customer signed in at the store? `prompt=none` fails when not. */
 		storeSession: true,
 		authorizeRequests: [],
@@ -117,35 +139,95 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 			}
 			case "/api/2026-10/graphql.json": {
 				const { query, variables } = JSON.parse(body || "{}");
+				const money = (n) => ({ amount: n.toFixed(1), currencyCode: "USD" });
+				const variantById = (id) => {
+					for (const p of Object.values(shop.products)) {
+						const v = p.variants.nodes.find((x) => x.id === id);
+						if (v) return { v, p };
+					}
+					return null;
+				};
 				const view = (id) => {
 					const c = shop.cartsById.get(id);
-					return c ? { id, checkoutUrl: `${origin}/checkout?cart=${encodeURIComponent(id)}`, totalQuantity: c.lines.length } : null;
+					if (!c) return null;
+					const nodes = c.lines.map((l) => {
+						const found = variantById(l.merchandiseId);
+						const price = Number(found?.v.price.amount ?? 0);
+						return {
+							id: l.id,
+							quantity: l.quantity,
+							cost: { totalAmount: money(price * l.quantity) },
+							merchandise: {
+								id: l.merchandiseId,
+								title: found?.v.title ?? "Default Title",
+								price: money(price),
+								image: null,
+								product: { title: found?.p.title ?? "Unknown", handle: found?.p.handle ?? "unknown", featuredImage: null },
+							},
+						};
+					});
+					const subtotal = nodes.reduce((t, n) => t + Number(n.cost.totalAmount.amount), 0);
+					const applicable = c.codes.map((code) => ({ code, applicable: code.toUpperCase() === "HARBOR10" }));
+					const off = applicable.some((d) => d.applicable) ? subtotal * 0.1 : 0;
+					return {
+						id,
+						checkoutUrl: `${origin}/checkout?cart=${encodeURIComponent(id)}`,
+						totalQuantity: c.lines.reduce((t, l) => t + l.quantity, 0),
+						cost: { subtotalAmount: money(subtotal), totalAmount: money(subtotal - off) },
+						discountCodes: applicable,
+						lines: { nodes },
+					};
+				};
+				const addLines = (c, lines) => {
+					for (const line of lines) {
+						const same = c.lines.find((l) => l.merchandiseId === line.merchandiseId && l.sellingPlanId === line.sellingPlanId);
+						if (same) same.quantity += line.quantity;
+						else c.lines.push({ ...line, id: `gid://shopify/CartLine/${++shop.lineSeq}` });
+					}
 				};
 				if (query.includes("cartCreate")) {
 					shop.carts.push({ input: variables.input, privateToken: req.headers["shopify-storefront-private-token"] });
 					const id = `gid://shopify/Cart/${shop.carts.length}`;
-					shop.cartsById.set(id, { lines: [...variables.input.lines] });
+					const c = { lines: [], codes: [], attributes: variables.input.attributes ?? [] };
+					addLines(c, variables.input.lines);
+					shop.cartsById.set(id, c);
 					return json(200, { data: { cartCreate: { cart: view(id), userErrors: [] } } });
 				}
+				const c = variables.id ? shop.cartsById.get(variables.id) : null;
+				const errs = c ? [] : [{ message: "The specified cart does not exist." }];
 				if (query.includes("cartLinesAdd")) {
-					const c = shop.cartsById.get(variables.id);
-					if (c) c.lines.push(...variables.lines);
-					return json(200, { data: { cartLinesAdd: { cart: view(variables.id), userErrors: c ? [] : [{ message: "The specified cart does not exist." }] } } });
+					if (c) addLines(c, variables.lines);
+					return json(200, { data: { cartLinesAdd: { cart: view(variables.id), userErrors: errs } } });
+				}
+				if (query.includes("cartLinesUpdate")) {
+					if (c) for (const u of variables.lines) { const l = c.lines.find((x) => x.id === u.id); if (l) l.quantity = u.quantity; }
+					if (c) c.lines = c.lines.filter((l) => l.quantity > 0);
+					return json(200, { data: { cartLinesUpdate: { cart: view(variables.id), userErrors: errs } } });
+				}
+				if (query.includes("cartLinesRemove")) {
+					if (c) c.lines = c.lines.filter((l) => !variables.lineIds.includes(l.id));
+					return json(200, { data: { cartLinesRemove: { cart: view(variables.id), userErrors: errs } } });
+				}
+				if (query.includes("cartDiscountCodesUpdate")) {
+					if (c) c.codes = variables.codes ?? [];
+					return json(200, { data: { cartDiscountCodesUpdate: { cart: view(variables.id), userErrors: errs } } });
 				}
 				if (query.includes("cart(id")) return json(200, { data: { cart: view(variables.id) } });
-				const product =
-					variables.handle === "pro-plan"
-						? {
-								handle: "pro-plan",
-								title: "Pro plan",
-								description: "",
-								availableForSale: true,
-								requiresSellingPlan: false,
-								variants: { nodes: [{ id: "gid://shopify/ProductVariant/42", availableForSale: true, price: { amount: "12.0", currencyCode: "USD" } }] },
-								sellingPlanGroups: { nodes: [] },
-							}
-						: null;
-				return json(200, { data: { product } });
+				if (query.includes("collection(handle")) {
+					if (variables.handle !== "shop") return json(200, { data: { collection: null } });
+					const nodes = Object.values(shop.products)
+						.filter((p) => p.handle !== "pro-plan")
+						.slice(0, variables.first)
+						.map((p) => ({
+							handle: p.handle,
+							title: p.title,
+							availableForSale: p.availableForSale,
+							featuredImage: null,
+							priceRange: { minVariantPrice: p.variants.nodes[0].price },
+						}));
+					return json(200, { data: { collection: { handle: "shop", title: "Shop", description: "Ledger goods.", products: { nodes } } } });
+				}
+				return json(200, { data: { product: shop.products[variables.handle] ?? null } });
 			}
 			case "/":
 				res.writeHead(200, { "content-type": "text/plain" });

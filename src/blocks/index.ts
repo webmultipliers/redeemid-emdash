@@ -3,11 +3,17 @@
  * EmDash from the plugin's `componentsEntry`.
  */
 import Marker from "./PaywallBreak.astro";
+import CollectionBlock from "./CollectionBlock.astro";
+import ContributionBlock from "./ContributionBlock.astro";
 import PlanBlock from "./PlanBlock.astro";
+import ProductBlock from "./ProductBlock.astro";
 
 export const blockComponents = {
 	"redeemid-paywall": Marker,
 	"redeemid-members": Marker,
 	"redeemid-members-end": Marker,
 	"redeemid-plan": PlanBlock,
+	"redeemid-product": ProductBlock,
+	"redeemid-collection": CollectionBlock,
+	"redeemid-contribution": ContributionBlock,
 };
