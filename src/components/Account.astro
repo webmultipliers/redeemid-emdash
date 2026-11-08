@@ -1,0 +1,26 @@
+---
+/**
+ * Sign in link for visitors; name, levels and Sign out for members.
+ */
+import { siteConfig } from "../site-config.js";
+import { signInUrl, signOutUrl, viewer } from "../access.js";
+
+const v = await viewer(Astro);
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const here = Astro.url.pathname + Astro.url.search;
+const names = (config?.levels ?? []).filter((l) => v.levels.includes(l.slug)).map((l) => l.name);
+---
+
+<div class="redeemid-account" data-redeemid-signed-in={v.signedIn ? "true" : "false"}>
+	{v.signedIn ? (
+		<>
+			<span class="redeemid-account__who">{v.member?.firstName ?? v.member?.email ?? "Signed in"}</span>
+			{names.length > 0 && <span class="redeemid-account__levels">{names.join(", ")}</span>}
+			<form method="post" action={signOutUrl(here)}>
+				<button type="submit">Sign out</button>
+			</form>
+		</>
+	) : (
+		<a href={signInUrl(here)}>{config?.label ?? "Sign in"}</a>
+	)}
+</div>

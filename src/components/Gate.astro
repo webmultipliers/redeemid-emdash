@@ -1,0 +1,40 @@
+---
+/**
+ * Show the default slot to readers who may read the entry, the "locked" slot
+ * (or a built-in notice) to everyone else.
+ *
+ *   <Gate collection="posts" terms={post.data.terms}>
+ *     <PortableText value={post.data.content} />
+ *     <p slot="locked">…teaser…</p>
+ *   </Gate>
+ *
+ * Pass `levels` to lock a part of a page to specific levels instead.
+ */
+import { canRead, signInUrl, type Terms } from "../access.js";
+
+interface Props {
+	collection?: string;
+	terms?: Terms;
+	levels?: string[];
+}
+
+const { collection = "", terms, levels } = Astro.props;
+const verdict = await canRead(Astro, { collection, terms }, levels ? { levels } : undefined);
+const here = Astro.url.pathname + Astro.url.search;
+---
+
+{verdict.allowed ? (
+	<slot />
+) : (
+	<div class="redeemid-locked" data-redeemid-reason={verdict.reason}>
+		<slot name="locked" />
+		{verdict.reason === "sign_in" && (
+			<p>
+				This is for members. <a href={signInUrl(here)}>Sign in</a> to read it.
+			</p>
+		)}
+		{verdict.reason === "upgrade" && <p>Your membership doesn't include this yet.</p>}
+		{verdict.reason === "disabled" && <p>Your account is turned off. Contact the store for help.</p>}
+		{verdict.reason === "unconfigured" && <p>This is for members.</p>}
+	</div>
+)}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.astro/
+playground/data.db*
+playground/uploads/
+playground/.env
+.env
+tests/e2e/.tmp/

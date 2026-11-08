@@ -1,0 +1,26 @@
+{
+	"name": "redeemid-emdash-playground",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "astro dev",
+		"build": "astro build",
+		"preview": "astro preview",
+		"start": "node ./dist/server/entry.mjs",
+		"typecheck": "astro check"
+	},
+	"dependencies": {
+		"@astrojs/node": "^11.1.5",
+		"@astrojs/react": "^7.0.0",
+		"@redeemid/emdash": "workspace:*",
+		"astro": "^7.3.2",
+		"emdash": "^1.4.0",
+		"react": "19.2.4",
+		"react-dom": "19.2.4"
+	},
+	"devDependencies": {},
+	"emdash": {
+		"seed": "seed/seed.json"
+	}
+}
