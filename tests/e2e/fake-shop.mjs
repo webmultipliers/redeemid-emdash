@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
-export async function startFakeShop({ port, clientId, clientSecret }) {
+export async function startFakeShop({ port, clientId, clientSecret, logoutUris = [] }) {
 	const origin = `http://127.0.0.1:${port}`;
 	const { privateKey, publicKey } = await generateKeyPair("RS256");
 	const jwk = { ...(await exportJWK(publicKey)), kid: "k1", alg: "RS256", use: "sig" };
@@ -92,9 +92,13 @@ export async function startFakeShop({ port, clientId, clientSecret }) {
 					},
 				});
 			}
-			case "/logout":
-				res.writeHead(302, { location: url.searchParams.get("post_logout_redirect_uri") ?? "/" });
+			case "/logout": {
+				// Like Shopify: only registered logout URIs are honoured.
+				const to = url.searchParams.get("post_logout_redirect_uri");
+				if (!to || !logoutUris.includes(to)) return json(400, { error: "invalid_post_logout_redirect_uri" });
+				res.writeHead(302, { location: to });
 				return res.end();
+			}
 			default:
 				return json(404, { error: "not_found" });
 		}

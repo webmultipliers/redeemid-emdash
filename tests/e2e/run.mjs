@@ -90,7 +90,7 @@ async function waitFor(url, ms = 90_000) {
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
 
-const shop = await startFakeShop({ port: SHOP_PORT, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET });
+const shop = await startFakeShop({ port: SHOP_PORT, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, logoutUris: [`${SITE}/`] });
 const site = spawn("pnpm", ["exec", "astro", "dev", "--port", String(SITE_PORT), "--host", "127.0.0.1", "--ignore-lock"], {
 	cwd: join(root, "playground"),
 	env: {
@@ -176,8 +176,9 @@ try {
 		headers: { origin: SITE, "content-type": "application/x-www-form-urlencoded" },
 		body: "",
 	});
-	check("sign out returns to the post", out.url.pathname === "/posts/members-only", out.url.href);
-	check("signed-out member is locked again", !out.text.includes("MEMBER-BODY"));
+	check("sign out ends the store session and lands on the registered logout URI", out.url.href === `${SITE}/` && out.res.status === 200, out.url.href);
+	const after = await member.go("/posts/members-only");
+	check("signed-out member is locked again", !after.text.includes("MEMBER-BODY") && after.text.includes('data-redeemid-reason="sign_in"'));
 	const getLogout = await new Browser().go("/_emdash/api/auth/redeemid/logout");
 	check("sign out refuses GET", getLogout.res.status === 405 || getLogout.res.status === 404, String(getLogout.res.status));
 } catch (e) {

@@ -48,7 +48,7 @@ export default defineConfig({
 });
 ```
 
-Set these secrets in the environment (`.env` locally, `wrangler secret put` on Workers):
+Set these secrets in the environment (`.env` locally, `wrangler secret put` on Workers). [docs/shopify-setup.md](docs/shopify-setup.md) walks through the Shopify side:
 
 | Variable | What it is |
 | --- | --- |
