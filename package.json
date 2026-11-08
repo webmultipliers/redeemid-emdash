@@ -1,6 +1,6 @@
 {
 	"name": "@redeemid/emdash",
-	"version": "0.0.2",
+	"version": "0.0.1",
 	"description": "Shopify customer accounts, member levels and paywalls for EmDash sites. Shopify runs commerce; EmDash runs content.",
 	"type": "module",
 	"license": "MIT",
