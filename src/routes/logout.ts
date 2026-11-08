@@ -2,7 +2,9 @@
  * POST /_emdash/api/auth/redeemid/logout?return=/path
  *
  * Ends the site session, then the Shopify customer session when the store
- * publishes an end-session endpoint. POST only, so a link elsewhere can't
+ * publishes an end-session endpoint. After the store session ends the member
+ * lands on the site root (the logout URI registered in Shopify); without a
+ * store session they go straight back to `return`. POST only, so a link elsewhere can't
  * sign members out.
  */
 
@@ -27,7 +29,9 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 	if (config && idToken) {
 		try {
 			const origin = getPublicOrigin(url, emdash?.config as Parameters<typeof getPublicOrigin>[1]);
-			const to = logoutUrl(await discover(config), idToken, `${origin}${returnTo}`);
+			// Shopify only returns to a registered logout URI, so register the
+			// site root and come back there rather than to the page.
+			const to = logoutUrl(await discover(config), idToken, `${origin}/`);
 			if (to) return redirect(to);
 		} catch {
 			// The site session is already gone; Shopify's ends on its own.
