@@ -6,7 +6,7 @@
  * only; a profile payload without `tags` never means "tags removed".
  */
 
-import { cleanTags, emptyMember, numericId, type MemberRecord, type Stores } from "./storage.js";
+import { cleanTags, emptyMember, numericId, stampTags, type MemberRecord, type Stores } from "./storage.js";
 
 export type Kind = "profile" | "delete" | "status" | "tags" | "merge" | "compliance" | "ignored";
 
@@ -114,7 +114,7 @@ export async function apply(s: Stores, topic: string, payload: Record<string, un
 			if (!survivor.userId) survivor.userId = old.userId;
 			survivor.syncedAt = new Date().toISOString();
 			survivor.source = topic;
-			await s.members.put(kept, survivor);
+			await s.members.put(kept, stampTags(survivor));
 		}
 		await s.members.delete(gone);
 		return "processed";
@@ -156,6 +156,6 @@ export async function apply(s: Stores, topic: string, payload: Record<string, un
 
 	current.syncedAt = new Date().toISOString();
 	current.source = topic;
-	await s.members.put(id, current);
+	await s.members.put(id, stampTags(current));
 	return "processed";
 }

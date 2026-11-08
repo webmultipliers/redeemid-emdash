@@ -55,7 +55,7 @@ describe("levels and rules", () => {
 		expect(requirement(config.rules, "guides", { tag: ["c"] })).toBeNull();
 	});
 
-	it("needs every matching term rule by default (most restrictive), like WordPress", () => {
+	it("needs every matching term rule by default (most restrictive)", () => {
 		expect(requirement(config.rules, "guides", { tag: ["a", "b"] })).toEqual([["member"], ["pro"]]);
 		// An any-member rule adds nothing next to a level rule.
 		expect(requirement(config.rules, "posts", { category: [{ slug: "pro" }, { slug: "open-house" }] })).toEqual([["pro"]]);

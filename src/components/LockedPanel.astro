@@ -17,9 +17,17 @@ interface Props {
 	required?: string[][];
 	/** Levels the reader holds (Verdict.viewer.levels). */
 	held?: string[];
+	/** For "drip": when it opens (Verdict.opensAt). */
+	opensAt?: Date;
+	/** Free reads left when a meter ran (Verdict.meterLeft); 0 shows the meter-used text. */
+	meterLeft?: number;
+	meterPeriod?: "month" | "week";
 }
 
-const { reason, required = [], held = [] } = Astro.props;
+const { reason, required = [], held = [], opensAt, meterLeft, meterPeriod } = Astro.props;
+const opens = opensAt
+	? new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" }).format(opensAt)
+	: null;
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
 const missing = required.find((clause) => clause.length > 0 && !passes(held, [clause]));
 const level = missing ? config?.levels?.find((l) => l.slug === missing[0]) : undefined;
@@ -35,6 +43,14 @@ const here = Astro.url.pathname + Astro.url.search;
 		<p>
 			This is for members. <a href={signInUrl(here)}>Sign in</a> to read on.
 			{joinHref && <> Not a member yet? <a href={joinHref}>{joinLabel}</a>.</>}
+		</p>
+	)}
+	{reason === "upgrade" && meterLeft === 0 && (
+		<p class="redeemid-locked__meter">You've used your free reads {meterPeriod === "week" ? "this week" : "this month"}.</p>
+	)}
+	{reason === "drip" && (
+		<p>
+			{opens ? <>This opens for you on <time datetime={opensAt?.toISOString()}>{opens}</time>.</> : "This opens for you after you've been a member a little longer."}
 		</p>
 	)}
 	{reason === "upgrade" && (

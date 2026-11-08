@@ -31,6 +31,27 @@ export interface MemberRecord {
 	syncedAt: string;
 	/** What wrote it last: sign-in or a webhook topic. */
 	source: string;
+	/** When each tag (lowercased) was first seen on the customer, ISO. Kept for drip; a removed tag is forgotten. */
+	tagsSince?: Record<string, string>;
+	/** When the customer first signed in here, ISO. */
+	linkedAt?: string | null;
+}
+
+/** A signed-in reader's meter for one period: the locked items they opened free. */
+export interface MeterRecord {
+	userId: string;
+	/** "2026-11" for a month, "2026-W45" for a week. */
+	period: string;
+	items: string[];
+}
+
+/** Update `tagsSince` to the record's current tags: new tags start now, removed tags are dropped. */
+export function stampTags(m: MemberRecord, now = new Date().toISOString()): MemberRecord {
+	const before = m.tagsSince ?? {};
+	const since: Record<string, string> = {};
+	for (const t of m.tags.map((t) => t.toLowerCase())) since[t] = before[t] ?? now;
+	m.tagsSince = since;
+	return m;
 }
 
 export interface DeliveryRecord {
@@ -41,11 +62,13 @@ export interface DeliveryRecord {
 export const STORAGE_CONFIG = {
 	members: { indexes: ["email", "userId"] },
 	deliveries: { indexes: ["receivedAt"] },
+	meter: { indexes: ["userId"] },
 };
 
 export interface Stores {
 	members: StorageCollection<MemberRecord>;
 	deliveries: StorageCollection<DeliveryRecord>;
+	meter: StorageCollection<MeterRecord>;
 }
 
 export function stores(db: unknown): Stores {

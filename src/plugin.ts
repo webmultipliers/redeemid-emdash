@@ -13,7 +13,7 @@
  * - "Paywall break" (`redeemid-paywall`): everything after it in the body is
  *   for members. Pick the levels that may read on ("Signed in" for any
  *   member); none picked means the entry's rule, and nothing is locked when
- *   no rule covers the entry, as on WordPress.
+ *   no rule covers the entry.
  * - "Members only" (`redeemid-members`) and "Members only: end"
  *   (`redeemid-members-end`): the part between is for the levels picked on
  *   the start block; everyone else sees the wall there and reads on after.
@@ -281,6 +281,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 						columns: [
 							{ key: "where", label: "Covers" },
 							{ key: "levels", label: "Who can read" },
+							{ key: "extra", label: "Drip and meter" },
 						],
 						rows: rules.map((r) => ({
 							where:
@@ -290,9 +291,16 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 										? "Site default (collections with no rule)"
 										: `All ${r.collection}`,
 							levels: r.open ? "Everyone (opens the entry)" : r.levels.length ? describe([r.levels], levels) : "Any signed-in member",
+							extra: [r.drip ? `Opens ${r.drip} days into membership` : "", r.meter === false ? "Never metered" : ""].filter(Boolean).join("; "),
 						})),
 					}
 				: { type: "context", text: "No rules. Entries are open unless their body has a paywall break." },
+			{
+				type: "context",
+				text: config.meter?.limit
+					? `Meter: signed-in readers may open ${config.meter.limit} locked ${config.meter.limit === 1 ? "entry" : "entries"} a ${config.meter.period ?? "month"}${config.meter.collections?.length ? ` (${config.meter.collections.join(", ")})` : ""}.`
+					: "Meter: off.",
+			},
 		],
 	};
 }

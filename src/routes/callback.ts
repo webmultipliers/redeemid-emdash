@@ -17,7 +17,7 @@ import type { Kysely } from "kysely";
 
 import { env, ENV, PROVIDER_ID, readConfig, storeDomain } from "../config.js";
 import { discover, exchangeCode, identity, ShopifyError, verifyIdToken } from "../shopify.js";
-import { emptyMember, stores } from "../storage.js";
+import { emptyMember, stampTags, stores } from "../storage.js";
 import { callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_ID_TOKEN, type Flow } from "./shared.js";
 
 export const prerender = false;
@@ -83,16 +83,24 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 
 		const s = stores(emdash.db);
 		const member = (await s.members.get(who.customerId)) ?? emptyMember(who.customerId);
-		await s.members.put(who.customerId, {
-			...member,
-			userId: user.id,
-			email,
-			firstName: who.firstName,
-			lastName: who.lastName,
-			tags: who.tags,
-			syncedAt: new Date().toISOString(),
-			source: "sign-in",
-		});
+		const now = new Date().toISOString();
+		await s.members.put(
+			who.customerId,
+			stampTags(
+				{
+					...member,
+					userId: user.id,
+					email,
+					firstName: who.firstName,
+					lastName: who.lastName,
+					tags: who.tags,
+					syncedAt: now,
+					source: "sign-in",
+					linkedAt: member.linkedAt ?? now,
+				},
+				now,
+			),
+		);
 
 		session.regenerate?.();
 		session.set("user", { id: user.id });

@@ -20,8 +20,14 @@ const config = {
 	join: { href: "/join", label: "Join" },
 	rules: [
 		{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
-		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
+		// The meter never opens Pro posts; Reports posts it may.
+		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"], meter: false },
+		{ collection: "posts", taxonomy: "category", term: "reports", levels: ["pro"] },
+		// Updates open to members 30 days after they join.
+		{ collection: "posts", taxonomy: "category", term: "updates", levels: ["member", "pro"], drip: 30 },
 	],
+	// Signed-in readers may open one locked post a month.
+	meter: { limit: 1, collections: ["posts"] },
 	// Locked posts with no paywall break show the paragraphs within their first 5 words.
 	teaser: { posts: 5 },
 };
