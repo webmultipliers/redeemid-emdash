@@ -1,5 +1,6 @@
 ---
 import Account from "@redeemid/emdash/components/Account.astro";
+import Cart from "@redeemid/emdash/components/Cart.astro";
 import { getMenuWithCacheHint, getSiteSettingsWithCacheHint } from "emdash";
 import { EmDashHead, EmDashBodyStart, EmDashBodyEnd } from "emdash/ui";
 import { createPublicPageContext } from "emdash/page";
@@ -92,6 +93,7 @@ const pageCtx = createPublicPageContext({
 				<LiveSearch placeholder="Search..." collections={["posts", "pages"]} />
 			</nav>
 			<Account />
+			<Cart />
 		</header>
 
 		<main>

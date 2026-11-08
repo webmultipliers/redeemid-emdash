@@ -1,8 +1,9 @@
 /**
- * POST /_emdash/api/auth/redeemid/buy: start a Shopify checkout for one plan.
+ * POST /_emdash/api/auth/redeemid/buy: add a plan to the cart and check out.
  *
  * Takes a product handle, looks its variant up again on Shopify (never
- * trusting a posted variant or price) and sends the buyer to checkout. A
+ * trusting a posted variant or price), adds it to the visitor's Shopify
+ * cart and sends them to that cart's checkout. A
  * signed-in member's email is passed along so the order lands on the same
  * customer. Tags, and so access, still only change when Shopify says so.
  */
@@ -12,7 +13,8 @@ import type { APIRoute } from "astro";
 import { readConfig, storeDomain } from "../config.js";
 import { safeReturn } from "../access.js";
 import { memberForUser, stores } from "../storage.js";
-import { checkoutUrl, plan } from "../storefront.js";
+import { saveCart, readCart } from "../cart.js";
+import { addToCart, plan } from "../storefront.js";
 import { fail } from "./shared.js";
 
 export const prerender = false;
@@ -32,12 +34,15 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 		// Provider routes are public, so read the member from the session.
 		const user = (await session?.get("user")) as { id?: string } | undefined;
 		const member = user?.id && emdash?.db ? await memberForUser(stores(emdash.db), user.id) : null;
-		const to = await checkoutUrl(
+		const current = await readCart(session);
+		const cart = await addToCart(
 			config,
+			current?.id ?? null,
 			{ variantId: p.variantId, sellingPlanId: p.sellingPlanId },
 			{ email: member?.email ?? null, buyerIp: request.headers.get("cf-connecting-ip") },
 		);
-		return redirect(to, 303);
+		saveCart(session, { id: cart.id, count: cart.totalQuantity });
+		return redirect(cart.checkoutUrl, 303);
 	} catch {
 		return fail(redirect, returnTo, "checkout_failed");
 	}

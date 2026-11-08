@@ -1,9 +1,9 @@
 ---
 /**
- * Sign in link for visitors; name, levels and Sign out for members.
+ * Sign in link for visitors; name, levels, Account and Sign out for members.
  */
 import { siteConfig } from "../site-config.js";
-import { signInUrl, signOutUrl, viewer } from "../access.js";
+import { accountUrl, signInUrl, signOutUrl, viewer } from "../access.js";
 
 const v = await viewer(Astro);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
@@ -16,6 +16,7 @@ const names = (config?.levels ?? []).filter((l) => v.levels.includes(l.slug)).ma
 		<>
 			<span class="redeemid-account__who">{v.member?.firstName ?? v.member?.email ?? "Signed in"}</span>
 			{names.length > 0 && <span class="redeemid-account__levels">{names.join(", ")}</span>}
+			<a class="redeemid-account__link" href={accountUrl(here)}>Account</a>
 			<form method="post" action={signOutUrl(here)}>
 				<button type="submit">Sign out</button>
 			</form>

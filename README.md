@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.2, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the page gate and plan checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.3, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -10,7 +10,8 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Mirrors the customer.** Email, name, tags and enabled/disabled status, kept current by signed Shopify webhooks.
 - **Levels from tags.** You map Shopify customer tags to levels. Set tags in Shopify Flow or any app; RedeemID only reads them.
 - **Rules per collection or term.** Lock a collection, or only entries in a category or tag.
-- **Plans and checkout.** `<Plan>` shows a Shopify product's price and starts checkout through the Storefront API.
+- **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
+- **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
 - **A page gate.** `<Gate>` shows the entry to readers who may read it and a teaser plus "Sign in" to everyone else.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
@@ -86,16 +87,18 @@ import Gate from "@redeemid/emdash/components/Gate.astro";
 </Gate>
 ```
 
-Add the account box to your header:
+Add the account box and cart to your header. Visitors see Sign in; members see their name, levels, Account and Sign out. The cart shows how many items are in the visitor's Shopify cart and goes to its checkout:
 
 ```astro
 ---
 import Account from "@redeemid/emdash/components/Account.astro";
+import Cart from "@redeemid/emdash/components/Cart.astro";
 ---
 <Account />
+<Cart />
 ```
 
-Sell a plan. `<Plan>` shows a Shopify product's title and price with a button that starts checkout (signed-in members check out with their email). Shopify Flow or an app tags the customer after the order, and access follows that tag:
+Sell a plan. `<Plan>` shows a Shopify product's title and price with a button that adds it to the visitor's Shopify cart and opens checkout (signed-in members check out with their email). Shopify Flow or an app tags the customer after the order, and access follows that tag:
 
 ```astro
 ---
