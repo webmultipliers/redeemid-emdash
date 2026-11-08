@@ -1,0 +1,13 @@
+---
+/** The "Plan" block: a Shopify product with its price and a buy button. */
+import Plan from "../components/Plan.astro";
+
+interface Props {
+	node: { handle?: string; title?: string; label?: string };
+}
+
+const { node } = Astro.props;
+const handle = (node.handle ?? "").trim();
+---
+
+{handle && <Plan handle={handle} title={node.title?.trim() || undefined} label={node.label?.trim() || "Join"} />}

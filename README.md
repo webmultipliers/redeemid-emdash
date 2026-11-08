@@ -12,7 +12,9 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Rules per collection or term.** Lock a collection, or only entries in a category or tag.
 - **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
-- **A page gate.** `<Gate>` shows the entry to readers who may read it and a teaser plus "Sign in" to everyone else.
+- **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on. `<Content>` renders the body and leaves the rest off the page for everyone else.
+- **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
+- **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels), a Status page (secrets, store discovery, the URLs to give Shopify, levels and rules) and a dashboard widget.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
 ## Install
@@ -24,28 +26,29 @@ pnpm add @redeemid/emdash
 ```
 
 ```js title="astro.config.mjs"
-import { redeemid, redeemidGuard } from "@redeemid/emdash";
+import { redeemid, redeemidGuard, redeemidPlugin } from "@redeemid/emdash";
 import emdash from "emdash/astro";
+
+const config = {
+	shop: "my-store.myshopify.com",
+	levels: [
+		{ slug: "member", name: "Member", tags: ["member"] },
+		{ slug: "pro", name: "Pro", tags: ["pro"] },
+		// match: "all" needs every tag, e.g. both memberships:
+		{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" },
+	],
+	rules: [
+		{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
+		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
+	],
+};
 
 export default defineConfig({
 	integrations: [
 		emdash({
 			// database, storage, …
-			authProviders: [
-				redeemid({
-					shop: "my-store.myshopify.com",
-					levels: [
-						{ slug: "member", name: "Member", tags: ["member"] },
-						{ slug: "pro", name: "Pro", tags: ["pro"] },
-						// match: "all" needs every tag, e.g. both memberships:
-						{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" },
-					],
-					rules: [
-						{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
-						{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
-					],
-				}),
-			],
+			authProviders: [redeemid(config)], // sign-in, webhooks, cart and checkout routes
+			plugins: [redeemidPlugin(config)], // admin pages and the editor blocks
 		}),
 		redeemidGuard(),
 	],
@@ -75,17 +78,20 @@ Point webhooks (`customers/create`, `customers/update`, `customers/delete`, `cus
 
 ## Use it in templates
 
-EmDash has no content filter hook, so templates decide what to render. Wrap the entry body:
+EmDash has no content filter hook, so templates decide what to render. Render the entry body with `<Content>` instead of `<PortableText>`:
 
 ```astro
 ---
-import Gate from "@redeemid/emdash/components/Gate.astro";
+import Content from "@redeemid/emdash/components/Content.astro";
 ---
-<Gate collection="posts" terms={post.data.terms}>
-	<PortableText value={post.data.content} />
-	<p slot="locked">{post.data.excerpt}</p>
-</Gate>
+<Content value={post.data.content} collection="posts" terms={post.data.terms}>
+	<a slot="locked" href="/join/">Become a member</a>
+</Content>
 ```
+
+Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it, or when none are picked the entry's rule, or else any signed-in member. A body with no break follows the entry's rule as a whole. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
+
+To lock a part of a template that isn't the body, wrap it in `<Gate>` (`<Gate levels={["pro"]}>…</Gate>`).
 
 Add the account box and cart to your header. Visitors see Sign in; members see their name, levels, Account and Sign out. The cart shows how many items are in the visitor's Shopify cart and goes to its checkout:
 
