@@ -119,6 +119,16 @@ export function signInUrl(returnTo: string): string {
 	return `/_emdash/api/auth/redeemid/login?return=${encodeURIComponent(safeReturn(returnTo))}`;
 }
 
+/** Where the Cart link goes: the visitor's Shopify checkout. */
+export function cartUrl(returnTo = "/"): string {
+	return `/_emdash/api/auth/redeemid/cart?return=${encodeURIComponent(safeReturn(returnTo))}`;
+}
+
+/** Where the Account link goes: the member's Shopify customer account. */
+export function accountUrl(returnTo = "/"): string {
+	return `/_emdash/api/auth/redeemid/account?return=${encodeURIComponent(safeReturn(returnTo))}`;
+}
+
 export function signOutUrl(returnTo = "/"): string {
 	return `/_emdash/api/auth/redeemid/logout?return=${encodeURIComponent(safeReturn(returnTo))}`;
 }

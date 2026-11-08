@@ -1,0 +1,21 @@
+---
+/**
+ * Cart link with the item count from the visitor's Shopify cart. It goes
+ * to that cart's Shopify checkout.
+ */
+import { cartUrl } from "../access.js";
+import { readCart } from "../cart.js";
+
+interface Props {
+	label?: string;
+}
+
+const { label = "Cart" } = Astro.props;
+const ref = await readCart(Astro.session);
+const count = ref?.count ?? 0;
+const here = Astro.url.pathname + Astro.url.search;
+---
+
+<a class="redeemid-cart" href={cartUrl(here)} data-redeemid-cart-count={count}>
+	{label}{count > 0 && <span class="redeemid-cart__count"> ({count})</span>}
+</a>

@@ -36,6 +36,7 @@ import { STORAGE_CONFIG } from "./storage.js";
 
 export type { LevelConfig, RedeemIDConfig, RuleConfig } from "./config.js";
 export type { MemberRecord } from "./storage.js";
+export { redeemidPlugin } from "./descriptor.js";
 // Page-time helpers live in "@redeemid/emdash/access": they read the site's
 // build-time config module, which astro.config.mjs can't load.
 
@@ -54,6 +55,8 @@ export function redeemid(config: RedeemIDConfig): AuthProviderDescriptor {
 			{ pattern: `${BASE}/logout`, entrypoint: "@redeemid/emdash/routes/logout.ts" },
 			{ pattern: `${BASE}/webhook`, entrypoint: "@redeemid/emdash/routes/webhook.ts" },
 			{ pattern: `${BASE}/buy`, entrypoint: "@redeemid/emdash/routes/buy.ts" },
+			{ pattern: `${BASE}/cart`, entrypoint: "@redeemid/emdash/routes/cart.ts" },
+			{ pattern: `${BASE}/account`, entrypoint: "@redeemid/emdash/routes/account.ts" },
 		],
 		publicRoutes: [`${BASE}/`],
 		storage: STORAGE_CONFIG,

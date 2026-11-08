@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.2, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the page gate and plan checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.3, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -10,8 +10,11 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Mirrors the customer.** Email, name, tags and enabled/disabled status, kept current by signed Shopify webhooks.
 - **Levels from tags.** You map Shopify customer tags to levels. Set tags in Shopify Flow or any app; RedeemID only reads them.
 - **Rules per collection or term.** Lock a collection, or only entries in a category or tag.
-- **Plans and checkout.** `<Plan>` shows a Shopify product's price and starts checkout through the Storefront API.
-- **A page gate.** `<Gate>` shows the entry to readers who may read it and a teaser plus "Sign in" to everyone else.
+- **Plans, cart and checkout.** `<Plan>` shows a Shopify product's price and adds it to the visitor's Shopify cart; `<Cart>` shows the count and opens Shopify checkout.
+- **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
+- **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on. `<Content>` renders the body and leaves the rest off the page for everyone else.
+- **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
+- **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels), a Status page (secrets, store discovery, the URLs to give Shopify, levels and rules) and a dashboard widget.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
 ## Install
@@ -23,28 +26,29 @@ pnpm add @redeemid/emdash
 ```
 
 ```js title="astro.config.mjs"
-import { redeemid, redeemidGuard } from "@redeemid/emdash";
+import { redeemid, redeemidGuard, redeemidPlugin } from "@redeemid/emdash";
 import emdash from "emdash/astro";
+
+const config = {
+	shop: "my-store.myshopify.com",
+	levels: [
+		{ slug: "member", name: "Member", tags: ["member"] },
+		{ slug: "pro", name: "Pro", tags: ["pro"] },
+		// match: "all" needs every tag, e.g. both memberships:
+		{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" },
+	],
+	rules: [
+		{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
+		{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
+	],
+};
 
 export default defineConfig({
 	integrations: [
 		emdash({
 			// database, storage, …
-			authProviders: [
-				redeemid({
-					shop: "my-store.myshopify.com",
-					levels: [
-						{ slug: "member", name: "Member", tags: ["member"] },
-						{ slug: "pro", name: "Pro", tags: ["pro"] },
-						// match: "all" needs every tag, e.g. both memberships:
-						{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" },
-					],
-					rules: [
-						{ collection: "posts", taxonomy: "category", term: "members", levels: ["member", "pro"] },
-						{ collection: "posts", taxonomy: "category", term: "pro", levels: ["pro"] },
-					],
-				}),
-			],
+			authProviders: [redeemid(config)], // sign-in, webhooks, cart and checkout routes
+			plugins: [redeemidPlugin(config)], // admin pages and the editor blocks
 		}),
 		redeemidGuard(),
 	],
@@ -74,28 +78,33 @@ Point webhooks (`customers/create`, `customers/update`, `customers/delete`, `cus
 
 ## Use it in templates
 
-EmDash has no content filter hook, so templates decide what to render. Wrap the entry body:
+EmDash has no content filter hook, so templates decide what to render. Render the entry body with `<Content>` instead of `<PortableText>`:
 
 ```astro
 ---
-import Gate from "@redeemid/emdash/components/Gate.astro";
+import Content from "@redeemid/emdash/components/Content.astro";
 ---
-<Gate collection="posts" terms={post.data.terms}>
-	<PortableText value={post.data.content} />
-	<p slot="locked">{post.data.excerpt}</p>
-</Gate>
+<Content value={post.data.content} collection="posts" terms={post.data.terms}>
+	<a slot="locked" href="/join/">Become a member</a>
+</Content>
 ```
 
-Add the account box to your header:
+Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it, or when none are picked the entry's rule, or else any signed-in member. A body with no break follows the entry's rule as a whole. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
+
+To lock a part of a template that isn't the body, wrap it in `<Gate>` (`<Gate levels={["pro"]}>…</Gate>`).
+
+Add the account box and cart to your header. Visitors see Sign in; members see their name, levels, Account and Sign out. The cart shows how many items are in the visitor's Shopify cart and goes to its checkout:
 
 ```astro
 ---
 import Account from "@redeemid/emdash/components/Account.astro";
+import Cart from "@redeemid/emdash/components/Cart.astro";
 ---
 <Account />
+<Cart />
 ```
 
-Sell a plan. `<Plan>` shows a Shopify product's title and price with a button that starts checkout (signed-in members check out with their email). Shopify Flow or an app tags the customer after the order, and access follows that tag:
+Sell a plan. `<Plan>` shows a Shopify product's title and price with a button that adds it to the visitor's Shopify cart and opens checkout (signed-in members check out with their email). Shopify Flow or an app tags the customer after the order, and access follows that tag:
 
 ```astro
 ---

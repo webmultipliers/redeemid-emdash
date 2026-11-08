@@ -313,6 +313,48 @@
 						"pro"
 					]
 				}
+			},
+			{
+				"id": "post-break",
+				"slug": "paywall-break",
+				"status": "published",
+				"data": {
+					"title": "Paywall break",
+					"excerpt": "Opens for everyone, then Pro.",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "OPEN-INTRO: everyone reads this.",
+									"_key": "b0s"
+								}
+							],
+							"_key": "b0"
+						},
+						{
+							"_type": "redeemid-paywall",
+							"_key": "b1",
+							"levels": [
+								"pro"
+							]
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "BREAK-BODY: only Pro reads this.",
+									"_key": "b2s"
+								}
+							],
+							"_key": "b2"
+						}
+					]
+				}
 			}
 		]
 	}

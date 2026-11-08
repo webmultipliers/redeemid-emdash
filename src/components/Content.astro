@@ -1,0 +1,53 @@
+---
+/**
+ * An entry's body, with RedeemID's paywall break applied.
+ *
+ *   <Content value={post.data.content} collection="posts" terms={post.data.terms} />
+ *
+ * Everything before the first "Paywall break" block is shown to everyone.
+ * What follows reaches the page only for readers who may read it: the levels
+ * picked on the break, or when none are picked the entry's rule, or else any
+ * signed-in member. Others get the "locked" slot (or a built-in notice).
+ * A body with no break follows the entry's rule as a whole.
+ */
+import { PortableText } from "emdash/ui";
+
+import { canRead, requiredLevels, signInUrl, type Terms } from "../access.js";
+import { splitAtPaywall } from "../blocks-names.js";
+import { siteConfig } from "../site-config.js";
+
+interface Props {
+	value?: unknown[] | null;
+	collection?: string;
+	terms?: Terms;
+}
+
+const { value, collection = "", terms } = Astro.props;
+const split = splitAtPaywall(value);
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const levels = split.paywall
+	? split.levels.length
+		? split.levels
+		: (requiredLevels(config?.rules, collection, terms) ?? [])
+	: undefined;
+const verdict = await canRead(Astro, { collection, terms }, levels ? { levels } : undefined);
+const shown = split.paywall ? split.open : verdict.allowed ? split.open : [];
+const here = Astro.url.pathname + Astro.url.search;
+---
+
+{shown.length > 0 && <PortableText value={shown} />}
+{verdict.allowed ? (
+	split.locked.length > 0 && <PortableText value={split.locked} />
+) : (
+	<div class="redeemid-locked" data-redeemid-reason={verdict.reason}>
+		<slot name="locked" />
+		{verdict.reason === "sign_in" && (
+			<p>
+				This is for members. <a href={signInUrl(here)}>Sign in</a> to read on.
+			</p>
+		)}
+		{verdict.reason === "upgrade" && <p>Your membership doesn't include the rest of this yet.</p>}
+		{verdict.reason === "disabled" && <p>Your account is turned off. Contact the store for help.</p>}
+		{verdict.reason === "unconfigured" && <p>This is for members.</p>}
+	</div>
+)}

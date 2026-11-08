@@ -146,6 +146,33 @@ try {
 	const pro = await member.go("/posts/pro-only");
 	check("Pro post asks a member to upgrade", !pro.text.includes("PRO-BODY") && pro.text.includes('data-redeemid-reason="upgrade"'));
 
+	// One body with a Paywall break block (levels: Pro): the opening is open, the rest isn't.
+	const breakVisitor = await visitor.go("/posts/paywall-break");
+	check("paywall break: visitors read the opening", breakVisitor.text.includes("OPEN-INTRO"));
+	check("paywall break: visitors don't get the rest", !breakVisitor.text.includes("BREAK-BODY") && breakVisitor.text.includes('data-redeemid-reason="sign_in"'));
+	const breakMember = await member.go("/posts/paywall-break");
+	check("paywall break: the break's levels apply (Member asked to upgrade)", breakMember.text.includes("OPEN-INTRO") && !breakMember.text.includes("BREAK-BODY") && breakMember.text.includes('data-redeemid-reason="upgrade"'));
+
+	// RedeemID is a registered EmDash plugin with its admin pages and blocks.
+	const manifest = await admin.go("/_emdash/api/manifest");
+	check("plugin is in the admin manifest with its blocks", manifest.text.includes('"redeemid"') && manifest.text.includes("redeemid-paywall") && manifest.text.includes("redeemid-plan"), manifest.text.slice(0, 200));
+	const adminPage = async (page) =>
+		admin.go("/_emdash/api/plugins/redeemid/admin", {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+			body: JSON.stringify({ type: "page_load", page }),
+		});
+	const membersPage = await adminPage("/");
+	check("Members page lists the signed-in member", membersPage.res.status === 200 && membersPage.text.includes(shop.customer.email), `${membersPage.res.status} ${membersPage.text.slice(0, 200)}`);
+	const statusPage = await adminPage("/status");
+	check("Status page reports sign-in ready", statusPage.text.includes("Sign-in is ready") && statusPage.text.includes("/_emdash/api/auth/redeemid/webhook"), statusPage.text.slice(0, 300));
+	const memberAdmin = await member.go("/_emdash/api/plugins/redeemid/admin", {
+		method: "POST",
+		headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+		body: JSON.stringify({ type: "page_load", page: "/" }),
+	});
+	check("members can't open the plugin's admin pages", memberAdmin.res.status === 401 || memberAdmin.res.status === 403, String(memberAdmin.res.status));
+
 	// The Join page shows Shopify's plan and starts a checkout for the member.
 	const join = await member.go("/join");
 	check("plan card shows Shopify's title and price", join.text.includes("Pro plan") && join.text.includes("$12.00"));
@@ -171,6 +198,30 @@ try {
 	});
 	check("unknown plan returns with a notice", badPlan.url.search.includes("redeemid_notice=plan_unavailable"));
 
+	// The cart is the member's Shopify cart: it keeps lines and leads to checkout.
+	const withCart = await member.go("/join");
+	check("Cart link shows the Shopify cart count", withCart.text.includes('data-redeemid-cart-count="1"'));
+	await member.go("/_emdash/api/auth/redeemid/buy", {
+		method: "POST",
+		headers: { "content-type": "application/x-www-form-urlencoded" },
+		body: "plan=pro-plan&return=%2Fjoin",
+	});
+	const cartId = [...shop.cartsById.keys()].at(-1);
+	check("a second Buy adds to the same Shopify cart", shop.carts.length === 1 && shop.cartsById.get(cartId)?.lines.length === 2, String(shop.carts.length));
+	const toCart = await member.go("/_emdash/api/auth/redeemid/cart?return=%2Fjoin");
+	check("Cart goes to that cart's checkout", toCart.text === "CHECKOUT" && toCart.url.searchParams.get("cart") === cartId, toCart.url.href);
+	await fetch(`http://127.0.0.1:${SHOP_PORT}/checkout?cart=${encodeURIComponent(cartId)}&complete=1`);
+	const done = await member.go("/_emdash/api/auth/redeemid/cart?return=%2Fjoin");
+	check("a completed checkout empties the cart", done.url.searchParams.get("redeemid_notice") === "cart_empty", done.url.href);
+	const cleared = await member.go("/join");
+	check("Cart count resets after checkout", cleared.text.includes('data-redeemid-cart-count="0"'));
+
+	// Account goes to the member's Shopify customer account.
+	check("account box links to the Shopify account", cleared.text.includes("/_emdash/api/auth/redeemid/account"));
+	const acct = await member.go("/_emdash/api/auth/redeemid/account?return=%2Fjoin");
+	check("Account opens the Shopify customer account", acct.text === "CUSTOMER-ACCOUNT", acct.url.href);
+	check("every server call to Shopify sent a User-Agent", shop.blocked.length === 0, shop.blocked.join(", "));
+
 	// Shopify tags the customer Pro (Flow or an app would do this).
 	const gid = `gid://shopify/Customer/${shop.customer.id}`;
 	const added = await webhook("customer.tags_added", { customerId: gid, tags: ["pro"] }, { id: "evt-1" });
@@ -181,6 +232,8 @@ try {
 	check("unsigned webhook is refused", forged.status === 401, JSON.stringify(forged));
 	const proNow = await member.go("/posts/pro-only");
 	check("Pro post opens after the tag webhook", proNow.text.includes("PRO-BODY"));
+	const breakPro = await member.go("/posts/paywall-break");
+	check("paywall break opens for Pro", breakPro.text.includes("OPEN-INTRO") && breakPro.text.includes("BREAK-BODY"));
 
 	// Shopify turns the account off, then on again.
 	await webhook("customers/disable", { id: shop.customer.id, updated_at: "2026-11-08T10:00:00Z" });

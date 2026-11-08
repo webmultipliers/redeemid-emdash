@@ -24,6 +24,12 @@ const DISCOVERY_TTL_MS = 60 * 60 * 1000;
 const discoveryCache = new Map<string, { at: number; value: Discovery }>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
+/**
+ * Shopify answers 403 to requests with no User-Agent, and fetch on
+ * Cloudflare Workers sends none, so every server-side call names itself.
+ */
+export const USER_AGENT = "@redeemid/emdash (+https://github.com/webmultipliers/redeemid-emdash)";
+
 export class ShopifyError extends Error {
 	constructor(
 		public readonly code: string,
@@ -65,7 +71,7 @@ export async function discover(config: RedeemIDConfig, fetcher: typeof fetch = f
 }
 
 async function getJson(fetcher: typeof fetch, url: string): Promise<Record<string, unknown>> {
-	const res = await fetcher(url, { headers: { Accept: "application/json" } });
+	const res = await fetcher(url, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
 	if (!res.ok) throw new ShopifyError("discovery_failed", `Discovery failed (${res.status}) for ${url}`);
 	return (await res.json()) as Record<string, unknown>;
 }
@@ -128,6 +134,7 @@ export async function exchangeCode(
 	const headers: Record<string, string> = {
 		"Content-Type": "application/x-www-form-urlencoded",
 		Accept: "application/json",
+		"User-Agent": USER_AGENT,
 	};
 	// Public clients are checked against their registered JavaScript origins.
 	if (args.origin) headers.Origin = args.origin;
@@ -149,7 +156,7 @@ export async function verifyIdToken(
 ): Promise<JWTPayload> {
 	let jwks = jwksCache.get(d.jwksUri);
 	if (!jwks) {
-		jwks = createRemoteJWKSet(new URL(d.jwksUri));
+		jwks = createRemoteJWKSet(new URL(d.jwksUri), { headers: { "User-Agent": USER_AGENT } });
 		jwksCache.set(d.jwksUri, jwks);
 	}
 	try {
@@ -191,7 +198,7 @@ export async function identity(d: Discovery, accessToken: string, fetcher: typeo
 	const res = await fetcher(d.graphqlApi, {
 		method: "POST",
 		// The Customer Account API takes the bare access token, without "Bearer".
-		headers: { "Content-Type": "application/json", Authorization: accessToken },
+		headers: { "Content-Type": "application/json", Authorization: accessToken, "User-Agent": USER_AGENT },
 		body: JSON.stringify({ query: IDENTITY_QUERY }),
 	});
 	const data = (await res.json().catch(() => ({}))) as {

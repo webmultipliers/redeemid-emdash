@@ -8,6 +8,7 @@
  */
 
 import { env, ENV, shopOrigin, type RedeemIDConfig } from "./config.js";
+import { USER_AGENT } from "./shopify.js";
 
 export const STOREFRONT_API_VERSION = "2026-10";
 
@@ -34,7 +35,11 @@ export async function storefront<T>(
 	variables: Record<string, unknown> = {},
 	opts: { buyerIp?: string | null; fetcher?: typeof fetch } = {},
 ): Promise<T> {
-	const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+		Accept: "application/json",
+		"User-Agent": USER_AGENT,
+	};
 	const priv = env(ENV.storefrontPrivateToken);
 	const pub = env(ENV.storefrontPublicToken);
 	if (priv) {
@@ -120,4 +125,62 @@ export async function checkoutUrl(
 	const url = data.cartCreate.cart?.checkoutUrl;
 	if (!url) throw new Error(data.cartCreate.userErrors[0]?.message ?? "Shopify returned no checkout.");
 	return url;
+}
+
+// ---------------------------------------------------------------- cart
+
+export interface Cart {
+	id: string;
+	checkoutUrl: string;
+	totalQuantity: number;
+}
+
+const CART_FIELDS = "id checkoutUrl totalQuantity";
+
+const CART_GET = `query Cart($id: ID!) { cart(id: $id) { ${CART_FIELDS} } }`;
+
+const CART_NEW = `mutation CartNew($input: CartInput!) {
+  cartCreate(input: $input) { cart { ${CART_FIELDS} } userErrors { message } }
+}`;
+
+const CART_ADD = `mutation CartAdd($id: ID!, $lines: [CartLineInput!]!) {
+  cartLinesAdd(cartId: $id, lines: $lines) { cart { ${CART_FIELDS} } userErrors { message } }
+}`;
+
+type CartResult = { cart: Cart | null; userErrors: Array<{ message: string }> };
+
+/**
+ * A cart by id. Null once Shopify no longer has it, which is what happens
+ * after its checkout completes.
+ */
+export async function getCart(
+	config: RedeemIDConfig,
+	id: string,
+	opts: { buyerIp?: string | null; fetcher?: typeof fetch } = {},
+): Promise<Cart | null> {
+	const data = await storefront<{ cart: Cart | null }>(config, CART_GET, { id }, opts);
+	return data.cart;
+}
+
+/**
+ * Add one line to the visitor's cart, creating the cart when there is none
+ * (or Shopify has dropped it). A new cart carries the member's email.
+ */
+export async function addToCart(
+	config: RedeemIDConfig,
+	cartId: string | null,
+	line: { variantId: string; sellingPlanId?: string | null },
+	opts: { email?: string | null; buyerIp?: string | null; fetcher?: typeof fetch } = {},
+): Promise<Cart> {
+	const lines = [{ merchandiseId: line.variantId, quantity: 1, ...(line.sellingPlanId ? { sellingPlanId: line.sellingPlanId } : {}) }];
+	if (cartId) {
+		const data = await storefront<{ cartLinesAdd: CartResult }>(config, CART_ADD, { id: cartId, lines }, opts).catch(() => null);
+		if (data?.cartLinesAdd.cart) return data.cartLinesAdd.cart;
+	}
+	const input: Record<string, unknown> = { lines };
+	if (opts.email) input.buyerIdentity = { email: opts.email };
+	const data = await storefront<{ cartCreate: CartResult }>(config, CART_NEW, { input }, opts);
+	const cart = data.cartCreate.cart;
+	if (!cart) throw new Error(data.cartCreate.userErrors[0]?.message ?? "Shopify returned no cart.");
+	return cart;
 }

@@ -19,6 +19,9 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 		customer: { id: 1001, email: "member@example.com", firstName: "Mia", lastName: "Member", tags: ["member"] },
 		tokenRequests: [],
 		carts: [],
+		/** Live carts by id; a completed checkout removes its cart, as Shopify does. */
+		cartsById: new Map(),
+		blocked: [],
 	};
 
 	const server = createServer(async (req, res) => {
@@ -29,6 +32,14 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 		};
 		let body = "";
 		for await (const chunk of req) body += chunk;
+
+		// Like Shopify, refuse server-side calls that don't name themselves.
+		const browserPaths = ["/", "/authorize", "/checkout", "/logout"];
+		if (!browserPaths.includes(url.pathname) && !String(req.headers["user-agent"] ?? "").startsWith("@redeemid/emdash")) {
+			shop.blocked.push(url.pathname);
+			res.writeHead(403, { "content-type": "text/html" });
+			return res.end("Access denied");
+		}
 
 		switch (url.pathname) {
 			case "/.well-known/openid-configuration":
@@ -95,10 +106,22 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 			}
 			case "/api/2026-10/graphql.json": {
 				const { query, variables } = JSON.parse(body || "{}");
+				const view = (id) => {
+					const c = shop.cartsById.get(id);
+					return c ? { id, checkoutUrl: `${origin}/checkout?cart=${encodeURIComponent(id)}`, totalQuantity: c.lines.length } : null;
+				};
 				if (query.includes("cartCreate")) {
 					shop.carts.push({ input: variables.input, privateToken: req.headers["shopify-storefront-private-token"] });
-					return json(200, { data: { cartCreate: { cart: { checkoutUrl: `${origin}/checkout` }, userErrors: [] } } });
+					const id = `gid://shopify/Cart/${shop.carts.length}`;
+					shop.cartsById.set(id, { lines: [...variables.input.lines] });
+					return json(200, { data: { cartCreate: { cart: view(id), userErrors: [] } } });
 				}
+				if (query.includes("cartLinesAdd")) {
+					const c = shop.cartsById.get(variables.id);
+					if (c) c.lines.push(...variables.lines);
+					return json(200, { data: { cartLinesAdd: { cart: view(variables.id), userErrors: c ? [] : [{ message: "The specified cart does not exist." }] } } });
+				}
+				if (query.includes("cart(id")) return json(200, { data: { cart: view(variables.id) } });
 				const product =
 					variables.handle === "pro-plan"
 						? {
@@ -113,7 +136,11 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 						: null;
 				return json(200, { data: { product } });
 			}
+			case "/":
+				res.writeHead(200, { "content-type": "text/plain" });
+				return res.end("CUSTOMER-ACCOUNT");
 			case "/checkout":
+				if (url.searchParams.get("complete") === "1") shop.cartsById.delete(url.searchParams.get("cart"));
 				res.writeHead(200, { "content-type": "text/plain" });
 				return res.end("CHECKOUT");
 			case "/logout": {
