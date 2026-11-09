@@ -11,7 +11,7 @@
 
 import { adminConfigured } from "./admin-api.js";
 import { describe as describeRequirement, dripDays, levelsFor, membership, passes, requirement, termTree, type Requirement, type Terms } from "./access.js";
-import { ENV, env, storeDomain, type RedeemIDConfig } from "./config.js";
+import { ENV, env, storeDomain, unknownEnvNames, type RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
 import { bodyClauses } from "./files.js";
 import { holdsItem, soldItem, type SoldItem } from "./blocks-names.js";
@@ -155,6 +155,7 @@ export async function siteHealth(config: RedeemIDConfig, s: Stores): Promise<Rec
 		lastWebhook: items[0]?.data ?? null,
 		openPrivacyRequests: open.items.length,
 		ignoredTextReplacements: textProblems(config).length,
+		unusedSettings: unknownEnvNames(),
 	};
 }
 

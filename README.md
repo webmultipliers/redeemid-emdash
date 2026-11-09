@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.11, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.12, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -88,6 +88,8 @@ Set these secrets in the environment (`.env` locally, `wrangler secret put` on W
 | `REDEEMID_EVENTS_SECRET` | None | Optional. Signs outbound events; set it with `events.url`. |
 | `REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN` | Storefront API | Private access token, for the plan cards and checkout (server-side). |
 | `REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN` | Storefront API | Public access token. Only used when the private token isn't set. |
+
+Set them as runtime variables or secrets of the site itself, not as build-time variables. If a value shows as Missing on the Status page, check its name: the Status page also lists any `REDEEMID_` variable that is set but that RedeemID doesn't read, by name only.
 
 RedeemID finds the authorization, token and logout endpoints itself from the store's discovery documents, so they need no setting.
 

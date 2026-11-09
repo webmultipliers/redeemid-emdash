@@ -28,7 +28,7 @@ import type { ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
 import { describe, levelsFor, SIGNED_IN } from "./access.js";
-import { env, ENV, storeDomain, type RedeemIDConfig } from "./config.js";
+import { env, ENV, storeDomain, unknownEnvNames, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
 import { PAGES, WIDGETS } from "./descriptor.js";
@@ -544,6 +544,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 					{ label: "Storefront API access", value: c.storefront },
 					{ label: "Last webhook", value: delivery ?? "None received yet" },
 					{ label: "Replacement text", value: textSummary(config) },
+					...(unknownEnvNames().length ? [{ label: "Set but not used (check the name)", value: unknownEnvNames().join(", ") }] : []),
 				],
 			},
 			...(textProblems(config).length
