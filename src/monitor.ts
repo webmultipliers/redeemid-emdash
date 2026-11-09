@@ -199,11 +199,13 @@ export type WebhookTab = (typeof WEBHOOK_TABS)[number];
 
 const OUTCOMES: Record<string, string> = {
 	processed: "Processed",
-	skipped: "Skipped (nothing to do)",
-	stale: "Older than what's stored",
+	skipped: "Skipped",
+	stale: "Out of date",
 	ignored: "Not used",
-	pending: "Still running",
+	pending: "Running",
 };
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export async function webhooksPage(env_: MonitorEnv, tab: WebhookTab = "received", toast?: Toast, cursor?: string): Promise<Blocks> {
 	const { s, kv } = env_;
@@ -221,7 +223,7 @@ export async function webhooksPage(env_: MonitorEnv, tab: WebhookTab = "received
 	const attention = Boolean(check?.problems.length);
 
 	const receivedTab = [
-		{ type: "context", text: `What Shopify sent, and what became of it. Kept ${LOG_DAYS} days. Bodies are never stored: only the topic, the result and the customer id.` },
+		{ type: "context", text: `What Shopify sent, and what became of it. Kept ${LOG_DAYS} days. Bodies are never stored: only the topic, the result and the customer id. Skipped: nothing to do. Out of date: older than what's stored. Not used: a topic RedeemID ignores.` },
 		...(attention ? [{ type: "banner", variant: "alert", title: "Webhook delivery needs attention", description: "See the Health tab." }] : []),
 		{
 			type: "stats",
@@ -237,11 +239,15 @@ export async function webhooksPage(env_: MonitorEnv, tab: WebhookTab = "received
 			page_action_id: "deliveries_page",
 			empty_text: "No webhooks received yet.",
 			columns: [
-				{ key: "delivery", label: "Delivery" },
+				{ key: "topic", label: "Topic", format: "code" },
+				{ key: "result", label: "Result", format: "badge" },
+				{ key: "customer", label: "Customer" },
 				{ key: "at", label: "Received", format: "relative_time" },
 			],
 			rows: page.items.map(({ data: d }) => ({
-				delivery: `${d.topic}: ${[OUTCOMES[d.outcome ?? ""] ?? d.outcome ?? "Processed", d.customerId ? `customer ${d.customerId}` : ""].filter(Boolean).join(", ")}`,
+				topic: d.topic,
+				result: OUTCOMES[d.outcome ?? "processed"] ?? cap(d.outcome ?? ""),
+				customer: d.customerId ?? "",
 				at: d.receivedAt,
 			})),
 			...(page.cursor ? { next_cursor: page.cursor } : {}),
@@ -402,8 +408,13 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 				page_action_id: "events_page",
 				empty_text: filter.event || filter.problems ? "Nothing matches." : "Nothing recorded yet.",
 				columns: [
-					{ key: "what", label: "Event" },
+					{ key: "event", label: "Event" },
+					{ key: "about", label: "About" },
+					{ key: "result", label: "Result", format: "badge" },
+					{ key: "customer", label: "Customer" },
+					{ key: "ms", label: "Took" },
 					{ key: "at", label: "When", format: "relative_time" },
+					{ key: "note", label: "Note" },
 				],
 				rows: page.items.map(({ data }) => eventRow(data)),
 				...(page.cursor ? { next_cursor: page.cursor } : {}),
@@ -414,11 +425,15 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 }
 
 function eventRow(e: LogEntry) {
-	const extra = [e.customerId ? `customer ${e.customerId}` : "", e.ms !== undefined ? `${e.ms} ms` : "", e.note ?? ""].filter(Boolean).join(", ");
-	const flag = e.level === "error" ? "Error. " : e.level === "warn" ? "Warning. " : "";
+	const status = e.status === "ok" ? "OK" : cap(e.status);
 	return {
-		what: `${flag}${LOG_EVENTS[e.event] ?? e.event}: ${e.label}${e.status === "ok" ? "" : `, ${e.status}`}${extra ? ` (${extra})` : ""}`,
+		event: LOG_EVENTS[e.event] ?? e.event,
+		about: e.label,
+		result: e.level === "error" && !/error/i.test(status) ? `Error: ${status}` : status,
+		customer: e.customerId ?? "",
+		ms: e.ms !== undefined ? `${e.ms} ms` : "",
 		at: e.at,
+		note: e.note ?? "",
 	};
 }
 
@@ -530,11 +545,12 @@ export async function reportsPage(config: RedeemIDConfig, s: Stores, now = Date.
 						columns: [
 							{ key: "level", label: "Level" },
 							{ key: "members", label: "Members", format: "number" },
-							{ key: "change", label: "30 days" },
+							{ key: "joined", label: "Joined (30 days)", format: "number" },
+							{ key: "left", label: "Left (30 days)", format: "number" },
 						],
 						rows: levels.map((l) => {
 							const r = byLevel.get(l.slug)!;
-							return { level: l.name, members: r.members, change: `+${r.joined} / -${r.left}` };
+							return { level: l.name, members: r.members, joined: r.joined, left: r.left };
 						}),
 					}
 				: { type: "context", text: "No levels yet. Add them under Access." },

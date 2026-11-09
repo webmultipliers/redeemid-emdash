@@ -95,10 +95,10 @@ describe("app events", () => {
 		await record({ event: "member.signed_in", label: "sign-in", status: "ok" });
 		await record({ event: "webhook.failed", label: "customers/update", status: "error", level: "error" });
 		await record({ event: "member.refused", label: "staff_account", status: "refused", level: "warn" });
-		const rows = async (f: Parameters<typeof eventsPage>[1]) => ((await eventsPage(store.stores, f)).blocks.find((b) => (b as { type: string }).type === "table") as { rows: Array<{ what: string }> }).rows.map((r) => r.what);
+		const rows = async (f: Parameters<typeof eventsPage>[1]) => ((await eventsPage(store.stores, f)).blocks.find((b) => (b as { type: string }).type === "table") as { rows: Array<{ event: string; about: string; result: string }> }).rows.map((r) => `${r.event}: ${r.about}: ${r.result}`);
 		expect(await rows({})).toHaveLength(3);
-		expect((await rows({ problems: true })).sort()).toEqual(["Error. Webhook failed: customers/update, error", "Warning. Sign-in refused: staff_account, refused"]);
-		expect(await rows({ event: "member.signed_in" })).toEqual(["Sign-in: sign-in"]);
+		expect((await rows({ problems: true })).sort()).toEqual(["Sign-in refused: staff_account: Refused", "Webhook failed: customers/update: Error"]);
+		expect(await rows({ event: "member.signed_in" })).toEqual(["Sign-in: sign-in: OK"]);
 		expect(parseFilter(filterId({ event: "webhook.failed", problems: true }))).toEqual({ event: "webhook.failed", problems: true });
 	});
 
@@ -172,7 +172,7 @@ describe("webhook health", () => {
 	it("renders the three tabs with the deliveries", async () => {
 		await deliver("customers/update", { id: 7, tags: "member" });
 		const page = JSON.stringify(await webhooksPage(monitor(), "health"));
-		for (const text of ["Received", "Health", "Setup", "customers/update", "customers/update: Processed, customer 7", "Check now", "Email warnings to", "No email provider"]) expect(page).toContain(text);
+		for (const text of ["Received", "Health", "Setup", "customers/update", "Processed", "Check now", "Email warnings to", "No email provider"]) expect(page).toContain(text);
 		expect(page).toContain('"default_tab":1');
 	});
 });
@@ -189,8 +189,8 @@ describe("reports", () => {
 		expect(Object.fromEntries(stats.map((s) => [s.label, s.value]))).toMatchObject({ "On a level": "2", Joined: "1", Left: "1", "Sign-ins": "1" });
 		const table = page.blocks.find((b) => (b as { type: string }).type === "table") as { rows: unknown[] };
 		expect(table.rows).toEqual([
-			{ level: "Member", members: 1, change: "+1 / -1" },
-			{ level: "Pro", members: 1, change: "+0 / -0" },
+			{ level: "Member", members: 1, joined: 1, left: 1 },
+			{ level: "Pro", members: 1, joined: 0, left: 0 },
 		]);
 		const chart = page.blocks.find((b) => (b as { type: string }).type === "chart") as { config: { options: { series: Array<{ data: number[] }>; xAxis: { data: string[] } } } };
 		expect(chart.config.options.xAxis.data).toHaveLength(12);

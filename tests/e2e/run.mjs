@@ -480,21 +480,21 @@ try {
 
 	// Webhooks, App events and Reports, like the WordPress plugin's pages.
 	const received = await adminPage("/webhooks");
-	check("Webhooks Received lists the delivery with its result and customer", received.text.includes("customer.tags_added") && received.text.includes(`customer.tags_added: Processed, customer ${shop.customer.id}`), received.text.slice(0, 400));
+	check("Webhooks Received lists the delivery with its result and customer", received.text.includes("customer.tags_added") && received.text.includes(`"topic":"customer.tags_added","result":"Processed","customer":"${shop.customer.id}"`), received.text.slice(0, 400));
 	const checked = await adminAct({ type: "block_action", action_id: "health_check", page: "/webhooks" });
 	check("Check now checks with Shopify and shows the turned-away delivery", checked.text.includes("Checked") && checked.text.includes("turned away") && checked.text.includes('"default_tab":1'), checked.text.slice(0, 400));
 	const savedMonitor = await adminAct({ type: "form_submit", action_id: "monitor_save", block_id: "monitor", values: { quiet_days: 5, alert_email: "" }, page: "/webhooks" });
 	check("Health saves when to warn", savedMonitor.text.includes('"initial_value":5') && savedMonitor.text.includes("Saved."), savedMonitor.text.slice(0, 300));
 	const appEvents = await adminPage("/events");
-	check("App events lists the newest first", appEvents.text.includes("Webhook received: customer.tags_added") && appEvents.text.includes("Webhook rejected"), appEvents.text.slice(0, 600));
+	check("App events lists the newest first", appEvents.text.includes('"event":"Webhook received","about":"customer.tags_added"') && appEvents.text.includes("Webhook rejected"), appEvents.text.slice(0, 600));
 	const kinds = {};
-	for (const [event, text] of [["member.signed_in", "Sign-in: "], ["shopify.admin", "Admin API call: Customers"], ["staff.resync", "Resync: "], ["staff.tags", "Tag edit: added"], ["staff.webhooks", "Webhook registration: register"], ["settings.saved", "Settings saved: access"], ["meter.exhausted", "Metered read, meter used up: "]]) {
+	for (const [event, text] of [["member.signed_in", '"event":"Sign-in"'], ["shopify.admin", '"event":"Admin API call","about":"Customers"'], ["staff.resync", '"event":"Resync"'], ["staff.tags", '"event":"Tag edit","about":"added"'], ["staff.webhooks", '"event":"Webhook registration","about":"register"'], ["settings.saved", '"event":"Settings saved","about":"access'], ["meter.exhausted", '"event":"Metered read, meter used up"']]) {
 		kinds[event] = (await adminAct({ type: "block_action", action_id: "events_show", value: event, page: "/events" })).text.includes(text);
 	}
 	check("App events records sign-ins, Admin API calls, staff actions, settings saves and the meter", Object.values(kinds).every(Boolean), JSON.stringify(kinds));
 	check("App events never show an email", !appEvents.text.includes(shop.customer.email));
 	const problems = await adminAct({ type: "form_submit", action_id: "events_filter", block_id: "events_filter", values: { event: "", problems: true }, page: "/events" });
-	check("Problems only shows warnings and errors", problems.text.includes("Webhook rejected") && !problems.text.includes("Webhook received: customer.tags_added"), problems.text.slice(0, 400));
+	check("Problems only shows warnings and errors", problems.text.includes("Webhook rejected") && !problems.text.includes('"event":"Webhook received","about":"customer.tags_added"'), problems.text.slice(0, 400));
 	const reports = await adminPage("/reports");
 	check("Reports count members by level, joins and sign-ins", reports.text.includes("On a level") && reports.text.includes('"chart_type":"custom"') && reports.text.includes("Sign-ins"), reports.text.slice(0, 400));
 	const widget = await adminPage("widget:status");

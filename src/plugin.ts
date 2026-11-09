@@ -28,7 +28,7 @@
 import type { PluginContext, ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
-import { describe, levelsFor, SIGNED_IN, type Terms } from "./access.js";
+import { levelsFor, SIGNED_IN, type Terms } from "./access.js";
 import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, isAccessAction, type AccessEnv, type PanelEntry } from "./access-admin.js";
 import { entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
 import { env, ENV, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
@@ -581,10 +581,10 @@ async function membersPage(config: RedeemIDConfig) {
 		label: l.name,
 		value: String(members.filter((m) => m.status === "enabled" && levelsFor(m.tags, levels).includes(l.slug)).length),
 	}));
-	const name = (m: MemberRecord) => [m.firstName, m.lastName].filter(Boolean).join(" ") || "—";
+	const name = (m: MemberRecord) => [m.firstName, m.lastName].filter(Boolean).join(" ") || "No name";
 	const levelNames = (m: MemberRecord) => {
 		const held = levelsFor(m.tags, levels);
-		return levels.filter((l) => held.includes(l.slug)).map((l) => l.name).join(", ") || "—";
+		return levels.filter((l) => held.includes(l.slug)).map((l) => l.name).join(", ");
 	};
 	return {
 		blocks: [
@@ -630,7 +630,7 @@ async function membersPage(config: RedeemIDConfig) {
 							{ key: "email", label: "Email" },
 							{ key: "levels", label: "Levels" },
 							{ key: "tags", label: "Shopify tags" },
-							{ key: "status", label: "Account" },
+							{ key: "status", label: "Account", format: "badge" },
 							{ key: "synced", label: "Last synced", format: "relative_time" },
 							{ key: "open", label: "", format: "element" },
 						],
@@ -638,9 +638,9 @@ async function membersPage(config: RedeemIDConfig) {
 							.sort((a, b) => b.syncedAt.localeCompare(a.syncedAt))
 							.map((m) => ({
 								name: name(m),
-								email: m.email ?? "—",
+								email: m.email ?? "",
 								levels: levelNames(m),
-								tags: m.tags.join(", ") || "—",
+								tags: m.tags.join(", "),
 								status: m.status === "enabled" ? "On" : "Off",
 								synced: m.syncedAt,
 								open: { type: "button", action_id: "member_open", label: "Open", value: m.customerId },
@@ -685,8 +685,6 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 	const c = await checks(config);
 	const origin = new URL(request.url).origin;
 	const yes = (v: boolean) => (v ? "Set" : "Missing");
-	const levels = config.levels ?? [];
-	const rules = config.rules ?? [];
 	const delivery = await lastDelivery().catch(() => null);
 	return {
 		blocks: [
@@ -735,48 +733,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 				],
 			},
 			{ type: "divider" },
-			{ type: "header", text: "Levels" },
-			{ type: "context", text: "Change levels and rules under Access." },
-			levels.length
-				? {
-						type: "table",
-						page_action_id: "levels_page",
-						columns: [
-							{ key: "name", label: "Level" },
-							{ key: "tags", label: "Shopify tags" },
-							{ key: "match", label: "Needs" },
-						],
-						rows: levels.map((l) => ({ name: l.name, tags: l.tags.join(", "), match: l.match === "all" ? "All tags" : "Any tag" })),
-					}
-				: { type: "context", text: "No levels configured." },
-			{ type: "header", text: "Rules" },
-			rules.length
-				? {
-						type: "table",
-						page_action_id: "rules_page",
-						columns: [
-							{ key: "where", label: "Covers" },
-							{ key: "levels", label: "Who can read" },
-							{ key: "extra", label: "Drip and meter" },
-						],
-						rows: rules.map((r) => ({
-							where:
-								r.taxonomy && r.term
-									? `${r.collection === "*" ? "Every collection" : r.collection}, ${r.taxonomy}: ${r.term} (and its child terms)`
-									: r.collection === "*"
-										? "Site default (collections with no rule)"
-										: `All ${r.collection}`,
-							levels: r.open ? "Everyone (opens the entry)" : r.levels.length ? describe([r.levels], levels) : "Any signed-in member",
-							extra: [r.drip ? `Opens ${r.drip} days into membership` : "", r.meter === false ? "Never metered" : ""].filter(Boolean).join("; "),
-						})),
-					}
-				: { type: "context", text: "No rules. Entries are open unless their body has a paywall break." },
-			{
-				type: "context",
-				text: config.meter?.limit
-					? `Meter: signed-in readers may open ${config.meter.limit} locked ${config.meter.limit === 1 ? "entry" : "entries"} a ${config.meter.period ?? "month"}${config.meter.collections?.length ? ` (${config.meter.collections.join(", ")})` : ""}.`
-					: "Meter: off.",
-			},
+			{ type: "context", text: "Levels, rules and the meter are under Access." },
 		],
 	};
 }

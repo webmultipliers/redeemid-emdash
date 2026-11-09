@@ -137,6 +137,12 @@ function sourceLine(env: AccessEnv, key: ManagedKey, what: string): unknown[] {
 	];
 }
 
+/** Who a rule lets read, without its drip and meter (those get their own columns). */
+function whoText(rule: RuleConfig, levels: LevelConfig[]): string {
+	if (rule.open) return "Free to everyone";
+	return rule.levels.length ? describe([rule.levels], levels) : "Any signed-in member";
+}
+
 function ruleText(rule: RuleConfig | undefined, levels: LevelConfig[]): string {
 	if (!rule) return "—";
 	if (rule.open) return "Free to everyone";
@@ -160,15 +166,21 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 			? {
 					type: "table",
 					page_action_id: "levels_table",
-					// Three columns so it fits a phone; the slug and use count ride along.
+					// One fact per column; on a phone the table scrolls sideways.
 					columns: [
 						{ key: "name", label: "Level" },
+						{ key: "slug", label: "Slug", format: "code" },
 						{ key: "tags", label: "Shopify tags" },
+						{ key: "match", label: "Needs" },
+						{ key: "rules", label: "Rules", format: "number" },
 						{ key: "act", label: "", format: "element" },
 					],
 					rows: levels.map((l) => ({
-						name: `${l.name} (${l.slug}${used(l.slug) ? `, ${used(l.slug)} ${used(l.slug) === 1 ? "rule" : "rules"}` : ""})`,
-						tags: `${l.tags.join(", ")}${l.tags.length > 1 ? (l.match === "all" ? " (all)" : " (any)") : ""}`,
+						name: l.name,
+						slug: l.slug,
+						tags: l.tags.join(", "),
+						match: l.tags.length < 2 ? "The tag" : l.match === "all" ? "Every tag" : "Any tag",
+						rules: used(l.slug),
 						act: { type: "menu", action_id: "level_menu", label: "Edit", items: [{ label: "Edit", value: `edit:${l.slug}` }, { label: "Remove", value: `remove:${l.slug}` }] },
 					})),
 				}
@@ -275,12 +287,18 @@ async function taxonomiesTab(env: AccessEnv): Promise<unknown[]> {
 							page_action_id: `term_rules:${t.name}`,
 							columns: [
 								{ key: "term", label: "Term" },
+								{ key: "scope", label: "In" },
 								{ key: "who", label: "Who can read" },
+								{ key: "drip", label: "Drip" },
+								{ key: "meter", label: "Meter" },
 								{ key: "act", label: "", format: "element" },
 							],
 							rows: own.map((r) => ({
-								term: r.collection === "*" ? termLabel(r.term!) : `${termLabel(r.term!)} (${label(r.collection)} only)`,
-								who: ruleText(r, levels),
+								term: termLabel(r.term!),
+								scope: r.collection === "*" ? "Every content type" : label(r.collection),
+								who: whoText(r, levels),
+								drip: r.drip ? `${r.drip} days` : "",
+								meter: r.open ? "" : r.meter === false ? "Never" : "Counts",
 								act: { type: "button", action_id: "term_remove", label: "Remove", style: "secondary", value: `${r.collection}|${t.name}|${r.term}`, confirm: { title: "Remove this term rule?", text: "Its entries follow the other rules again.", confirm: "Remove", deny: "Cancel" } },
 							})),
 						}
@@ -317,12 +335,16 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 					page_action_id: "features_table",
 					columns: [
 						{ key: "name", label: "Feature" },
-						{ key: "from", label: "Held through" },
+						{ key: "slug", label: "Slug", format: "code" },
+						{ key: "levels", label: "Levels" },
+						{ key: "tags", label: "Shopify tags" },
 						{ key: "act", label: "", format: "element" },
 					],
 					rows: features.map((f) => ({
-						name: `${f.name} (${f.slug})`,
-						from: [...(f.levels ?? []).map((l) => levels.find((x) => x.slug === l)?.name ?? l), ...(f.tags ?? []).map((t) => `tag ${t}`)].join(", ") || "—",
+						name: f.name,
+						slug: f.slug,
+						levels: (f.levels ?? []).map((l) => levels.find((x) => x.slug === l)?.name ?? l).join(", "),
+						tags: (f.tags ?? []).join(", "),
 						act: { type: "menu", action_id: "feature_menu", label: "Edit", items: [{ label: "Edit", value: `edit:${f.slug}` }, { label: "Remove", value: `remove:${f.slug}` }] },
 					})),
 				}
@@ -347,14 +369,6 @@ function filesTab(env: AccessEnv): unknown[] {
 	const levels = config.levels ?? [];
 	const features = config.features ?? [];
 	const files = config.files ?? [];
-	const describeRule = (f: FileRule) =>
-		[
-			f.levels ? (f.levels.length ? describe([f.levels], levels) : "Any signed-in member") : "",
-			...(f.features ?? []).map((s) => `feature ${features.find((x) => x.slug === s)?.name ?? s}`),
-			f.entries ? "readers of an entry that uses the file" : "",
-		]
-			.filter(Boolean)
-			.join("; ") || "Nobody (no way in picked)";
 	return [
 		{ type: "context", text: "Media folders whose files only some readers may download. Any of the ways in is enough." },
 		...sourceLine(env, "files", "Protected files"),
@@ -364,10 +378,18 @@ function filesTab(env: AccessEnv): unknown[] {
 					page_action_id: "files_table",
 					columns: [
 						{ key: "folder", label: "Media folder" },
-						{ key: "who", label: "Who can download" },
+						{ key: "members", label: "Members" },
+						{ key: "features", label: "Features" },
+						{ key: "entries", label: "Entry readers" },
 						{ key: "act", label: "", format: "element" },
 					],
-					rows: files.map((f) => ({ folder: f.folder, who: describeRule(f), act: { type: "button", action_id: "file_remove", label: "Remove", style: "secondary", value: f.folder, confirm: { title: "Stop protecting this folder?", text: "Anyone with a file's link can download it again.", confirm: "Remove", deny: "Cancel" } } })),
+					rows: files.map((f) => ({
+						folder: f.folder,
+						members: f.levels ? (f.levels.length ? describe([f.levels], levels) : "Any signed-in member") : "",
+						features: (f.features ?? []).map((x) => features.find((y) => y.slug === x)?.name ?? x).join(", "),
+						entries: f.entries ? "Yes" : "",
+						act: { type: "button", action_id: "file_remove", label: "Remove", style: "secondary", value: f.folder, confirm: { title: "Stop protecting this folder?", text: "Anyone with a file's link can download it again.", confirm: "Remove", deny: "Cancel" } },
+					})),
 				}
 			: { type: "context", text: "No protected folders: every file is public." },
 		{ type: "header", text: "Protect a folder" },
