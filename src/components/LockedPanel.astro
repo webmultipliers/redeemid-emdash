@@ -10,6 +10,7 @@
  */
 import { passes, signInUrl, type Reason } from "../access.js";
 import { siteConfig } from "../site-config.js";
+import { text, textParts } from "../text.js";
 
 interface Props {
 	reason: Reason;
@@ -32,7 +33,8 @@ const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).em
 const missing = required.find((clause) => clause.length > 0 && !passes(held, [clause]));
 const level = missing ? config?.levels?.find((l) => l.slug === missing[0]) : undefined;
 const joinHref = level?.joinUrl ?? config?.join?.href;
-const joinLabel = config?.join?.label ?? "Become a member";
+const joinLabel = config?.join?.label ?? text(config, "Become a member");
+const week = meterPeriod === "week";
 const here = Astro.url.pathname + Astro.url.search;
 ---
 
@@ -41,24 +43,24 @@ const here = Astro.url.pathname + Astro.url.search;
 	{level?.wall && (reason === "sign_in" || reason === "upgrade") && <p class="redeemid-locked__wall">{level.wall}</p>}
 	{reason === "sign_in" && (
 		<p>
-			This is for members. <a href={signInUrl(here)}>Sign in</a> to read on.
-			{joinHref && <> Not a member yet? <a href={joinHref}>{joinLabel}</a>.</>}
+			{textParts(config, "This is for members. {signIn} to read on.", { signIn: <a href={signInUrl(here)}>{text(config, "Sign in")}</a> })}
+			{joinHref && <> {textParts(config, "Not a member yet? {join}.", { join: <a href={joinHref}>{joinLabel}</a> })}</>}
 		</p>
 	)}
 	{reason === "upgrade" && meterLeft === 0 && (
-		<p class="redeemid-locked__meter">You've used your free reads {meterPeriod === "week" ? "this week" : "this month"}.</p>
+		<p class="redeemid-locked__meter">{text(config, week ? "You've used your free reads this week." : "You've used your free reads this month.")}</p>
 	)}
 	{reason === "drip" && (
 		<p>
-			{opens ? <>This opens for you on <time datetime={opensAt?.toISOString()}>{opens}</time>.</> : "This opens for you after you've been a member a little longer."}
+			{opens ? textParts(config, "This opens for you on {date}.", { date: <time datetime={opensAt?.toISOString()}>{opens}</time> }) : text(config, "This opens for you after you've been a member a little longer.")}
 		</p>
 	)}
 	{reason === "upgrade" && (
 		<p>
-			{level ? `This is for ${level.name} members.` : "Your membership doesn't include this yet."}
+			{level ? text(config, "This is for {level} members.", { level: level.name }) : text(config, "Your membership doesn't include this yet.")}
 			{joinHref && <> <a href={joinHref}>{joinLabel}</a></>}
 		</p>
 	)}
-	{reason === "disabled" && <p>Your account is turned off. Contact the store for help.</p>}
-	{reason === "unconfigured" && <p>This is for members.</p>}
+	{reason === "disabled" && <p>{text(config, "Your account is turned off. Contact the store for help.")}</p>}
+	{reason === "unconfigured" && <p>{text(config, "This is for members.")}</p>}
 </div>

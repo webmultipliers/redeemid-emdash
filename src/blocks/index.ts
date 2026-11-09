@@ -6,6 +6,7 @@ import Marker from "./PaywallBreak.astro";
 import CollectionBlock from "./CollectionBlock.astro";
 import ContributionBlock from "./ContributionBlock.astro";
 import PlanBlock from "./PlanBlock.astro";
+import PreferencesBlock from "./PreferencesBlock.astro";
 import ProductBlock from "./ProductBlock.astro";
 
 export const blockComponents = {
@@ -16,4 +17,5 @@ export const blockComponents = {
 	"redeemid-product": ProductBlock,
 	"redeemid-collection": CollectionBlock,
 	"redeemid-contribution": ContributionBlock,
+	"redeemid-preferences": PreferencesBlock,
 };

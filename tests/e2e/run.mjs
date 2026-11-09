@@ -127,6 +127,7 @@ try {
 	check("uncovered post is open to visitors", open.res.status === 200 && open.text.includes("starter post"));
 	const locked = await visitor.go("/posts/members-only");
 	check("members post is locked for visitors", locked.res.status === 200 && !locked.text.includes("MEMBER-BODY") && locked.text.includes('data-redeemid-reason="sign_in"'));
+	check("replacement text changes that one wall string, link kept", /Members only\. <a href="[^"]*login[^"]*">Sign in<\/a> to keep reading\./.test(locked.text) && !locked.text.includes("to read on"), (locked.text.match(/Members only[^]{0,200}/) ?? [""])[0]);
 	check("locked page shows the excerpt teaser", locked.text.includes("Open to every member level."));
 	check("badge names the levels and shows the lock", /class="redeemid-badge is-locked"[^>]*data-redeemid-level="member pro"/.test(locked.text) && locked.text.includes("Member or Pro"), (locked.text.match(/<span class="redeemid-badge[^]*?<\/span>\s*<\/span>|<span class="redeemid-badge[^>]*>[^<]*/) ?? [""])[0]);
 	const openBadge = await visitor.go("/posts/welcome");
@@ -205,6 +206,8 @@ try {
 	const membersPage = await adminPage("/");
 	check("Members page lists the signed-in member", membersPage.res.status === 200 && membersPage.text.includes(shop.customer.email), `${membersPage.res.status} ${membersPage.text.slice(0, 200)}`);
 	const statusPage = await adminPage("/status");
+	check("Status page lists the ignored replacement", statusPage.text.includes("1 in use, 1 ignored") && statusPage.text.includes("text_problems"));
+	check("an ignored replacement leaves the original", signIn.text.includes(">Sign out</button>") && !signIn.text.includes("Leave,"));
 	check("Status page reports sign-in ready", statusPage.text.includes("Sign-in is ready") && statusPage.text.includes("/_emdash/api/auth/redeemid/webhook"), statusPage.text.slice(0, 300));
 	const memberAdmin = await member.go("/_emdash/api/plugins/redeemid/admin", {
 		method: "POST",
@@ -247,6 +250,81 @@ try {
 	const test = await adminAct({ type: "form_submit", action_id: "access_test", values: { collection: "posts", terms: "category:members, category:pro", tags: "member", signed_in: true }, page: "/test" });
 	check("access test shows what an entry needs and the verdict", test.text.includes("Member or Pro + Pro") || test.text.includes("Pro"), test.text.slice(0, 400));
 	check("access test says a Member is kept out of a Members + Pro post", test.text.includes("This reader is kept out"));
+	// Member preferences: read from and saved to the member's own Shopify customer.
+	const prefsPage = await member.go("/account");
+	check("Preferences shows the member's fields, not the membership namespace", prefsPage.text.includes("Topics") && prefsPage.text.includes("Weekly newsletter") && prefsPage.text.includes("Reader level:") && !prefsPage.text.includes("Member since"), prefsPage.text.slice(0, 300));
+	const prefBody = new URLSearchParams([["return", "/account"], ["present:preferences.topics", "1"], ["pref:preferences.topics", "Food"], ["pref:preferences.topics", "Travel"], ["present:preferences.newsletter", "1"], ["pref:preferences.newsletter", "true"]]);
+	const savedPrefs = await member.go("/_emdash/api/auth/redeemid/preferences", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: prefBody.toString() });
+	check("saving the form writes the answers to the Shopify customer", shop.metafields["preferences.topics"] === '["Food","Travel"]' && shop.metafields["preferences.newsletter"] === "true" && savedPrefs.text.includes("Your preferences are saved."), JSON.stringify(shop.metafields));
+	const prefEvent = shop.events.find((e) => e.headers["x-redeemid-event"] === "preferences.saved");
+	check("preferences.saved names the fields, never the answers", Boolean(prefEvent) && !prefEvent.body.includes("Travel") && JSON.parse(prefEvent.body).data.fields.includes("preferences.topics"));
+	const writes = shop.metafieldWrites.length;
+	const prefRefused = await member.go("/_emdash/api/auth/redeemid/preferences", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: { "preferences.topics": ["Sport"], "preferences.level": 5, "membership.since": "2020-01-01" } }) });
+	check("bad answers are refused and nothing is saved", prefRefused.res.status === 400 && prefRefused.text.includes("invalid_choice") && prefRefused.text.includes("read_only") && prefRefused.text.includes("unknown_field") && shop.metafieldWrites.length === writes, prefRefused.text.slice(0, 200));
+	const prefCleared = await member.go("/_emdash/api/auth/redeemid/preferences", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: { "preferences.topics": [] } }) });
+	check("an empty answer clears the field", prefCleared.res.status === 200 && !("preferences.topics" in shop.metafields) && shop.metafieldWrites.at(-1)?.m === "metafieldsDelete");
+	const visitorPrefs = await visitor.go("/_emdash/api/auth/redeemid/preferences");
+	check("visitors can't read preferences", visitorPrefs.res.status === 401, String(visitorPrefs.res.status));
+
+	// Protected files: a file in the "Pro downloads" folder only reaches Pro members and staff.
+	const staffHeaders = { "x-emdash-request": "1", origin: SITE };
+	const folder = await admin.go("/_emdash/api/media/folders", { method: "POST", headers: { ...staffHeaders, "content-type": "application/json" }, body: JSON.stringify({ name: "Pro downloads" }) });
+	const folderId = JSON.parse(folder.text)?.data?.id ?? JSON.parse(folder.text)?.data?.item?.id ?? JSON.parse(folder.text)?.data?.folder?.id;
+	const upload = async (name, inFolder) => {
+		const form = new FormData();
+		form.append("file", new Blob([`%PDF-1.4\n% PROTECTED-${name}\n%%EOF\n`], { type: "application/pdf" }), name);
+		if (inFolder) form.append("folderId", folderId);
+		const r = await admin.go("/_emdash/api/media", { method: "POST", headers: staffHeaders, body: form });
+		const item = JSON.parse(r.text)?.data?.item ?? JSON.parse(r.text)?.data;
+		return { status: r.res.status, key: item?.storageKey, text: r.text };
+	};
+	const proFile = await upload("pro-guide.pdf", true);
+	const openUp = await upload("open-guide.pdf", false);
+	check("staff can file uploads in a media folder", Boolean(folderId) && Boolean(proFile.key) && Boolean(openUp.key), `${folder.text.slice(0, 200)} ${proFile.text.slice(0, 200)}`);
+	const fileUrl = (k) => `/_emdash/api/media/file/${encodeURIComponent(k)}`;
+	const asVisitor = await visitor.go(fileUrl(proFile.key));
+	check("a visitor is asked to sign in for a protected file", asVisitor.res.status === 401 && !asVisitor.text.includes("PROTECTED-") && asVisitor.res.headers.get("cache-control") === "private, no-store", `${asVisitor.res.status}`);
+	const doubled = await visitor.go(`/_emdash/api/media/file/${encodeURIComponent(encodeURIComponent(proFile.key))}`);
+	check("an encoded key doesn't get past the check", !doubled.text.includes("PROTECTED-"), `${doubled.res.status}`);
+	shop.customer.tags = ["member"];
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
+	const asMember = await member.go(fileUrl(proFile.key));
+	check("a member without the level is refused the file", asMember.res.status === 403 && !asMember.text.includes("PROTECTED-"), `${asMember.res.status}`);
+	shop.customer.tags = ["member", "pro"];
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
+	const asPro = await member.go(fileUrl(proFile.key));
+	check("a Pro member downloads it, never cached", asPro.res.status === 200 && asPro.text.includes("PROTECTED-pro-guide.pdf") && asPro.res.headers.get("cache-control") === "private, no-store", `${asPro.res.status} ${asPro.res.headers.get("cache-control")}`);
+	const asStaff = await admin.go(fileUrl(proFile.key));
+	check("staff can always download it", asStaff.res.status === 200 && asStaff.text.includes("PROTECTED-"));
+	// "entries": a file used in a Pro post reaches whoever can read that post.
+	const storyFolder = await admin.go("/_emdash/api/media/folders", { method: "POST", headers: { ...staffHeaders, "content-type": "application/json" }, body: JSON.stringify({ name: "Story files" }) });
+	const storyFolderId = JSON.parse(storyFolder.text)?.data?.item?.id;
+	const storyForm = new FormData();
+	storyForm.append("file", new Blob(["%PDF-1.4\n% PROTECTED-story.pdf\n%%EOF\n"], { type: "application/pdf" }), "story.pdf");
+	storyForm.append("folderId", storyFolderId);
+	const storyUp = JSON.parse((await admin.go("/_emdash/api/media", { method: "POST", headers: staffHeaders, body: storyForm })).text)?.data?.item;
+	const created = await admin.go("/_emdash/api/content/posts", {
+		method: "POST",
+		headers: { ...staffHeaders, "content-type": "application/json" },
+		body: JSON.stringify({ data: { title: "Pro files", content: [{ _type: "block", _key: "a", style: "normal", markDefs: [], children: [{ _type: "span", _key: "b", text: "Attached." }] }, { _type: "image", _key: "c", asset: { _ref: storyUp?.id } }] }, taxonomies: { category: ["pro"] } }),
+	});
+	const postId = JSON.parse(created.text)?.data?.item?.id;
+	const published = await admin.go(`/_emdash/api/content/posts/${postId}/publish`, { method: "POST", headers: staffHeaders });
+	check("a Pro post using a Story file is published", Boolean(storyUp?.storageKey) && published.res.status === 200, `${created.text.slice(0, 200)} ${published.text.slice(0, 200)}`);
+	let storyAsPro;
+	for (let i = 0; i < 20; i++) {
+		storyAsPro = await member.go(fileUrl(storyUp.storageKey));
+		if (storyAsPro.res.status === 200) break;
+		await new Promise((r) => setTimeout(r, 250));
+	}
+	check("a reader of the post downloads the file it uses", storyAsPro.res.status === 200 && storyAsPro.text.includes("PROTECTED-story.pdf"), String(storyAsPro.res.status));
+	shop.customer.tags = ["member"];
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
+	const storyAsMember = await member.go(fileUrl(storyUp.storageKey));
+	check("a member who can't read the post is refused its file", storyAsMember.res.status === 403, String(storyAsMember.res.status));
+	const openFile = await visitor.go(fileUrl(openUp.key));
+	check("files outside protected folders stay public", openFile.res.status === 200 && openFile.text.includes("PROTECTED-open-guide.pdf"));
+
 	// Put the store's customer back as the rest of the run expects.
 	shop.customer.tags = ["member"];
 	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });

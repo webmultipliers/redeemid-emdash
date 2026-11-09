@@ -8,6 +8,7 @@
  */
 import { siteConfig } from "../site-config.js";
 import { collection as loadCollection, money, type Collection } from "../storefront.js";
+import { text } from "../text.js";
 
 interface Props {
 	handle: string;
@@ -45,7 +46,7 @@ const href = (h: string) => productHref?.replaceAll("{handle}", encodeURICompone
 				<li class="redeemid-collection__item" data-redeemid-product={p.handle}>
 					{p.image && <img src={p.image.url} alt={p.image.altText ?? ""} loading="lazy" />}
 					<h3>{href(p.handle) ? <a href={href(p.handle)}>{p.title}</a> : p.title}</h3>
-					<p class="redeemid-collection__price">{p.availableForSale ? (p.price ? `From ${money(p.price)}` : "") : "Sold out"}</p>
+					<p class="redeemid-collection__price">{p.availableForSale ? (p.price ? text(config, "From {price}", { price: money(p.price) }) : "") : text(config, "Sold out")}</p>
 				</li>
 			))}
 		</ul>

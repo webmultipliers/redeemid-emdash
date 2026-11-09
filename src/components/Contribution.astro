@@ -9,6 +9,7 @@
  */
 import { siteConfig } from "../site-config.js";
 import { money, product as loadProduct, type Product } from "../storefront.js";
+import { text } from "../text.js";
 
 interface Props {
 	handle: string;
@@ -20,8 +21,8 @@ interface Props {
 	title?: string;
 }
 
-const { handle, amounts = [5, 10, 25], initial = 10, label = "Give", title } = Astro.props;
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { handle, amounts = [5, 10, 25], initial = 10, label = text(config, "Give"), title } = Astro.props;
 let p: Product | null = null;
 if (config) {
 	try {
@@ -57,13 +58,13 @@ const id = `redeemid-give-${handle}`;
 					</p>
 				)}
 				<p>
-					<label for={`${id}-amount`}>Another amount ({currency})</label>
+					<label for={`${id}-amount`}>{text(config, "Another amount ({currency})", { currency })}</label>
 					<input id={`${id}-amount`} name="quantity" type="number" min="1" max="1000" step="1" value={initial} inputmode="numeric" />
 				</p>
 			</>
 		) : (
 			<p>
-				<label for={`${id}-amount`}>Quantity ({money(variant.price)} each)</label>
+				<label for={`${id}-amount`}>{text(config, "Quantity ({price} each)", { price: money(variant.price) })}</label>
 				<input id={`${id}-amount`} name="quantity" type="number" min="1" max="1000" value="1" inputmode="numeric" />
 			</p>
 		)}

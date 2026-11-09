@@ -10,4 +10,4 @@ const { node } = Astro.props;
 const handle = (node.handle ?? "").trim();
 ---
 
-{handle && <Plan handle={handle} title={node.title?.trim() || undefined} label={node.label?.trim() || "Join"} levels={Array.isArray(node.levels) ? node.levels : []} />}
+{handle && <Plan handle={handle} title={node.title?.trim() || undefined} label={node.label?.trim() || undefined} levels={Array.isArray(node.levels) ? node.levels : []} />}

@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.9, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.10, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -22,6 +22,9 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Shop.** `<Product>`, `<Collection>` and `<CartView>` (with the Product and Collection blocks) give the site product pages, collection grids and a cart page with quantities and discount codes. `<Contribution>` (and its block) takes pay-what-you-want amounts. Carts note the page each sale started on.
 - **Features.** Name perks members hold through levels or tags (ad-free, a supporter thank-you) and show them with `<Feature>` or `hasFeature()`.
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels; open a member to resync them or add and remove tags, which are written to Shopify), a bulk resync you start yourself, a Status page (secrets, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules), an Access test and a dashboard widget.
+- **Member preferences.** Members see and change customer fields you define in Shopify, such as topics or a newsletter choice, with `<Preferences>` or its block. Answers are saved on the Shopify customer, ready for Flow, segments and email; the site keeps no copy.
+- **Protected files.** Put uploads in a media folder named in `files`, and every download checks the reader's levels, features or the entries that use the file. Copied links are no use to anyone else.
+- **Replacement text.** Put any string members and visitors see in your own words, one string at a time, with `text`.
 - **Outbound events.** Signed JSON POSTs to a URL of yours when a member signs in, their levels change, or they use the meter, for a CRM, an email tool or your own code.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
@@ -135,6 +138,74 @@ import { hasFeature } from "@redeemid/emdash/features";
 {!(await hasFeature(Astro, "ad-free")) && <aside class="ad">…</aside>}
 ```
 
+### Preferences
+
+```ts
+preferences: [
+	{ key: "preferences.topics" },                  // members can change it
+	{ key: "preferences.level", access: "view" },   // members only see it
+],
+```
+
+Define each field in Shopify (**Settings → Custom data → Customers**). The definition sets its name, type and limits, such as allowed choices or a minimum and maximum. List the ones members get in `preferences`, in the order to show them. Reading and saving use the Admin API app (`REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID`, with `read_customers` and `write_customers`), always on the signed-in member's own customer. Fields in the `membership` namespace are never offered. Preferences never open content.
+
+`<Preferences>` (or the Preferences block) is a form with a control for each field. It works without JavaScript and comes back with the `preferences_saved`, `preferences_refused` or `preferences_unavailable` notice. Visitors see its `signed-out` slot.
+
+| Shopify type | Value |
+| --- | --- |
+| Single line text | A string; with choices, one of them |
+| Multi-line text | A string |
+| List of single line text | A list of strings; with choices, each one of them |
+| True or false | `true` or `false` |
+| Integer | A whole number |
+| Decimal | A number, as a string |
+| Date | `YYYY-MM-DD` |
+
+Every value is checked against the definition before it goes to Shopify; one refusal saves nothing, and an empty value clears the field. Scripts can use `/_emdash/api/auth/redeemid/preferences` too: `GET` returns `{ fields }` with values, `POST` with JSON `{ values: { "namespace.key": value } }` saves. A refused save answers `400` with `fields` mapping each key to `unknown_field`, `read_only`, `invalid_type`, `invalid_choice`, `invalid_length` or `invalid_range`. Saves are limited to 10 a minute per member (`429`). From your own code, `readPreferences()` and `savePreferences()` in `@redeemid/emdash/preferences` do the same.
+
+A save sends the `preferences.saved` event with the field names changed, never the answers.
+
+### Protected files
+
+```ts
+files: [
+	{ folder: "Gold downloads", levels: ["gold"] },
+	{ folder: "Member downloads", levels: [] },             // any signed-in member
+	{ folder: "Supporter extras", features: ["supporter"] },
+	{ folder: "Story files", entries: true },               // whoever can read an entry that uses it
+],
+```
+
+Upload files into a folder in the EmDash media library. Folder names match without regard to case. Every request for a file in a protected folder at `/_emdash/api/media/file/…` is checked before EmDash serves it:
+
+- **Allowed:** the file, sent with `Cache-Control: private, no-store`.
+- **Signed out:** a 401 page with a sign-in link that comes back to the file.
+- **Signed in without access:** a 403 page.
+
+A rule lets in members who hold any of its `levels` (an empty list means any signed-in member) or `features`. With `entries: true`, it also lets in whoever can read a published entry that uses the file: its rule, its drip, and the levels picked on its Paywall break or Members only parts. Staff can always download. Disabled members can't. If a file can't be checked, it isn't served.
+
+Limits:
+
+- Only EmDash's file route is checked. Don't give the storage bucket a public URL of its own.
+- Image services that fetch the file without the reader's cookies, such as a CDN image resizer, get refused, so keep protected images out of resized `<Image>` output.
+- Moving a file out of the folder makes it public again.
+
+### Replacement text
+
+```ts
+text: {
+	"Sign in": "Log in",
+	"This is for members. {signIn} to read on.": "Members only. {signIn} to keep reading.",
+	"This is for {level} members.": "{level} members only.",
+},
+```
+
+Each key is a string's original English; its value is the new text. Only the strings you name change. There is no find-and-replace across strings, so replacing "Sign in" leaves "Sign in to download this file." alone: to change a word everywhere, replace each string that uses it. `STRINGS` in `@redeemid/emdash/text` lists every string, grouped by where it shows (account, badge, cart, wall, meter, member card, notices, plan, preferences, product, files).
+
+Some strings have placeholders such as `{level}` or `{signIn}` (a link), filled in when the text shows. A replacement may use its original's placeholders, in any order or not at all, but no others. Text is plain: HTML in a replacement shows as typed. A replacement that uses another placeholder, or names a string RedeemID doesn't show, is ignored, so the original shows, and the Status page lists it with the reason.
+
+Props win over `text`: a `label` or `title` you pass, or Notices `messages`, is used as given. Staff screens in the admin aren't covered.
+
 ### Events
 
 ```ts
@@ -149,12 +220,13 @@ With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to t
 | `member.levels_changed` | `customerId`, `levels`, `added`, `removed`, `source` (`sign-in`, the webhook topic, or a staff resync or tag edit) |
 | `meter.used` | `userId` (EmDash), `entry` (`collection:id`), `used`, `limit`, `period` (`2026-11`, or `2026-W45` by week) |
 | `meter.exhausted` | the same, sent with the last free read |
+| `preferences.saved` | `customerId`, `fields` (the `namespace.key` names changed) |
 
 No event carries an email address or a name: match people by the Shopify `customerId`. `only` limits which events are sent; leave it out for all of them.
 
 ### Staff tools
 
-With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API token for the webhook app with the client credentials grant (the app must belong to the same Shopify organization as the store, as Dev Dashboard apps do) and needs the `read_customers` and `write_customers` scopes. Then, in the admin:
+With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set (it also runs member preferences), RedeemID gets an Admin API token for the webhook app with the client credentials grant (the app must belong to the same Shopify organization as the store, as Dev Dashboard apps do) and needs the `read_customers` and `write_customers` scopes. Then, in the admin:
 
 - **Member detail.** Open a member from the Members page to see their levels, tags and features, resync them from Shopify, or add and remove tags. Tag edits are made in Shopify, then read back; nothing is granted on the EmDash side.
 - **Bulk resync.** Reads the 50 members synced longest ago from Shopify in one request. Run it again for the next 50. It never runs on its own.

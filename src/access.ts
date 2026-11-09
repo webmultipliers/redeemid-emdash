@@ -277,11 +277,11 @@ export function passes(held: string[], required: string[][]): boolean {
  * The requirement in words, for badges and admin pages: "Gold + Silver",
  * "Silver or Gold", "Signed in". `null` gives `open`.
  */
-export function describe(required: Requirement, levels: LevelConfig[] = [], open = "Free"): string {
+export function describe(required: Requirement, levels: LevelConfig[] = [], open = "Free", signedIn = "Signed in"): string {
 	if (required === null) return open;
 	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
 	const parts = reduce(required).filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
-	return parts.length ? parts.join(" + ") : "Signed in";
+	return parts.length ? parts.join(" + ") : signedIn;
 }
 
 /**

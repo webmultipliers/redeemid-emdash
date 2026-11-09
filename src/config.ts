@@ -72,10 +72,29 @@ export interface FeatureConfig {
 }
 
 /** Where to send signed member events (see events.ts). The signing secret is REDEEMID_EVENTS_SECRET. */
+/** A media folder whose files only some readers may download. Any of the given ways in is enough. */
+export interface FileRule {
+	/** The media folder's name in the EmDash media library. */
+	folder: string;
+	/** Members holding any of these levels. An empty list means any signed-in member. */
+	levels?: string[];
+	/** Members holding any of these features. */
+	features?: string[];
+	/** Whoever can read a published entry that uses the file (its rule, drip and the levels picked in its body). */
+	entries?: boolean;
+}
+
+export interface PreferenceConfig {
+	/** "namespace.key" of a customer metafield definition. */
+	key: string;
+	/** "edit" (default): members can change it. "view": members only see it. */
+	access?: "view" | "edit";
+}
+
 export interface EventsConfig {
 	url: string;
 	/** Send only these events. All of them when left out. */
-	only?: Array<"member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted">;
+	only?: Array<"member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved">;
 }
 
 export interface MeterConfig {
@@ -100,6 +119,19 @@ export interface RedeemIDConfig {
 	meter?: MeterConfig;
 	features?: FeatureConfig[];
 	events?: EventsConfig;
+	/**
+	 * Customer metafields members may see or change, in this order, by
+	 * "namespace.key". Define them in Shopify (Settings → Custom data →
+	 * Customers). Needs the Admin API app (staff tools) for reading and saving.
+	 */
+	preferences?: PreferenceConfig[];
+	/** Protected files, by media folder. See FileRule. */
+	files?: FileRule[];
+	/**
+	 * Replacement text, by each string's original English, e.g.
+	 * { "Sign in": "Log in" }. One string at a time; see text.ts for the list.
+	 */
+	text?: Record<string, string>;
 	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
 	join?: { href: string; label?: string };
 	/**

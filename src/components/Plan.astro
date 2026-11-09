@@ -12,6 +12,7 @@
 import { viewer } from "../access.js";
 import { siteConfig } from "../site-config.js";
 import { plan as loadPlan, type Plan } from "../storefront.js";
+import { text } from "../text.js";
 
 interface Props {
 	handle: string;
@@ -24,8 +25,8 @@ interface Props {
 	heldLabel?: string;
 }
 
-const { handle, label = "Join", title, levels = [], heldLabel = "You're on this plan." } = Astro.props;
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { handle, label = text(config, "Join"), title, levels = [], heldLabel = text(config, "You're on this plan.") } = Astro.props;
 let p: Plan | null = null;
 if (config) {
 	try {
@@ -55,7 +56,7 @@ const held = levels.length > 0 && (await viewer(Astro)).levels.some((l) => level
 				<button type="submit">{label}</button>
 			</form>
 		) : (
-			<p class="redeemid-plan__unavailable">Not available right now.</p>
+			<p class="redeemid-plan__unavailable">{text(config, "Not available right now.")}</p>
 		)}
 	</div>
 ) : (

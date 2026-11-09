@@ -18,7 +18,7 @@ const amounts = (node.amounts ?? "")
 	<Contribution
 		handle={handle}
 		title={node.title?.trim() || undefined}
-		label={node.label?.trim() || "Give"}
+		label={node.label?.trim() || undefined}
 		amounts={amounts.length ? amounts : undefined}
 	/>
 )}

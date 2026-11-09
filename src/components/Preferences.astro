@@ -1,0 +1,102 @@
+---
+/**
+ * The member's preferences form: every field in `preferences`, read from
+ * their Shopify customer, with a control for each type. Fields set to "view"
+ * are shown, not editable. Works without JavaScript: it posts to the
+ * preferences route and comes back with a notice. Visitors and sites without
+ * preferences get nothing (or the "signed-out" slot).
+ *
+ *   <Preferences title="Your preferences" />
+ */
+import { viewer } from "../access.js";
+import { preferencesConfigured, readPreferences, type PreferenceField } from "../preferences.js";
+import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
+
+interface Props {
+	title?: string;
+	/** Heading level for the title. */
+	heading?: "h2" | "h3" | "h4";
+	label?: string;
+}
+
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { title = text(config, "Your preferences"), heading = "h2", label = text(config, "Save preferences") } = Astro.props;
+const v = await viewer(Astro);
+const m = v.member;
+let fields: PreferenceField[] = [];
+let failed = false;
+if (config && preferencesConfigured(config) && m && m.status !== "disabled") {
+	try {
+		fields = await readPreferences(config, m.customerId);
+	} catch (e) {
+		failed = true;
+		console.error("[redeemid] preferences not read:", (e as Error).message);
+	}
+}
+const here = Astro.url.pathname + Astro.url.search.replace(/[?&]redeemid_notice=[^&]*/, "").replace(/^&/, "?");
+const H = heading;
+const id = (key: string) => `redeemid-pref-${key.replace(/[^\w-]/g, "-")}`;
+const show = (f: PreferenceField) =>
+	f.value === null || (Array.isArray(f.value) && f.value.length === 0) ? text(config, "Not set") : Array.isArray(f.value) ? f.value.join(", ") : f.type === "boolean" ? text(config, f.value ? "Yes" : "No") : String(f.value);
+const editable = fields.filter((f) => f.editable);
+---
+
+{v.signedIn && (fields.length > 0 || failed) ? (
+	<section class="redeemid-preferences">
+		<H class="redeemid-preferences__title">{title}</H>
+		{failed ? (
+			<p>{text(config, "Your preferences can't be loaded right now. Try again in a few minutes.")}</p>
+		) : (
+			<form method="post" action="/_emdash/api/auth/redeemid/preferences">
+				<input type="hidden" name="return" value={here} />
+				{fields.map((f) => (
+					<div class="redeemid-preferences__field" data-redeemid-pref={f.key}>
+						{f.editable && <input type="hidden" name={`present:${f.key}`} value="1" />}
+						{!f.editable ? (
+							<p>
+								<strong>{f.name}:</strong> {show(f)}
+							</p>
+						) : f.type === "boolean" ? (
+							<label>
+								<input type="checkbox" name={`pref:${f.key}`} value="true" checked={f.value === true} /> {f.name}
+							</label>
+						) : f.type === "list.single_line_text_field" && f.choices ? (
+							<fieldset>
+								<legend>{f.name}</legend>
+								{f.choices.map((c) => (
+									<label>
+										<input type="checkbox" name={`pref:${f.key}`} value={c} checked={Array.isArray(f.value) && f.value.includes(c)} /> {c}
+									</label>
+								))}
+							</fieldset>
+						) : (
+							<>
+								<label for={id(f.key)}>{f.name}</label>
+								{f.choices ? (
+									<select id={id(f.key)} name={`pref:${f.key}`}>
+										<option value="">{text(config, "Not set")}</option>
+										{f.choices.map((c) => <option value={c} selected={f.value === c}>{c}</option>)}
+									</select>
+								) : f.type === "multi_line_text_field" || f.type === "list.single_line_text_field" ? (
+									<textarea id={id(f.key)} name={`pref:${f.key}`} rows="3" maxlength={f.max && f.type === "multi_line_text_field" ? Number(f.max) : undefined}>{Array.isArray(f.value) ? f.value.join("\n") : (f.value ?? "")}</textarea>
+								) : f.type === "number_integer" || f.type === "number_decimal" ? (
+									<input id={id(f.key)} type="number" name={`pref:${f.key}`} step={f.type === "number_integer" ? "1" : "any"} min={f.min ?? undefined} max={f.max ?? undefined} value={f.value === null ? "" : String(f.value)} />
+								) : f.type === "date" ? (
+									<input id={id(f.key)} type="date" name={`pref:${f.key}`} min={f.min?.slice(0, 10)} max={f.max?.slice(0, 10)} value={typeof f.value === "string" ? f.value : ""} />
+								) : (
+									<input id={id(f.key)} type="text" name={`pref:${f.key}`} maxlength={f.max ? Number(f.max) : undefined} value={typeof f.value === "string" ? f.value : ""} />
+								)}
+								{f.type === "list.single_line_text_field" && !f.choices && <small>{text(config, "One per line.")}</small>}
+							</>
+						)}
+						{f.description && f.editable && <small class="redeemid-preferences__help">{f.description}</small>}
+					</div>
+				))}
+				{editable.length > 0 && <button type="submit">{label}</button>}
+			</form>
+		)}
+	</section>
+) : (
+	!v.signedIn && <slot name="signed-out" />
+)}

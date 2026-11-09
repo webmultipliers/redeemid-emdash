@@ -9,6 +9,7 @@
  */
 import { siteConfig } from "../site-config.js";
 import { money, product as loadProduct, type Product } from "../storefront.js";
+import { text } from "../text.js";
 
 interface Props {
 	handle: string;
@@ -20,8 +21,8 @@ interface Props {
 	buyLabel?: string;
 }
 
-const { handle, heading = "h2", compact = false, addLabel = "Add to cart", buyLabel = "Buy now" } = Astro.props;
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { handle, heading = "h2", compact = false, addLabel = text(config, "Add to cart"), buyLabel = text(config, "Buy now") } = Astro.props;
 let p: Product | null = null;
 if (config) {
 	try {
@@ -50,11 +51,11 @@ const id = `redeemid-product-${handle}`;
 				<input type="hidden" name="return" value={here} />
 				{p.variants.length > 1 ? (
 					<p>
-						<label for={`${id}-variant`}>Option</label>
+						<label for={`${id}-variant`}>{text(config, "Option")}</label>
 						<select id={`${id}-variant`} name="variant">
 							{p.variants.map((v) => (
 								<option value={v.id} disabled={!v.availableForSale}>
-									{v.title} ({money(v.price)}){!v.availableForSale && " sold out"}
+									{text(config, v.availableForSale ? "{option} ({price})" : "{option} ({price}) sold out", { option: v.title, price: money(v.price) })}
 								</option>
 							))}
 						</select>
@@ -63,14 +64,14 @@ const id = `redeemid-product-${handle}`;
 					<input type="hidden" name="variant" value={first?.id} />
 				)}
 				<p>
-					<label for={`${id}-quantity`}>Quantity</label>
+					<label for={`${id}-quantity`}>{text(config, "Quantity")}</label>
 					<input id={`${id}-quantity`} name="quantity" type="number" min="1" max="1000" value="1" inputmode="numeric" />
 				</p>
 				<button type="submit" name="then" value="back">{addLabel}</button>
 				<button type="submit" name="then" value="checkout">{buyLabel}</button>
 			</form>
 		) : (
-			<p class="redeemid-product__unavailable">Sold out.</p>
+			<p class="redeemid-product__unavailable">{text(config, "Sold out.")}</p>
 		)}
 	</div>
 ) : (

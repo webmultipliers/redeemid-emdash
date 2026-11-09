@@ -12,15 +12,16 @@
 import { accountUrl, membership, meterUsage, refreshUrl, signInUrl, signOutUrl, viewer } from "../access.js";
 import { featuresFor } from "../features.js";
 import { siteConfig } from "../site-config.js";
+import { text, textParts } from "../text.js";
 
 interface Props {
 	/** Heading text; the member's first name is added after it. */
 	title?: string;
 }
 
-const { title = "Your membership" } = Astro.props;
-const v = await viewer(Astro);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { title = text(config, "Your membership") } = Astro.props;
+const v = await viewer(Astro);
 const here = Astro.url.pathname + Astro.url.search;
 const m = v.member;
 const disabled = m?.status === "disabled";
@@ -48,34 +49,34 @@ const join = config?.join;
 				</p>
 			)}
 			{disabled ? (
-				<p class="redeemid-member__disabled">Your account is turned off. Contact the store for help.</p>
+				<p class="redeemid-member__disabled">{text(config, "Your account is turned off. Contact the store for help.")}</p>
 			) : current.length > 0 ? (
 				<ul class="redeemid-member__levels">
 					{current.map((l) => (
 						<li data-redeemid-level={l.slug}>
 							<strong>{l.name}</strong>
-							{date(l.since) && <> since <time datetime={l.since ?? undefined}>{date(l.since)}</time></>}
+							{date(l.since) && <> {textParts(config, "since {date}", { date: <time datetime={l.since ?? undefined}>{date(l.since)}</time> })}</>}
 						</li>
 					))}
 				</ul>
 			) : (
 				<p class="redeemid-member__none">
-					You don't have a membership yet.{join && <> <a href={join.href}>{join.label ?? "Become a member"}</a></>}
+					{text(config, "You don't have a membership yet.")}{join && <> <a href={join.href}>{join.label ?? text(config, "Become a member")}</a></>}
 				</p>
 			)}
 			{features.length > 0 && (
 				<p class="redeemid-member__features">
-					Includes: {features.map((f) => f.name).join(", ")}
+					{text(config, "Includes: {features}", { features: features.map((f) => f.name).join(", ") })}
 				</p>
 			)}
 			{past.length > 0 && (
 				<>
-					<h3 class="redeemid-member__subtitle">Before</h3>
+					<h3 class="redeemid-member__subtitle">{text(config, "Before")}</h3>
 					<ul class="redeemid-member__past">
 						{past.map((l) => (
 							<li data-redeemid-level={l.slug}>
 								{l.name}
-								{date(l.from) ? `, ${date(l.from)} to ${date(l.to)}` : `, until ${date(l.to)}`}
+								{", "}{date(l.from) ? text(config, "{from} to {to}", { from: date(l.from) ?? "", to: date(l.to) ?? "" }) : text(config, "until {to}", { to: date(l.to) ?? "" })}
 							</li>
 						))}
 					</ul>
@@ -83,21 +84,21 @@ const join = config?.join;
 			)}
 			{meter && current.length === 0 && !disabled && (
 				<p class="redeemid-member__meter" data-redeemid-used={meter.used}>
-					Free reads {meter.period === "week" ? "this week" : "this month"}: {meter.used} of {meter.limit} used.
+					{text(config, meter.period === "week" ? "Free reads this week: {used} of {limit} used." : "Free reads this month: {used} of {limit} used.", { used: meter.used, limit: meter.limit })}
 				</p>
 			)}
 			<p class="redeemid-member__actions">
-				<a href={accountUrl(here)}>Orders and details</a>
-				<a href={refreshUrl(here)}>Refresh membership</a>
+				<a href={accountUrl(here)}>{text(config, "Orders and details")}</a>
+				<a href={refreshUrl(here)}>{text(config, "Refresh membership")}</a>
 			</p>
 			<form method="post" action={signOutUrl("/")}>
-				<button type="submit">Sign out</button>
+				<button type="submit">{text(config, "Sign out")}</button>
 			</form>
-			<p class="redeemid-member__note">Just bought a plan? It can take a minute to show here. Refresh membership checks again.</p>
+			<p class="redeemid-member__note">{text(config, "Just bought a plan? It can take a minute to show here. Refresh membership checks again.")}</p>
 		</>
 	) : (
 		<p>
-			<a href={signInUrl(here)}>{config?.label ?? "Sign in"}</a> to see your membership.
+			{textParts(config, "{signIn} to see your membership.", { signIn: <a href={signInUrl(here)}>{config?.label ?? text(config, "Sign in")}</a> })}
 		</p>
 	)}
 </section>

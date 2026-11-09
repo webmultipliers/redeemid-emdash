@@ -35,6 +35,7 @@ import { PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { adminConfigured } from "./admin-api.js";
 import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, memberDetail, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
+import { textProblems } from "./text.js";
 
 import {
 	COLLECTION_BLOCK,
@@ -43,10 +44,11 @@ import {
 	MEMBERS_END_BLOCK,
 	PAYWALL_BLOCK,
 	PLAN_BLOCK,
+	PREFERENCES_BLOCK,
 	PRODUCT_BLOCK,
 } from "./blocks-names.js";
 
-export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PRODUCT_BLOCK };
+export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK };
 
 function blocks(config: RedeemIDConfig) {
 	const levelOptions = [
@@ -138,6 +140,17 @@ function blocks(config: RedeemIDConfig) {
 				{ type: "text_input" as const, action_id: "title", label: "Title (optional, Shopify's title otherwise)" },
 				{ type: "text_input" as const, action_id: "amounts", label: "Suggested amounts, comma separated", placeholder: "5, 10, 25" },
 				{ type: "text_input" as const, action_id: "label", label: "Button label", placeholder: "Give" },
+			],
+		},
+		{
+			type: PREFERENCES_BLOCK,
+			label: "Preferences",
+			icon: "users",
+			description: "The signed-in member's preferences, saved on their Shopify customer",
+			placeholder: "Member preferences",
+			fields: [
+				{ type: "text_input" as const, action_id: "title", label: "Title", placeholder: "Your preferences" },
+				{ type: "text_input" as const, action_id: "label", label: "Button label", placeholder: "Save preferences" },
 			],
 		},
 	];
@@ -364,6 +377,13 @@ async function lastDelivery(): Promise<string | null> {
 	return d ? `${d.topic} at ${d.receivedAt}` : null;
 }
 
+function textSummary(config: RedeemIDConfig): string {
+	const all = Object.keys(config.text ?? {}).length;
+	const ignored = textProblems(config).length;
+	if (!all) return "None";
+	return ignored ? `${all - ignored} in use, ${ignored} ignored` : `${all} in use`;
+}
+
 async function statusPage(config: RedeemIDConfig, request: Request) {
 	const c = await checks(config);
 	const origin = new URL(request.url).origin;
@@ -392,8 +412,22 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 					{ label: "Events", value: config.events?.url ? `${config.events.url}${env(ENV.eventsSecret) ? "" : " (REDEEMID_EVENTS_SECRET missing)"}` : "Off" },
 					{ label: "Storefront API access", value: c.storefront },
 					{ label: "Last webhook", value: delivery ?? "None received yet" },
+					{ label: "Replacement text", value: textSummary(config) },
 				],
 			},
+			...(textProblems(config).length
+				? [
+						{
+							type: "table",
+							page_action_id: "text_problems",
+							columns: [
+								{ key: "original", label: "Ignored replacement for" },
+								{ key: "problem", label: "Why" },
+							],
+							rows: textProblems(config),
+						},
+					]
+				: []),
 			{ type: "divider" },
 			{ type: "header", text: "Webhooks" },
 			...webhooks,

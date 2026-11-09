@@ -29,7 +29,7 @@ RedeemID keeps tags and status current from webhooks. Point these topics at `htt
 
 Subscribe them from a Shopify app on the store (for example a Dev Dashboard app). If the app already sends webhooks to another site, add this URL as extra subscriptions. `customers/merge` needs the `read_customer_merge` scope. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
 
-For the staff tools (member resync, tag edits written to Shopify, the Register webhooks button), give the same app the `read_customers` and `write_customers` Admin API scopes and set its **client ID** as well. RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization.
+For the staff tools (member resync, tag edits written to Shopify, the Register webhooks button) and member preferences, give the same app the `read_customers` and `write_customers` Admin API scopes and set its **client ID** as well. RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization.
 
 ## 3. The site
 
@@ -57,4 +57,4 @@ The Workers free plan is enough: RedeemID is a native plugin and doesn't need sa
 3. Click **Sign in**, sign in with that customer's email, and you come back to the post, unlocked.
 4. Add or remove the tag in Shopify; the post opens or locks again once the webhook arrives.
 
-If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` (secrets or `shop` missing), `sign_in_unavailable` (store discovery failed), `sign_in_expired`, `staff_account`, `site_not_ready`, `email_required`, `token_failed`, `bad_id_token`, `identity_failed`. A Buy button can return `plan_unavailable` (no such product, or sold out) or `checkout_failed`. The Cart link returns `cart_empty` when there's nothing in the cart, and Account returns `account_unavailable` when store discovery fails. Cart changes return `cart_added`, `cart_updated`, `discount_applied` or `discount_not_applicable`. Refresh membership returns `refreshed` once it has read the member's tags again.
+If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` (secrets or `shop` missing), `sign_in_unavailable` (store discovery failed), `sign_in_expired`, `staff_account`, `site_not_ready`, `email_required`, `token_failed`, `bad_id_token`, `identity_failed`. A Buy button can return `plan_unavailable` (no such product, or sold out) or `checkout_failed`. The Cart link returns `cart_empty` when there's nothing in the cart, and Account returns `account_unavailable` when store discovery fails. Cart changes return `cart_added`, `cart_updated`, `discount_applied` or `discount_not_applicable`. Refresh membership returns `refreshed` once it has read the member's tags again. Preferences return `preferences_saved`, `preferences_refused` or `preferences_unavailable`.
