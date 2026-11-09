@@ -12,15 +12,16 @@
 import { findOrCreateOAuthUser, OAuthError, Role } from "@emdash-cms/auth";
 import { createKyselyAdapter, type AuthTables } from "@emdash-cms/auth/adapters/kysely";
 import type { APIRoute } from "astro";
-import { OptionsRepository } from "emdash/api/route-utils";
 import type { Kysely } from "kysely";
 
 import { env, ENV, PROVIDER_ID, readConfig, storeDomain } from "../config.js";
 import { emit, levelChange } from "../events.js";
 import { levelsFor } from "../access.js";
-import { discover, exchangeCode, identity, ShopifyError, verifyIdToken } from "../shopify.js";
+import { discover, exchangeCode, identity, logoutUrl, ShopifyError, verifyIdToken, type Discovery } from "../shopify.js";
 import { emptyMember, stampTags, stores } from "../storage.js";
-import { callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_ID_TOKEN, type Flow } from "./shared.js";
+import { getPublicOrigin, OptionsRepository } from "emdash/api/route-utils";
+
+import { afterLogoutCookie, callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_ID_TOKEN, type Flow } from "./shared.js";
 
 export const prerender = false;
 
@@ -63,10 +64,13 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 			verifier: flow.verifier,
 		});
 		const claims = await verifyIdToken(d, tokens.idToken, { clientId, nonce: flow.nonce });
+		// Refusals from here on also end the store session, so the next Sign in
+		// asks for an email again instead of reusing this account.
+		const refuse = (code: string) => signedOut(d, tokens.idToken, url, emdash.config, returnTo, code) ?? fail(redirect, returnTo, code);
 		const who = await identity(d, tokens.accessToken);
 
 		const email = (typeof claims.email === "string" ? claims.email : who.email)?.toLowerCase() ?? null;
-		if (!email) return fail(redirect, returnTo, "email_required");
+		if (!email) return refuse("email_required");
 		const emailVerified = claims.email_verified === true;
 
 		const adapter = createKyselyAdapter(emdash.db as Kysely<AuthTables>);
@@ -74,7 +78,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 		// Staff accounts never sign in through the store, even with the same email.
 		const linked = await adapter.getOAuthAccount(PROVIDER_ID, who.customerId);
 		const existing = linked ? await adapter.getUserById(linked.userId) : await adapter.getUserByEmail(email);
-		if (existing && existing.role > Role.SUBSCRIBER) return fail(redirect, returnTo, "staff_account");
+		if (existing && existing.role > Role.SUBSCRIBER) return refuse("staff_account");
 
 		const name = [who.firstName, who.lastName].filter(Boolean).join(" ") || null;
 		const user = await findOrCreateOAuthUser(
@@ -84,8 +88,8 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 			async () => ({ allowed: true, role: Role.SUBSCRIBER }),
 			{ requireVerifiedEmail: true },
 		);
-		if (user.disabled) return fail(redirect, returnTo, "account_disabled");
-		if (user.role > Role.SUBSCRIBER) return fail(redirect, returnTo, "staff_account");
+		if (user.disabled) return refuse("account_disabled");
+		if (user.role > Role.SUBSCRIBER) return refuse("staff_account");
 
 		const s = stores(emdash.db);
 		const found = await s.members.get(who.customerId);
@@ -123,3 +127,11 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 		return fail(redirect, returnTo, code);
 	}
 };
+
+/** Ends the store session, then shows `code` on `returnTo` (see AFTER_LOGOUT_COOKIE). */
+function signedOut(d: Discovery, idToken: string, url: URL, emdashConfig: unknown, returnTo: string, code: string): Response | null {
+	const origin = getPublicOrigin(url, emdashConfig as Parameters<typeof getPublicOrigin>[1]);
+	const to = logoutUrl(d, idToken, `${origin}/`);
+	if (!to) return null;
+	return new Response(null, { status: 302, headers: { location: to, "set-cookie": afterLogoutCookie(code, returnTo), "cache-control": "private, no-store" } });
+}

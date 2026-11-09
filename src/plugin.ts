@@ -342,8 +342,10 @@ async function action(
 		}
 		case "webhooks_register": {
 			try {
-				const added = await registerWebhooks(config, webhookUri(request));
-				return { ...(await statusPage(config, request)), toast: { type: "success", message: added.length ? `Registered ${added.length} webhooks.` : "Nothing was missing." } };
+				const { added, failed } = await registerWebhooks(config, webhookUri(request));
+				const done = added.length ? `Registered ${added.length} webhooks.` : failed.length ? "" : "Nothing was missing.";
+				const refused = failed.map((f) => `Shopify refused ${f.topic}: ${f.message}`).join(" ");
+				return { ...(await statusPage(config, request)), toast: { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") } };
 			} catch (e) {
 				return { ...(await statusPage(config, request)), toast: fail(e) };
 			}
