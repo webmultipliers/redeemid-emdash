@@ -8,6 +8,9 @@ function collection<T>() {
 		async get(id: string) {
 			return rows.has(id) ? structuredClone(rows.get(id)!) : null;
 		},
+		async getMany(ids: string[]) {
+			return new Map(ids.filter((id) => rows.has(id)).map((id) => [id, structuredClone(rows.get(id)!)]));
+		},
 		async put(id: string, data: T) {
 			rows.set(id, structuredClone(data));
 		},

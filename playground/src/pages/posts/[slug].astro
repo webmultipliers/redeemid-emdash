@@ -81,7 +81,7 @@ const categories = post.data.terms?.category ?? [];
 			)
 		}
 
-		<Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id}>
+		<Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title}>
 			<p slot="locked">{post.data.excerpt}</p>
 		</Content>
 
