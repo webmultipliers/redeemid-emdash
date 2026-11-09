@@ -462,6 +462,7 @@ try {
 	const on = await member.go("/posts/members-only");
 	check("re-enabled account gets access back", on.text.includes("MEMBER-BODY"));
 
+	const original = shop.customer;
 	// A store customer with a staff email can't take over the staff account.
 	shop.customer = { id: 2002, email: "dev@emdash.local", firstName: "Not", lastName: "Staff", tags: ["pro"] };
 	const intruder = new Browser();
@@ -480,6 +481,32 @@ try {
 	check("signed-out member is locked again", !after.text.includes("MEMBER-BODY") && after.text.includes('data-redeemid-reason="sign_in"'));
 	const getLogout = await new Browser().go("/_emdash/api/auth/redeemid/logout");
 	check("sign out refuses GET", getLogout.res.status === 405 || getLogout.res.status === 404, String(getLogout.res.status));
+
+	// Privacy: the member downloads and deletes their data; Shopify's compliance topics are logged.
+	shop.customer = original;
+	const reader = new Browser();
+	await reader.go("/_emdash/api/auth/redeemid/login?return=/account");
+	const account = await reader.go("/account");
+	check("account page offers Download and Delete my data", account.text.includes("Download my data") && account.text.includes("Delete my data"));
+	const mine = await reader.go("/_emdash/api/auth/redeemid/privacy");
+	const exported = JSON.parse(mine.text);
+	check("Download my data is the member's own record, as an attachment", exported.format === "redeemid-member-export" && exported.member?.customerId === String(original.id) && /attachment/.test(mine.res.headers.get("content-disposition") ?? ""), mine.text.slice(0, 200));
+	const form = (extra) => ({ method: "POST", headers: { origin: SITE, "content-type": "application/x-www-form-urlencoded" }, body: `return=%2Faccount${extra}` });
+	const unconfirmed = await reader.go("/_emdash/api/auth/redeemid/privacy", form(""));
+	check("Delete my data needs the box ticked", unconfirmed.url.searchParams.get("redeemid_notice") === "erase_unconfirmed", unconfirmed.url.href);
+	const crossSite = await reader.go("/_emdash/api/auth/redeemid/privacy", { ...form("&confirm=yes"), headers: { origin: "https://evil.example", "content-type": "application/x-www-form-urlencoded" } });
+	check("Delete my data refuses another origin", crossSite.res.status === 403, String(crossSite.res.status));
+	const erased = await reader.go("/_emdash/api/auth/redeemid/privacy", form("&confirm=yes"));
+	check("Delete my data erases and signs out", erased.url.searchParams.get("redeemid_notice") === "data_erased" && erased.text.includes("Your data on this site is deleted"), erased.url.href);
+	const goneMembers = await adminPage("/");
+	check("the erased member is gone from Members", !goneMembers.text.includes(`"${original.id}"`) && !goneMembers.text.includes(original.email));
+	const afterErase = await reader.go("/posts/members-only");
+	check("the erased member reads as signed out", !afterErase.text.includes("MEMBER-BODY"));
+	await webhook("customers/data_request", { customer: { id: 4242, email: "x@example.com" }, data_request: { id: 9001 }, shop_domain: "s" });
+	const privacy = await adminPage("/privacy");
+	check("Privacy page lists the member's erase and Shopify's open data request", privacy.text.includes("Member, on the site") && privacy.text.includes("request 9001") && privacy.text.includes("privacy_done") && !privacy.text.includes("x@example.com"), privacy.text.slice(0, 300));
+	const back = await reader.go("/_emdash/api/auth/redeemid/login?return=/posts/members-only");
+	check("signing in again links the member again", back.text.includes("MEMBER-BODY"), back.url.href);
 } catch (e) {
 	failures++;
 	console.error(e);

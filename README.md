@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.10, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.11, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -24,6 +24,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels; open a member to resync them or add and remove tags, which are written to Shopify), a bulk resync you start yourself, a Status page (secrets, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules), an Access test and a dashboard widget.
 - **Member preferences.** Members see and change customer fields you define in Shopify, such as topics or a newsletter choice, with `<Preferences>` or its block. Answers are saved on the Shopify customer, ready for Flow, segments and email; the site keeps no copy.
 - **Protected files.** Put uploads in a media folder named in `files`, and every download checks the reader's levels, features or the entries that use the file. Copied links are no use to anyone else.
+- **Privacy requests.** Members download or delete what the site keeps about them with `<YourData>`. Staff export or erase any member, and can ask Shopify to erase the customer too. Shopify's compliance webhooks are handled and logged on a Privacy page.
 - **Replacement text.** Put any string members and visitors see in your own words, one string at a time, with `text`.
 - **Outbound events.** Signed JSON POSTs to a URL of yours when a member signs in, their levels change, or they use the meter, for a CRM, an email tool or your own code.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
@@ -190,6 +191,24 @@ Limits:
 - Image services that fetch the file without the reader's cookies, such as a CDN image resizer, get refused, so keep protected images out of resized `<Image>` output.
 - Moving a file out of the folder makes it public again.
 
+### Privacy requests
+
+What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, when they first signed in and were last synced) and their meter. Preference answers stay on the Shopify customer. Webhook deliveries keep only a topic and a time. Shopify stays the record of the customer, so erasing on the site never erases Shopify data. It can only ask Shopify to.
+
+| Started | What happens |
+| --- | --- |
+| A member, with `<YourData>` on an account page | **Download my data** returns their record and meter as JSON. **Delete my data** needs a ticked box, erases both, and signs them out. |
+| Staff, on a member's page in the admin | **Export data** shows the same JSON. **Erase site data** erases it. **Also request erasure in Shopify** asks Shopify to erase the customer across the store, orders included. Shopify waits before it does, and **Cancel the Shopify erasure** withdraws it. That needs the `write_customer_data_erasure` scope on the Admin API app. |
+| Shopify `customers/data_request` | An open request on the **Privacy** page. Press **Export and mark done**, then send the export to the store owner. |
+| Shopify `customers/redact` | The member's record and meter are erased. |
+| Shopify `shop/redact` | Every member record and meter is erased. |
+
+The Privacy page lists every request with where it came from and the Shopify customer ID. It never shows an email or a name. An erase sends the `member.erased` event with `customerId` and `source`, so a CRM that took earlier events can delete its copy too.
+
+Erasing leaves the site's own user account (EmDash's users table) in place; delete it in the admin's Users if the person asks. If they sign in again, they're linked again and get back whatever Shopify still grants.
+
+The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, and `POST` with `confirm=yes` erases. It only acts for the signed-in member and refuses a POST from another origin.
+
 ### Replacement text
 
 ```ts
@@ -221,6 +240,7 @@ With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to t
 | `meter.used` | `userId` (EmDash), `entry` (`collection:id`), `used`, `limit`, `period` (`2026-11`, or `2026-W45` by week) |
 | `meter.exhausted` | the same, sent with the last free read |
 | `preferences.saved` | `customerId`, `fields` (the `namespace.key` names changed) |
+| `member.erased` | `customerId`, `source` (`member`, `staff` or `shopify`) |
 
 No event carries an email address or a name: match people by the Shopify `customerId`. `only` limits which events are sent; leave it out for all of them.
 
