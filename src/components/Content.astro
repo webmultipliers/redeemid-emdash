@@ -20,6 +20,10 @@
  *
  * Readers kept out get the wall (LockedPanel), with the "locked" slot on top.
  *
+ * `id` (the entry's id or slug) also applies the entry's own rule from the
+ * editor's Access panel; pass it in lists too when entries have their own
+ * rules.
+ *
  * Pass `id` on the entry's own page so drip and the meter apply: a rule's
  * `drip` keeps it shut until the member has held their level that many days,
  * and config `meter` lets signed-in readers open a few locked entries each
@@ -50,8 +54,8 @@ interface Props {
 
 const { value, collection = "", terms, id, title } = Astro.props;
 const split = splitAtPaywall(value);
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
-const entryRule = await entryRequirement(config, collection, terms);
+const config = await siteConfig(Astro.locals);
+const entryRule = await entryRequirement(config, collection, terms, id);
 // Bought on its own: the whole entry, no meter, no drip.
 const item = soldItem(value);
 const reader = item ? (await viewer(Astro)).member : null;
@@ -78,7 +82,7 @@ async function parts(blocks: unknown[]) {
 			continue;
 		}
 		const needs = section.levels.length ? [section.levels] : (entryRule ?? [[]]);
-		out.push({ blocks: section.blocks, verdict: await canRead(Astro, { collection, terms }, { required: needs }) });
+		out.push({ blocks: section.blocks, verdict: await canRead(Astro, { collection, terms, id }, { required: needs }) });
 	}
 	return out;
 }

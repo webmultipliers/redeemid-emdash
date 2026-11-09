@@ -10,10 +10,16 @@ import { VERSION } from "./version.js";
 
 export const PAGES = [
 	{ path: "/", label: "Members", icon: "users" },
+	{ path: "/access", label: "Access", icon: "lock" },
+	{ path: "/webhooks", label: "Webhooks", icon: "pulse" },
+	{ path: "/events", label: "App events", icon: "list" },
+	{ path: "/reports", label: "Reports", icon: "chart" },
 	{ path: "/status", label: "Status", icon: "pulse" },
 	{ path: "/test", label: "Access test", icon: "search" },
 	{ path: "/privacy", label: "Privacy", icon: "lock" },
 ];
+/** The Access panel on every saved entry, in every collection (new ones too). */
+export const EDITOR_PANELS = [{ id: "access", title: "Access", route: "access-panel", order: 10 }];
 export const WIDGETS = [{ id: "status", title: "RedeemID", size: "half" as const }];
 
 /** The descriptor for `emdash({ plugins: [...] })`. Pass the same config as `redeemid()`. */
@@ -26,6 +32,7 @@ export function redeemidPlugin(config: RedeemIDConfig): PluginDescriptor<RedeemI
 		options: config,
 		adminPages: PAGES,
 		adminWidgets: WIDGETS,
+		editorPanels: EDITOR_PANELS,
 	};
 }
 

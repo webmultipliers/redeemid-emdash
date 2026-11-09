@@ -1,14 +1,15 @@
 /**
  * Staff tools in the admin (Block Kit): member detail with Resync and tag
  * edits written to Shopify, a paced manual bulk resync, webhook
- * registration and health, recent deliveries and the access test.
+ * registration and the access test.
  */
 
 import { adminConfigured, adminScopes, editTags, registerWebhooks, resync, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
-import { describe, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
+import { applyEntryRule, describe, entryRuleFor, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
 import type { RedeemIDConfig } from "./config.js";
 import { levelChange } from "./events.js";
 import { featuresFor } from "./features.js";
+import { record } from "./log.js";
 import { recentRequests } from "./privacy.js";
 import { cleanTags, numericId, type MemberRecord, type Stores } from "./storage.js";
 
@@ -193,6 +194,7 @@ export async function bulkResync(config: RedeemIDConfig, s: Stores): Promise<{ d
 		if (was.join("\n") !== m.tags.join("\n")) changed++;
 		await levelChange(config, was, m, "bulk resync");
 	}
+	await record({ event: "staff.resync", label: "bulk", status: `${updated.length} read, ${changed} changed${missing.length ? `, ${missing.length} missing` : ""}`, origin: "staff" });
 	return { done: updated.length, missing: missing.length, changed };
 }
 
@@ -201,13 +203,16 @@ export async function resyncOne(config: RedeemIDConfig, s: Stores, customerId: s
 	const { updated } = await resync(config, s, [customerId], source);
 	const m = updated[0] ?? null;
 	if (m) await levelChange(config, before?.tags ?? null, m, source);
+	await record({ event: "staff.resync", label: source, status: m ? "ok" : "not in Shopify", level: m ? "ok" : "warn", origin: source.startsWith("agent") ? "agent" : "staff", customerId });
 	return m;
 }
 
 export async function tagEdit(config: RedeemIDConfig, s: Stores, customerId: string, change: "add" | "remove", raw: unknown): Promise<MemberRecord | null> {
 	const id = numericId(customerId);
 	if (!id) return null;
-	await editTags(config, id, change, cleanTags(raw));
+	const tags = cleanTags(raw);
+	await editTags(config, id, change, tags);
+	await record({ event: "staff.tags", label: change === "add" ? "added" : "removed", status: "ok", origin: "staff", customerId: id, note: tags.join(", ").slice(0, 200) });
 	return resyncOne(config, s, id, change === "add" ? "staff added tags" : "staff removed tags");
 }
 
@@ -225,7 +230,7 @@ export async function webhooksSection(config: RedeemIDConfig, uri: string): Prom
 		});
 		const missing = rows.filter((r) => r.state !== "Registered").length;
 		return [
-			{ type: "fields", fields: [{ label: "Admin API", value: `Connected (${scope || "no scopes reported"})` }, { label: "Webhook address", value: uri }] },
+			{ type: "section", text: `Admin API: connected (${scope || "no scopes reported"}).` },
 			{ type: "table", page_action_id: "webhooks", columns: [{ key: "topic", label: "Topic" }, { key: "state", label: "Sends here", format: "badge" }], rows },
 			missing
 				? { type: "actions", elements: [{ type: "button", action_id: "webhooks_register", label: `Register ${missing} missing`, style: "primary", value: uri }] }
@@ -234,24 +239,6 @@ export async function webhooksSection(config: RedeemIDConfig, uri: string): Prom
 	} catch (e) {
 		return [{ type: "banner", variant: "alert", title: "Couldn't read webhooks from Shopify", description: (e as Error).message }];
 	}
-}
-
-export async function deliveriesSection(s: Stores): Promise<unknown[]> {
-	const { items } = await s.deliveries.query({ orderBy: { receivedAt: "desc" }, limit: 20 });
-	return items.length
-		? [
-				{
-					type: "table",
-					page_action_id: "deliveries",
-					columns: [
-						{ key: "topic", label: "Topic", format: "code" },
-						{ key: "at", label: "Received", format: "relative_time" },
-						{ key: "id", label: "Delivery" },
-					],
-					rows: items.map((r) => ({ topic: r.data.topic, at: r.data.receivedAt, id: r.id })),
-				},
-			]
-		: [{ type: "context", text: "No webhooks received yet." }];
 }
 
 export { registerWebhooks };
@@ -269,6 +256,7 @@ export function parseTerms(raw: string): Terms {
 /** The access test: what an entry needs, and whether a reader with these tags passes. */
 export async function accessTest(config: RedeemIDConfig, values: Record<string, unknown> = {}): Promise<Blocks> {
 	const collection = String(values.collection ?? "").trim();
+	const entryId = String(values.entry ?? "").trim();
 	const termsRaw = String(values.terms ?? "").trim();
 	const tags = cleanTags(String(values.tags ?? ""));
 	const signedIn = values.signed_in !== false;
@@ -278,6 +266,7 @@ export async function accessTest(config: RedeemIDConfig, values: Record<string, 
 		block_id: "access_test",
 		fields: [
 			{ type: "text_input", action_id: "collection", label: "Collection", placeholder: "posts", initial_value: collection },
+			{ type: "text_input", action_id: "entry", label: "Entry id or slug (optional: applies its own rule)", initial_value: entryId },
 			{ type: "text_input", action_id: "terms", label: "Terms (taxonomy:slug, comma separated)", placeholder: "category:investigations, tag:free-to-read", initial_value: termsRaw },
 			{ type: "text_input", action_id: "tags", label: "Reader's Shopify tags (comma separated)", placeholder: "gold-member", initial_value: tags.join(", ") },
 			{ type: "toggle", action_id: "signed_in", label: "Signed in", initial_value: signedIn },
@@ -292,7 +281,7 @@ export async function accessTest(config: RedeemIDConfig, values: Record<string, 
 	if (collection) {
 		const terms = parseTerms(termsRaw);
 		const tree = await termTree(config.rules, collection, terms);
-		const required = requirement(config.rules, collection, terms, { combine: config.combine, tree });
+		const required = applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), entryRuleFor(config, collection, entryId));
 		const held = levelsFor(tags, levels);
 		const ok = required === null || (signedIn && passes(held, required));
 		out.push(

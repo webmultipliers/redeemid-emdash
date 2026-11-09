@@ -223,6 +223,46 @@ try {
 	});
 	check("members can't open the plugin's admin pages", memberAdmin.res.status === 401 || memberAdmin.res.status === 403, String(memberAdmin.res.status));
 
+	// Access settings in the admin: levels named by the site, rules for any content type, an entry's own rule.
+	const accessCall = async (input) =>
+		admin.go("/_emdash/api/plugins/redeemid/admin", {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+			body: JSON.stringify(input),
+		});
+	const accessPage = await accessCall({ type: "page_load", page: "/access" });
+	check("Access page lists levels, content types and taxonomies from the site", accessPage.res.status === 200 && accessPage.text.includes("Content types") && accessPage.text.includes("Posts") && accessPage.text.includes("Categories") && accessPage.text.includes("from the site's code"), accessPage.text.slice(0, 300));
+	const addLevel = await accessCall({ type: "form_submit", action_id: "level_save", block_id: "level:new", values: { name: "Patrons of the Arts", tags: "patron", match: "any" } });
+	check("staff add a level with their own name", addLevel.text.includes("Level added.") && addLevel.text.includes("patrons-of-the-arts"), addLevel.text.slice(0, 300));
+	const manifestAfter = await admin.go("/_emdash/api/manifest");
+	check("the editor's level pickers offer the new level", manifestAfter.text.includes("Patrons of the Arts"));
+	const welcomeApi = await admin.go("/_emdash/api/content/posts/welcome");
+	const welcomeId = (welcomeApi.text.match(/"id":"([0-9A-Z]{20,})"/) ?? [])[1];
+	const panel = async (body) =>
+		admin.go(`/_emdash/api/content/posts/${welcomeId}/plugin-extensions/redeemid/panel/access`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+			body: JSON.stringify(body),
+		});
+	const panelLoad = await panel({ type: "panel_load" });
+	check("the editor's Access panel shows who can read the entry", Boolean(welcomeId) && panelLoad.text.includes("Right now: free to everyone."), `${welcomeId} ${panelLoad.res.status} ${panelLoad.text.slice(0, 300)}`);
+	const panelSave = await panel({ type: "form_submit", action_id: "entry_save", block_id: "entry", values: { mode: "levels", levels: ["patrons-of-the-arts"], drip: 0, no_meter: false } });
+	check("the panel saves the entry's own rule", panelSave.text.includes("Access saved.") && panelSave.text.includes("Patrons of the Arts"), panelSave.text.slice(0, 300));
+	const ownVisitor = await visitor.go("/posts/welcome");
+	check("an entry's own rule locks it for visitors", !ownVisitor.text.includes("starter post") && ownVisitor.text.includes('data-redeemid-reason="sign_in"') && ownVisitor.text.includes("Patrons of the Arts"), ownVisitor.text.slice(0, 200));
+	const ownMember = await member.go("/posts/welcome");
+	check("a member without the level is asked to upgrade", ownMember.text.includes('data-redeemid-reason="upgrade"'));
+	await panel({ type: "form_submit", action_id: "entry_save", block_id: "entry", values: { mode: "inherit", drip: 0, no_meter: false } });
+	const backOpen = await visitor.go("/posts/welcome");
+	check("back to the site rules, the entry is open again", backOpen.text.includes("starter post"));
+	const typeRule = await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "signed-in", drip: 0, no_meter: false, teaser: 0 } });
+	check("staff set a rule for a whole content type", typeRule.text.includes("Saved."), typeRule.text.slice(0, 200));
+	await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "none", drip: 0, no_meter: false, teaser: 0 } });
+	const levelGone = await accessCall({ type: "block_action", action_id: "level_menu", value: "remove:patrons-of-the-arts" });
+	check("an unused level can be removed", levelGone.text.includes("Level removed."), levelGone.text.slice(0, 200));
+	const backToCode = await accessCall({ type: "block_action", action_id: "reset", value: "levels" });
+	check("levels go back to the code's", backToCode.text.includes("Using the code's setting again."));
+
 	// Staff tools: member detail, resync, tag edits written to Shopify, bulk resync, webhooks, access test.
 	const adminAct = async (input) =>
 		admin.go("/_emdash/api/plugins/redeemid/admin", {
@@ -249,11 +289,11 @@ try {
 	check("the meter sent meter.used and meter.exhausted", shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.used") && shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.exhausted"));
 	const bulk = await adminAct({ type: "block_action", action_id: "members_resync", page: "/" });
 	check("bulk resync reads a batch from Shopify", bulk.text.includes("Read 1 members again"), bulk.text.slice(0, 300));
-	const statusNow = await adminPage("/status");
-	check("Status lists missing webhooks with a Register button", statusNow.text.includes("webhooks_register") && statusNow.text.includes("Missing"));
-	const registered = await adminAct({ type: "block_action", action_id: "webhooks_register", value: "", page: "/status" });
-	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks."), JSON.stringify(shop.subscriptions.slice(0, 2)));
-	check("Status lists recent deliveries", statusNow.text.includes("Recent deliveries"));
+	const hooksNow = await adminPage("/webhooks");
+	check("Webhooks Setup lists missing webhooks with a Register button", hooksNow.text.includes("webhooks_register") && hooksNow.text.includes("Missing") && hooksNow.text.includes("Setup"), hooksNow.text.slice(0, 300));
+	const registered = await adminAct({ type: "block_action", action_id: "webhooks_register", value: "", page: "/webhooks" });
+	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks.") && registered.text.includes('"default_tab":2'), JSON.stringify(shop.subscriptions.slice(0, 2)));
+	check("Status points to Webhooks and App events", (await adminPage("/status")).text.includes("under Webhooks"));
 	const test = await adminAct({ type: "form_submit", action_id: "access_test", values: { collection: "posts", terms: "category:members, category:pro", tags: "member", signed_in: true }, page: "/test" });
 	check("access test shows what an entry needs and the verdict", test.text.includes("Member or Pro + Pro") || test.text.includes("Pro"), test.text.slice(0, 400));
 	check("access test says a Member is kept out of a Members + Pro post", test.text.includes("This reader is kept out"));
@@ -437,6 +477,28 @@ try {
 	check("unsigned webhook is refused", forged.status === 401, JSON.stringify(forged));
 	const proNow = await member.go("/posts/pro-only");
 	check("Pro post opens after the tag webhook", proNow.text.includes("PRO-BODY"));
+
+	// Webhooks, App events and Reports, like the WordPress plugin's pages.
+	const received = await adminPage("/webhooks");
+	check("Webhooks Received lists the delivery with its result and customer", received.text.includes("customer.tags_added") && received.text.includes(`"topic":"customer.tags_added","result":"Processed","customer":"${shop.customer.id}"`), received.text.slice(0, 400));
+	const checked = await adminAct({ type: "block_action", action_id: "health_check", page: "/webhooks" });
+	check("Check now checks with Shopify and shows the turned-away delivery", checked.text.includes("Checked") && checked.text.includes("turned away") && checked.text.includes('"default_tab":1'), checked.text.slice(0, 400));
+	const savedMonitor = await adminAct({ type: "form_submit", action_id: "monitor_save", block_id: "monitor", values: { quiet_days: 5, alert_email: "" }, page: "/webhooks" });
+	check("Health saves when to warn", savedMonitor.text.includes('"initial_value":5') && savedMonitor.text.includes("Saved."), savedMonitor.text.slice(0, 300));
+	const appEvents = await adminPage("/events");
+	check("App events lists the newest first", appEvents.text.includes('"event":"Webhook received","about":"customer.tags_added"') && appEvents.text.includes("Webhook rejected"), appEvents.text.slice(0, 600));
+	const kinds = {};
+	for (const [event, text] of [["member.signed_in", '"event":"Sign-in"'], ["shopify.admin", '"event":"Admin API call","about":"Customers"'], ["staff.resync", '"event":"Resync"'], ["staff.tags", '"event":"Tag edit","about":"added"'], ["staff.webhooks", '"event":"Webhook registration","about":"register"'], ["settings.saved", '"event":"Settings saved","about":"access'], ["meter.exhausted", '"event":"Metered read, meter used up"']]) {
+		kinds[event] = (await adminAct({ type: "block_action", action_id: "events_show", value: event, page: "/events" })).text.includes(text);
+	}
+	check("App events records sign-ins, Admin API calls, staff actions, settings saves and the meter", Object.values(kinds).every(Boolean), JSON.stringify(kinds));
+	check("App events never show an email", !appEvents.text.includes(shop.customer.email));
+	const problems = await adminAct({ type: "form_submit", action_id: "events_filter", block_id: "events_filter", values: { event: "", problems: true }, page: "/events" });
+	check("Problems only shows warnings and errors", problems.text.includes("Webhook rejected") && !problems.text.includes('"event":"Webhook received","about":"customer.tags_added"'), problems.text.slice(0, 400));
+	const reports = await adminPage("/reports");
+	check("Reports count members by level, joins and sign-ins", reports.text.includes("On a level") && reports.text.includes('"chart_type":"custom"') && reports.text.includes("Sign-ins"), reports.text.slice(0, 400));
+	const widget = await adminPage("widget:status");
+	check("the dashboard widget shows webhook health", widget.text.includes("Webhooks"), widget.text.slice(0, 200));
 	const breakPro = await member.go("/posts/paywall-break");
 	check("paywall break opens for Pro", breakPro.text.includes("OPEN-INTRO") && breakPro.text.includes("BREAK-BODY"));
 	check("Members only part opens for Pro", (await member.go("/posts/members-section")).text.includes("MS-INSIDE"));

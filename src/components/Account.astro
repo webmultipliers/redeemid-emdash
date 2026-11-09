@@ -7,7 +7,7 @@ import { accountUrl, signInUrl, signOutUrl, viewer } from "../access.js";
 import { text } from "../text.js";
 
 const v = await viewer(Astro);
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const here = Astro.url.pathname + Astro.url.search;
 const names = (config?.levels ?? []).filter((l) => v.levels.includes(l.slug)).map((l) => l.name);
 ---

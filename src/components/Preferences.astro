@@ -20,7 +20,7 @@ interface Props {
 	label?: string;
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const { title = text(config, "Your preferences"), heading = "h2", label = text(config, "Save preferences") } = Astro.props;
 const v = await viewer(Astro);
 const m = v.member;

@@ -32,7 +32,7 @@ export async function hasFeature(astro: AstroLike, slug: string): Promise<boolea
 
 /** The visitor's features. */
 export async function viewerFeatures(astro: AstroLike): Promise<string[]> {
-	const config = siteConfig((astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+	const config = await siteConfig(astro.locals);
 	if (!config?.features?.length) return [];
 	const v = await viewer(astro);
 	return featuresFor(v.member, config.features, config.levels);

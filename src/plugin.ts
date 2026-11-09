@@ -6,8 +6,9 @@
  *     plugins: [redeemidPlugin(config)],
  *   })
  *
- * It adds four Portable Text blocks to the editor, a Members page, a Status
- * page and a dashboard widget. Sign-in, webhooks and checkout stay on the
+ * It adds Portable Text blocks to the editor, an Access panel on every entry,
+ * admin pages (Members, Access, Webhooks, App events, Reports, Status, Access
+ * test, Privacy), a daily webhook health check and a dashboard widget. Sign-in, webhooks and checkout stay on the
  * auth provider's routes.
  *
  * - "Paywall break" (`redeemid-paywall`): everything after it in the body is
@@ -24,19 +25,23 @@
  * part after a paywall break off the page for readers who can't read it.
  */
 
-import type { ResolvedPlugin, RouteContext } from "emdash";
+import type { PluginContext, ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
-import { describe, levelsFor, SIGNED_IN } from "./access.js";
-import { env, ENV, storeDomain, unknownEnvNames, type RedeemIDConfig } from "./config.js";
+import { levelsFor, SIGNED_IN, type Terms } from "./access.js";
+import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, isAccessAction, type AccessEnv, type PanelEntry } from "./access-admin.js";
+import { entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
+import { env, ENV, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
-import { PAGES, WIDGETS } from "./descriptor.js";
+import { EDITOR_PANELS, PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
-import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
+import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
+import { record } from "./log.js";
+import { eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, WEBHOOK_TABS, webhooksPage, type MonitorEnv, type WebhookTab } from "./monitor.js";
 import { z } from "astro/zod";
 import { AgentError, explainAccess, getMember, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
 
@@ -54,11 +59,22 @@ import {
 
 export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, ITEM_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK };
 
+/**
+ * The editor's level pickers. Declared once when the plugin starts, then kept
+ * in step (in place) with the levels saved in the admin: EmDash builds the
+ * editor's manifest from these same arrays on each request.
+ */
+const levelOptions: Array<{ label: string; value: string }> = [];
+const planLevelOptions: Array<{ label: string; value: string }> = [];
+
+export function setLevelOptions(levels: LevelConfig[] = []): void {
+	const mine = levels.map((l) => ({ label: l.name, value: l.slug }));
+	levelOptions.splice(0, levelOptions.length, { label: "Signed in (any member)", value: SIGNED_IN }, ...mine);
+	planLevelOptions.splice(0, planLevelOptions.length, ...mine);
+}
+
 function blocks(config: RedeemIDConfig) {
-	const levelOptions = [
-		{ label: "Signed in (any member)", value: SIGNED_IN },
-		...(config.levels ?? []).map((l) => ({ label: l.name, value: l.slug })),
-	];
+	setLevelOptions(config.levels);
 	return [
 		{
 			type: PAYWALL_BLOCK,
@@ -119,7 +135,7 @@ function blocks(config: RedeemIDConfig) {
 					type: "checkbox" as const,
 					action_id: "levels",
 					label: "Levels this plan gives (members on them see \"You're on this plan\")",
-					options: (config.levels ?? []).map((l) => ({ label: l.name, value: l.slug })),
+					options: planLevelOptions,
 				},
 			],
 		},
@@ -170,30 +186,89 @@ function blocks(config: RedeemIDConfig) {
 	];
 }
 
-export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
+export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
+	onLevels(setLevelOptions);
+	const live = () => liveConfig(code);
 	return definePlugin({
 		id: "redeemid",
 		version: VERSION,
-		capabilities: [],
+		// content:read: the editor's Access panel reads the entry, and its
+		// rule follows the entry's slug and goes with the entry.
+		// email:send: the daily webhook check can warn staff by email.
+		capabilities: ["content:read", "email:send"],
 		admin: {
 			pages: PAGES,
 			widgets: WIDGETS,
-			portableTextBlocks: blocks(config),
+			editorPanels: EDITOR_PANELS,
+			portableTextBlocks: blocks(code),
 		},
-		mcp: agentTools(config),
+		mcp: agentTools(code),
+		hooks: {
+			"plugin:activate": async (_event, ctx) => {
+				await scheduleHealth(ctx);
+			},
+			cron: async (event, ctx) => {
+				if (event.name !== HEALTH_TASK) return;
+				await healthCheck(monitorEnv(await live(), await memberStores(), ctx));
+			},
+			"content:afterSave": async (event) => {
+				const id = typeof event.content.id === "string" ? event.content.id : null;
+				if (!id) return;
+				const slug = typeof event.content.slug === "string" ? event.content.slug : null;
+				await entrySlugChanged((await memberStores()).access, event.collection, id, slug).catch(() => undefined);
+			},
+			"content:afterDelete": async (event) => {
+				if (!event.permanent) return;
+				await (await memberStores()).access.delete(entryKey(event.id)).catch(() => undefined);
+			},
+		},
 		routes: {
-			...agentRoutes(config),
+			...agentRoutes(code),
+			"access-panel": {
+				permission: "content:edit_own",
+				request: { body: "json" as const },
+				handler: async (ctx: RouteContext) => {
+					const i = (ctx.input ?? {}) as { type?: string; action_id?: string; values?: Record<string, unknown> };
+					const entry = ctx.ui && "entry" in ctx.ui ? ctx.ui.entry : undefined;
+					if (!entry) return { blocks: [{ type: "context", text: "Save the entry first." }] };
+					try {
+						const env = await accessEnv(await live());
+						const panel = await panelEntry(ctx, entry.collection, entry.id);
+						if (i.type === "form_submit" && i.action_id === "entry_save") {
+							const out = await entrySave(env, panel, i.values ?? {});
+							await record({ event: "settings.saved", label: `entry rule (${entry.collection})`, status: "ok", origin: "staff" });
+							return out;
+						}
+						return await entryPanel(env, panel);
+					} catch (e) {
+						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load access", description: (e as Error).message }] };
+					}
+				},
+			},
 			admin: {
 				handler: async (ctx: RouteContext) => {
 					const i = (ctx.input ?? {}) as { type?: string; page?: string; action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string };
 					try {
-						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx.request, i);
+						const config = await live();
+						if ((i.type === "block_action" || i.type === "form_submit") && isAccessAction(i.action_id)) {
+							const out = await accessAction(await accessEnv(config), i);
+							if (out.toast?.type === "success") await record({ event: "settings.saved", label: `access: ${String(i.action_id).replace(/_/g, " ")}`, status: "ok", origin: "staff" });
+							return out;
+						}
+						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx, i);
 						if (i.type !== "page_load") return { blocks: [] };
 						if (i.page === "/") return await membersPage(config);
+						if (i.page === "/access") return await accessPage(await accessEnv(config));
+						if (i.page === "/webhooks") {
+							await scheduleHealth(ctx);
+							return await webhooksPage(monitorEnv(config, await memberStores(), ctx));
+						}
+						if (i.page === "/events") return await eventsPage(await memberStores());
+						if (i.page === "/reports") return await reportsPage(config, await memberStores());
 						if (i.page === "/status") return await statusPage(config, ctx.request);
 						if (i.page === "/test") return await accessTest(config);
 						if (i.page === "/privacy") return await privacyPage(await memberStores());
-						if (i.page === "widget:status") return await statusWidget(config);
+						if (i.page === "widget:status") return await statusWidget(config, ctx);
 					} catch (e) {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load this page", description: (e as Error).message }] };
 					}
@@ -204,6 +279,70 @@ export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
 	});
 }
 
+/** What the Webhooks page and the daily check work with. */
+function monitorEnv(config: RedeemIDConfig, s: Stores, ctx: PluginContext): MonitorEnv {
+	return { config, s, kv: ctx.kv, uri: ctx.url(WEBHOOK_PATH), email: ctx.email };
+}
+
+/** Make sure the daily webhook check is scheduled (on Workers it runs from the site's Cron Trigger). */
+async function scheduleHealth(ctx: PluginContext): Promise<void> {
+	try {
+		if (!ctx.cron) return;
+		const tasks = await ctx.cron.list();
+		if (!tasks.some((t) => t.name === HEALTH_TASK)) await ctx.cron.schedule(HEALTH_TASK, { schedule: "@daily" });
+	} catch {
+		// Scheduling is best effort; Check now still works.
+	}
+}
+
+/** The code's config with what the admin saved. */
+async function liveConfig(code: RedeemIDConfig): Promise<RedeemIDConfig> {
+	const { getDb } = await import("emdash/runtime");
+	return (await withSaved(code, await getDb())) ?? code;
+}
+
+/** Everything the Access screens read: saved settings and the site's content types and taxonomies, as they are now. */
+async function accessEnv(config: RedeemIDConfig): Promise<AccessEnv> {
+	const { getDb } = await import("emdash/runtime");
+	const db = await getDb();
+	const store = stores(db).access;
+	const emdash = await import("emdash");
+	const collections = (await new emdash.SchemaRegistry(db as never).listCollections()) as Array<{ slug: string; label: string }>;
+	const taxonomies = (await emdash.getTaxonomyDefs()) as Array<{ name: string; label: string; collections: string[] }>;
+	return {
+		code: config,
+		store,
+		saved: await loadAccess(store),
+		collections: collections.map((c) => ({ slug: c.slug, label: c.label || c.slug })),
+		taxonomies: taxonomies.map((t) => ({ name: t.name, label: t.label || t.name, collections: t.collections ?? [] })),
+		terms: async (taxonomy) => {
+			type Node = { slug: string; label?: string; name?: string; children?: Node[] };
+			const out: Array<{ slug: string; label: string }> = [];
+			const walk = (list: Node[], path: string) =>
+				list.forEach((n) => {
+					const label = `${path}${n.label || n.slug}`;
+					out.push({ slug: n.slug, label });
+					walk(n.children ?? [], `${label} › `);
+				});
+			walk((await emdash.getTaxonomyTerms(taxonomy)) as Node[], "");
+			return out;
+		},
+	};
+}
+
+/** The saved entry the editor's panel is on: its slug and terms. */
+async function panelEntry(ctx: RouteContext, collection: string, id: string): Promise<PanelEntry> {
+	const item = await ctx.content?.get(collection, id).catch(() => null);
+	const emdash = await import("emdash");
+	const terms: Terms = {};
+	for (const t of (await emdash.getTaxonomyDefs()) as Array<{ name: string; collections: string[] }>) {
+		if (!(t.collections ?? []).includes(collection)) continue;
+		const list = (await emdash.getEntryTerms(collection, id, t.name)) as Array<{ slug: string; id: string; parentId?: string }>;
+		if (list.length) terms[t.name] = list.map((x) => ({ slug: x.slug, id: x.id, parentId: x.parentId ?? null }));
+	}
+	return { collection, id, slug: item?.slug ?? null, terms };
+}
+
 export default createPlugin;
 
 // ---------------------------------------------------------------- agents and CLI
@@ -211,9 +350,11 @@ export default createPlugin;
 const STAFF = "users:read" as const;
 
 /** Staff-only JSON routes, also offered as MCP tools. */
-function agentRoutes(config: RedeemIDConfig) {
+function agentRoutes(code: RedeemIDConfig) {
+	let config = code;
 	const run = (fn: (s: Stores, input: Record<string, unknown>) => Promise<unknown> | unknown) => async (ctx: RouteContext) => {
 		try {
+			config = await liveConfig(code);
 			return { ok: true, result: await fn(await memberStores(), (ctx.input ?? {}) as Record<string, unknown>) };
 		} catch (e) {
 			if (e instanceof AgentError || e instanceof AdminError) return { ok: false, error: e.message };
@@ -229,7 +370,7 @@ function agentRoutes(config: RedeemIDConfig) {
 		"site-health": route(EMPTY, (s) => siteHealth(config, s)),
 		"level-changes": route(CHANGES, (s, i) => levelChanges(config, s, i as { since: string; level?: string })),
 	};
-	if (!config.agents?.actions) return read;
+	if (!code.agents?.actions) return read;
 	return {
 		...read,
 		"resync-member": route(CUSTOMER, async (s, i) => {
@@ -287,14 +428,17 @@ function agentTools(config: RedeemIDConfig) {
 
 // ---------------------------------------------------------------- actions
 
-const webhookUri = (request: Request) => `${new URL(request.url).origin}/_emdash/api/auth/redeemid/webhook`;
-
 async function action(
 	config: RedeemIDConfig,
-	request: Request,
+	ctx: RouteContext,
 	i: { action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string },
 ) {
 	const s = await memberStores();
+	const monitor = () => monitorEnv(config, s, ctx);
+	const cursorOf = (v: unknown) => {
+		const c = (v as { cursor?: unknown } | null)?.cursor;
+		return typeof c === "string" && c ? c : undefined;
+	};
 	const fail = (e: unknown) => ({ type: "error" as const, message: (e as Error).message });
 	switch (i.action_id) {
 		case "members_back":
@@ -342,14 +486,34 @@ async function action(
 		}
 		case "webhooks_register": {
 			try {
-				const { added, failed } = await registerWebhooks(config, webhookUri(request));
+				const { added, failed } = await registerWebhooks(config, monitor().uri);
 				const done = added.length ? `Registered ${added.length} webhooks.` : failed.length ? "" : "Nothing was missing.";
 				const refused = failed.map((f) => `Shopify refused ${f.topic}: ${f.message}`).join(" ");
-				return { ...(await statusPage(config, request)), toast: { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") } };
+				await record({ event: "staff.webhooks", label: "register", status: failed.length ? `${failed.length} refused` : `${added.length} registered`, level: failed.length ? "warn" : "ok", origin: "staff" });
+				return webhooksPage(monitor(), "setup", { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") });
 			} catch (e) {
-				return { ...(await statusPage(config, request)), toast: fail(e) };
+				return webhooksPage(monitor(), "setup", fail(e));
 			}
 		}
+		case "webhooks_tab": {
+			const tab = WEBHOOK_TABS.includes(i.value as WebhookTab) ? (i.value as WebhookTab) : "received";
+			return webhooksPage(monitor(), tab);
+		}
+		case "deliveries_page":
+			return webhooksPage(monitor(), "received", undefined, cursorOf(i.value));
+		case "health_check": {
+			const r = await healthCheck({ ...monitor(), by: "staff" });
+			const message = r.problems.length ? `Checked: ${r.problems.length === 1 ? "1 problem" : `${r.problems.length} problems`}.` : "Checked: subscriptions are in place and deliveries look healthy.";
+			return webhooksPage(monitor(), "health", { type: r.problems.length ? "info" : "success", message });
+		}
+		case "monitor_save":
+			return webhooksPage(monitor(), "health", await saveMonitor(ctx.kv, i.values));
+		case "events_filter":
+			return eventsPage(s, { event: String(i.values?.event ?? "") || undefined, problems: i.values?.problems === true });
+		case "events_show":
+			return eventsPage(s, { event: String(i.value ?? "") || undefined });
+		case "events_page":
+			return eventsPage(s, parseFilter(i.block_id), cursorOf(i.value));
 		case "access_test":
 			return accessTest(config, i.values);
 		case "member_export": {
@@ -417,10 +581,10 @@ async function membersPage(config: RedeemIDConfig) {
 		label: l.name,
 		value: String(members.filter((m) => m.status === "enabled" && levelsFor(m.tags, levels).includes(l.slug)).length),
 	}));
-	const name = (m: MemberRecord) => [m.firstName, m.lastName].filter(Boolean).join(" ") || "—";
+	const name = (m: MemberRecord) => [m.firstName, m.lastName].filter(Boolean).join(" ") || "No name";
 	const levelNames = (m: MemberRecord) => {
 		const held = levelsFor(m.tags, levels);
-		return levels.filter((l) => held.includes(l.slug)).map((l) => l.name).join(", ") || "—";
+		return levels.filter((l) => held.includes(l.slug)).map((l) => l.name).join(", ");
 	};
 	return {
 		blocks: [
@@ -466,7 +630,7 @@ async function membersPage(config: RedeemIDConfig) {
 							{ key: "email", label: "Email" },
 							{ key: "levels", label: "Levels" },
 							{ key: "tags", label: "Shopify tags" },
-							{ key: "status", label: "Account" },
+							{ key: "status", label: "Account", format: "badge" },
 							{ key: "synced", label: "Last synced", format: "relative_time" },
 							{ key: "open", label: "", format: "element" },
 						],
@@ -474,9 +638,9 @@ async function membersPage(config: RedeemIDConfig) {
 							.sort((a, b) => b.syncedAt.localeCompare(a.syncedAt))
 							.map((m) => ({
 								name: name(m),
-								email: m.email ?? "—",
+								email: m.email ?? "",
 								levels: levelNames(m),
-								tags: m.tags.join(", ") || "—",
+								tags: m.tags.join(", "),
 								status: m.status === "enabled" ? "On" : "Off",
 								synced: m.syncedAt,
 								open: { type: "button", action_id: "member_open", label: "Open", value: m.customerId },
@@ -521,13 +685,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 	const c = await checks(config);
 	const origin = new URL(request.url).origin;
 	const yes = (v: boolean) => (v ? "Set" : "Missing");
-	const levels = config.levels ?? [];
-	const rules = config.rules ?? [];
 	const delivery = await lastDelivery().catch(() => null);
-	const webhooks = await webhooksSection(config, webhookUri(request));
-	const deliveries = await memberStores()
-		.then((s) => deliveriesSection(s))
-		.catch(() => [{ type: "context", text: "Couldn't read deliveries." }]);
 	return {
 		blocks: [
 			{ type: "header", text: "Status" },
@@ -562,11 +720,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 						},
 					]
 				: []),
-			{ type: "divider" },
-			{ type: "header", text: "Webhooks" },
-			...webhooks,
-			{ type: "header", text: "Recent deliveries" },
-			...deliveries,
+			{ type: "context", text: "Deliveries, their health and the webhook subscriptions are under Webhooks; everything RedeemID did is under App events." },
 			{ type: "divider" },
 			{ type: "header", text: "Shopify settings" },
 			{
@@ -579,62 +733,24 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 				],
 			},
 			{ type: "divider" },
-			{ type: "header", text: "Levels" },
-			{ type: "context", text: "Set in astro.config.mjs." },
-			levels.length
-				? {
-						type: "table",
-						page_action_id: "levels_page",
-						columns: [
-							{ key: "name", label: "Level" },
-							{ key: "tags", label: "Shopify tags" },
-							{ key: "match", label: "Needs" },
-						],
-						rows: levels.map((l) => ({ name: l.name, tags: l.tags.join(", "), match: l.match === "all" ? "All tags" : "Any tag" })),
-					}
-				: { type: "context", text: "No levels configured." },
-			{ type: "header", text: "Rules" },
-			rules.length
-				? {
-						type: "table",
-						page_action_id: "rules_page",
-						columns: [
-							{ key: "where", label: "Covers" },
-							{ key: "levels", label: "Who can read" },
-							{ key: "extra", label: "Drip and meter" },
-						],
-						rows: rules.map((r) => ({
-							where:
-								r.taxonomy && r.term
-									? `${r.collection === "*" ? "Every collection" : r.collection}, ${r.taxonomy}: ${r.term} (and its child terms)`
-									: r.collection === "*"
-										? "Site default (collections with no rule)"
-										: `All ${r.collection}`,
-							levels: r.open ? "Everyone (opens the entry)" : r.levels.length ? describe([r.levels], levels) : "Any signed-in member",
-							extra: [r.drip ? `Opens ${r.drip} days into membership` : "", r.meter === false ? "Never metered" : ""].filter(Boolean).join("; "),
-						})),
-					}
-				: { type: "context", text: "No rules. Entries are open unless their body has a paywall break." },
-			{
-				type: "context",
-				text: config.meter?.limit
-					? `Meter: signed-in readers may open ${config.meter.limit} locked ${config.meter.limit === 1 ? "entry" : "entries"} a ${config.meter.period ?? "month"}${config.meter.collections?.length ? ` (${config.meter.collections.join(", ")})` : ""}.`
-					: "Meter: off.",
-			},
+			{ type: "context", text: "Levels, rules and the meter are under Access." },
 		],
 	};
 }
 
-async function statusWidget(config: RedeemIDConfig) {
+async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 	const c = await checks(config);
 	const members = await allMembers().catch(() => []);
+	const check = await lastCheck(ctx.kv).catch(() => null);
 	return {
 		blocks: [
+			...(check?.problems.length ? [{ type: "banner", variant: "alert", title: "Webhooks need attention", description: check.problems[0]!.text }] : []),
 			{
 				type: "fields",
 				fields: [
 					{ label: "Sign-in", value: c.discovery.startsWith("OK") && c.clientId ? "Ready" : "Not ready" },
 					{ label: "Members", value: String(members.length) },
+					{ label: "Webhooks", value: check ? (check.problems.length ? `${check.problems.length} to look at` : "Healthy") : "Not checked yet" },
 				],
 			},
 		],

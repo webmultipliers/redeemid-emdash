@@ -41,7 +41,7 @@ const DEFAULTS: Record<string, string> = {
 
 const { messages = {} } = Astro.props;
 const code = Astro.url.searchParams.get("redeemid_notice") ?? "";
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const fallback = DEFAULTS[code];
 const text = code ? (messages[code] ?? (fallback ? replace(config, fallback) : undefined)) : undefined;
 ---

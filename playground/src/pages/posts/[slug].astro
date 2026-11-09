@@ -57,7 +57,7 @@ const categories = post.data.terms?.category ?? [];
 
 		<h1 {...post.edit.title}>{post.data.title}</h1>
 
-		<AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} />
+		<AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} id={post.id} />
 
 		{
 			post.data.publishedAt && (

@@ -75,7 +75,8 @@ function str(raw: unknown): string | null {
 	return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
 }
 
-function customerOf(payload: Record<string, unknown>): string | null {
+/** The Shopify customer a payload is about, when it names one. */
+export function customerOf(payload: Record<string, unknown>): string | null {
 	const nested = (payload.customer as { id?: unknown } | undefined)?.id;
 	for (const c of [payload.id, payload.customerId, payload.customer_id, nested]) {
 		const id = numericId(c);

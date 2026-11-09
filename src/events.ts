@@ -14,6 +14,7 @@
 
 import { env, ENV, type RedeemIDConfig } from "./config.js";
 import { USER_AGENT } from "./shopify.js";
+import { record } from "./log.js";
 
 export type EventName = "member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved" | "member.erased";
 
@@ -46,9 +47,11 @@ export async function emit(config: RedeemIDConfig | null, name: EventName, data:
 			body,
 			signal: AbortSignal.timeout(TIMEOUT_MS),
 		});
+		if (!res.ok) await record({ event: "events.failed", label: name, status: `HTTP ${res.status}`, level: "warn", origin: "site" });
 		return res.ok;
 	} catch (e) {
 		console.error("[redeemid] event not sent:", name, (e as Error).message);
+		await record({ event: "events.failed", label: name, status: "error", level: "error", origin: "site", note: String((e as Error).message).slice(0, 200) });
 		return false;
 	}
 }

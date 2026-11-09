@@ -19,7 +19,7 @@ interface Props {
 	title?: string;
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const { title = text(config, "Your membership") } = Astro.props;
 const v = await viewer(Astro);
 const here = Astro.url.pathname + Astro.url.search;
