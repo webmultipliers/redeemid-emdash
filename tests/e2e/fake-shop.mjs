@@ -313,6 +313,7 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				// Like Shopify: only registered logout URIs are honoured.
 				const to = url.searchParams.get("post_logout_redirect_uri");
 				if (!to || !logoutUris.includes(to)) return json(400, { error: "invalid_post_logout_redirect_uri" });
+				shop.logouts = (shop.logouts ?? 0) + 1;
 				res.writeHead(302, { location: to });
 				return res.end();
 			}

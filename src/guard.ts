@@ -12,6 +12,7 @@ import { defineMiddleware } from "astro:middleware";
 
 import { signInUrl } from "./access.js";
 import { keysFromPath, pathAccess, refusal } from "./files.js";
+import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
 import { siteConfig } from "./site-config.js";
 
 const SUBSCRIBER = 10;
@@ -69,6 +70,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
 			out.headers.set("vary", "Cookie");
 			out.headers.set("x-robots-tag", "noindex");
 			return out;
+		}
+	}
+
+	// Back from ending the store session after a refused sign-in.
+	if (url.pathname === "/" && !url.searchParams.has("redeemid_notice")) {
+		const after = readAfterLogout(context.cookies.get(AFTER_LOGOUT_COOKIE)?.value);
+		if (after) {
+			context.cookies.delete(AFTER_LOGOUT_COOKIE, { path: "/" });
+			const sep = after.returnTo.includes("?") ? "&" : "?";
+			return context.redirect(`${after.returnTo}${sep}redeemid_notice=${encodeURIComponent(after.code)}`);
 		}
 	}
 

@@ -84,6 +84,7 @@ export const STRINGS = {
 		"Sign-in isn't available right now. Try again in a few minutes.",
 		"That sign-in took too long. Try again.",
 		"This account can't sign in here. Use a different email.",
+		"Your account is turned off. Contact the store for help.",
 		"This site isn't ready for sign-in yet.",
 		"Your account needs an email address to sign in.",
 		"Sign-in didn't finish. Try again.",

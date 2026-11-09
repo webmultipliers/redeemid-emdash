@@ -466,8 +466,10 @@ try {
 	// A store customer with a staff email can't take over the staff account.
 	shop.customer = { id: 2002, email: "dev@emdash.local", firstName: "Not", lastName: "Staff", tags: ["pro"] };
 	const intruder = new Browser();
+	const logoutsBefore = shop.logouts ?? 0;
 	const refused = await intruder.go("/_emdash/api/auth/redeemid/login?return=/posts/pro-only");
 	check("staff email is refused", refused.url.searchParams.get("redeemid_notice") === "staff_account", refused.url.href);
+	check("a refused sign-in ends the store session and comes back to the page", (shop.logouts ?? 0) === logoutsBefore + 1 && refused.url.pathname === "/posts/pro-only", refused.url.href);
 	check("refused customer stays signed out", !refused.text.includes("PRO-BODY"));
 
 	// Sign out ends the site session and the store session.
