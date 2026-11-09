@@ -124,7 +124,7 @@ describe("saved settings over code", () => {
 
 	it("renders every tab, with new content types and taxonomies listed", async () => {
 		const page = JSON.stringify(await accessPage(await env()));
-		for (const text of ["Levels", "Site rules", "Content types", "Taxonomies", "Features", "Protected files", "Recipes: follows the site default", "Categories: 1 rule"]) {
+		for (const text of ["Levels", "Rules", "Terms", "Files", "Features", "Content types", "Recipes: follows the site default", "Categories: 1 rule"]) {
 			expect(page).toContain(text);
 		}
 	});

@@ -64,6 +64,8 @@ export interface AccessEnv {
 
 export const TABS = ["levels", "site", "types", "taxonomies", "features", "files"] as const;
 export type Tab = (typeof TABS)[number];
+/** Which of the four panels holds each part. */
+const PANEL: Record<Tab, number> = { levels: 0, features: 0, site: 1, types: 1, taxonomies: 2, files: 3 };
 
 const effective = (env: AccessEnv) => mergeAccess(env.code, env.saved) ?? env.code;
 
@@ -77,12 +79,12 @@ function whoOf(rule: RuleConfig | undefined): Who {
 	return rule.levels.length && !rule.levels.includes(SIGNED_IN) ? "levels" : "signed-in";
 }
 
-function whoOptions(none: string | null) {
+function whoOptions(none: string | null, open = true) {
 	return [
 		...(none ? [{ label: none, value: "none" }] : []),
-		{ label: "Free to everyone", value: "open" },
+		...(open ? [{ label: "Free to everyone", value: "open" }] : []),
 		{ label: "Any signed-in member", value: "signed-in" },
-		{ label: "Members with a level ticked below", value: "levels" },
+		{ label: "Members with a level", value: "levels" },
 	];
 }
 
@@ -90,14 +92,15 @@ function levelOptions(levels: LevelConfig[]) {
 	return levels.map((l) => ({ label: l.name, value: l.slug }));
 }
 
-function ruleFields(levels: LevelConfig[], rule: RuleConfig | undefined, none: string | null) {
+function ruleFields(levels: LevelConfig[], rule: RuleConfig | undefined, none: string | null, open = true) {
+	const who = whoOf(rule);
 	return [
-		{ type: "select", action_id: "who", label: "Who can read", options: whoOptions(none), initial_value: whoOf(rule) },
+		{ type: "select", action_id: "who", label: "Who can read", options: whoOptions(none, open), initial_value: !open && who === "open" ? "none" : !none && who === "none" ? "signed-in" : who },
 		...(levels.length
-			? [{ type: "checkbox", action_id: "levels", label: "Levels (a reader needs any one)", options: levelOptions(levels), initial_value: rule?.levels.filter((l) => l !== SIGNED_IN) ?? [], condition: { field: "who", eq: "levels" } }]
+			? [{ type: "checkbox", action_id: "levels", label: "Levels (any one)", options: levelOptions(levels), initial_value: rule?.levels.filter((l) => l !== SIGNED_IN) ?? [], condition: { field: "who", eq: "levels" } }]
 			: []),
-		{ type: "number_input", action_id: "drip", label: "Readers need this many days of membership first (0 = straight away)", min: 0, max: 3650, initial_value: rule?.drip ?? 0 },
-		{ type: "toggle", action_id: "no_meter", label: "Never count toward the meter", initial_value: rule?.meter === false },
+		{ type: "number_input", action_id: "drip", label: "Days of membership first (0 = none)", min: 0, max: 3650, initial_value: rule?.drip ?? 0, condition: { field: "who", neq: "open" } },
+		{ type: "toggle", action_id: "no_meter", label: "Never metered", initial_value: rule?.meter === false, condition: { field: "who", neq: "open" } },
 	];
 }
 
@@ -157,20 +160,15 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 			? {
 					type: "table",
 					page_action_id: "levels_table",
+					// Three columns so it fits a phone; the slug and use count ride along.
 					columns: [
 						{ key: "name", label: "Level" },
-						{ key: "slug", label: "Slug", format: "code" },
 						{ key: "tags", label: "Shopify tags" },
-						{ key: "needs", label: "Needs" },
-						{ key: "used", label: "Rules", format: "number" },
 						{ key: "act", label: "", format: "element" },
 					],
 					rows: levels.map((l) => ({
-						name: l.name,
-						slug: l.slug,
-						tags: l.tags.join(", "),
-						needs: l.match === "all" ? "All tags" : "Any tag",
-						used: used(l.slug),
+						name: `${l.name} (${l.slug}${used(l.slug) ? `, ${used(l.slug)} ${used(l.slug) === 1 ? "rule" : "rules"}` : ""})`,
+						tags: `${l.tags.join(", ")}${l.tags.length > 1 ? (l.match === "all" ? " (all)" : " (any)") : ""}`,
 						act: { type: "menu", action_id: "level_menu", label: "Edit", items: [{ label: "Edit", value: `edit:${l.slug}` }, { label: "Remove", value: `remove:${l.slug}` }] },
 					})),
 				}
@@ -180,12 +178,12 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 			type: "form",
 			block_id: current ? `level:${current.slug}` : "level:new",
 			fields: [
-				{ type: "text_input", action_id: "name", label: "Name members see", placeholder: "Members", initial_value: current?.name ?? "" },
-				...(current ? [] : [{ type: "text_input", action_id: "slug", label: "Slug (made from the name when left empty; can't change later)", placeholder: "members" }]),
-				{ type: "text_input", action_id: "tags", label: "Shopify customer tags that grant it (comma separated)", placeholder: "member", initial_value: current?.tags.join(", ") ?? "" },
-				{ type: "select", action_id: "match", label: "A customer needs", options: [{ label: "Any one of the tags", value: "any" }, { label: "All of the tags", value: "all" }], initial_value: current?.match ?? "any" },
-				{ type: "text_input", action_id: "wall", label: "What the wall says to readers this level lets in (optional)", initial_value: current?.wall ?? "", multiline: true },
-				{ type: "text_input", action_id: "join_url", label: "Join link for this level (optional)", placeholder: "/join/", initial_value: current?.joinUrl ?? "" },
+				{ type: "text_input", action_id: "name", label: "Name", placeholder: "Members", initial_value: current?.name ?? "" },
+				...(current ? [] : [{ type: "text_input", action_id: "slug", label: "Slug (optional, fixed once saved)", placeholder: "members" }]),
+				{ type: "text_input", action_id: "tags", label: "Shopify tags, comma separated", placeholder: "member", initial_value: current?.tags.join(", ") ?? "" },
+				{ type: "select", action_id: "match", label: "Customer needs", options: [{ label: "Any one tag", value: "any" }, { label: "Every tag", value: "all" }], initial_value: current?.match ?? "any" },
+				{ type: "text_input", action_id: "wall", label: "Wall text (optional)", initial_value: current?.wall ?? "", multiline: true },
+				{ type: "text_input", action_id: "join_url", label: "Join link (optional)", placeholder: "/join/", initial_value: current?.joinUrl ?? "" },
 			],
 			submit: { label: current ? "Save level" : "Add level", action_id: "level_save" },
 		},
@@ -205,14 +203,14 @@ function siteTab(env: AccessEnv): unknown[] {
 			type: "form",
 			block_id: "site",
 			fields: [
-				...ruleFields(levels, site, "Free to everyone (no site default)"),
-				{ type: "select", action_id: "combine", label: "When several term rules cover one entry", options: [{ label: "Readers must pass every one (most restrictive)", value: "all" }, { label: "Passing any one is enough", value: "any" }], initial_value: config.combine ?? "all" },
-				{ type: "number_input", action_id: "meter_limit", label: "Meter: locked entries a signed-in reader may open free each period (0 = off)", min: 0, max: 1000, initial_value: meter?.limit ?? 0 },
+				...ruleFields(levels, site, "Free to everyone", false),
+				{ type: "select", action_id: "combine", label: "Several term rules on one entry", options: [{ label: "Pass every one", value: "all" }, { label: "Pass any one", value: "any" }], initial_value: config.combine ?? "all" },
+				{ type: "number_input", action_id: "meter_limit", label: "Meter: free locked reads per period (0 = off)", min: 0, max: 1000, initial_value: meter?.limit ?? 0 },
 				{ type: "select", action_id: "meter_period", label: "Meter period", options: [{ label: "Month", value: "month" }, { label: "Week", value: "week" }], initial_value: meter?.period ?? "month" },
 				...(env.collections.length
-					? [{ type: "checkbox", action_id: "meter_collections", label: "Content types the meter covers (none ticked = all)", options: env.collections.map((c) => ({ label: c.label, value: c.slug })), initial_value: meter?.collections ?? [] }]
+					? [{ type: "checkbox", action_id: "meter_collections", label: "Meter covers (none ticked = all)", options: env.collections.map((c) => ({ label: c.label, value: c.slug })), initial_value: meter?.collections ?? [] }]
 					: []),
-				{ type: "text_input", action_id: "join_href", label: "Wall's join link", placeholder: "/join/", initial_value: config.join?.href ?? "" },
+				{ type: "text_input", action_id: "join_href", label: "Join link", placeholder: "/join/", initial_value: config.join?.href ?? "" },
 				{ type: "text_input", action_id: "join_label", label: "Join link text", placeholder: "Become a member", initial_value: config.join?.label ?? "" },
 			],
 			submit: { label: "Save site rules", action_id: "site_save" },
@@ -228,7 +226,7 @@ function typesTab(env: AccessEnv): unknown[] {
 	const rules = config.rules ?? [];
 	if (env.collections.length === 0) return [{ type: "empty", title: "No content types yet", size: "sm" }];
 	return [
-		{ type: "context", text: "Who can read each content type. New content types appear here as soon as they're made. Term rules (Taxonomies) and an entry's own rule (its Access panel) beat these." },
+		{ type: "context", text: "Who can read each content type. New content types appear here as soon as they're made. Term rules (Terms tab) and an entry's own rule (its Access panel) beat these." },
 		...sourceLine(env, "rules", "Rules"),
 		...env.collections.map((c) => {
 			const rule = rules.find((r) => r.collection === c.slug && !r.taxonomy && !r.term);
@@ -242,7 +240,7 @@ function typesTab(env: AccessEnv): unknown[] {
 						block_id: `type:${c.slug}`,
 						fields: [
 							...ruleFields(levels, rule, "Follow the site default"),
-							{ type: "number_input", action_id: "teaser", label: "Teaser: words of a locked entry shown when it has no paywall break (0 = none)", min: 0, max: 2000, initial_value: teaser },
+							{ type: "number_input", action_id: "teaser", label: "Teaser words without a paywall break (0 = none)", min: 0, max: 2000, initial_value: teaser },
 						],
 						submit: { label: `Save ${c.label}`, action_id: "type_save" },
 					},
@@ -277,15 +275,13 @@ async function taxonomiesTab(env: AccessEnv): Promise<unknown[]> {
 							page_action_id: `term_rules:${t.name}`,
 							columns: [
 								{ key: "term", label: "Term" },
-								{ key: "where", label: "In" },
 								{ key: "who", label: "Who can read" },
 								{ key: "act", label: "", format: "element" },
 							],
 							rows: own.map((r) => ({
-								term: termLabel(r.term!),
-								where: label(r.collection),
+								term: r.collection === "*" ? termLabel(r.term!) : `${termLabel(r.term!)} (${label(r.collection)} only)`,
 								who: ruleText(r, levels),
-								act: { type: "button", action_id: "term_remove", label: "Remove", style: "danger", value: `${r.collection}|${t.name}|${r.term}` },
+								act: { type: "button", action_id: "term_remove", label: "Remove", style: "secondary", value: `${r.collection}|${t.name}|${r.term}`, confirm: { title: "Remove this term rule?", text: "Its entries follow the other rules again.", confirm: "Remove", deny: "Cancel" } },
 							})),
 						}
 					: { type: "context", text: "No rules: its terms don't change who can read." },
@@ -321,13 +317,11 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 					page_action_id: "features_table",
 					columns: [
 						{ key: "name", label: "Feature" },
-						{ key: "slug", label: "Slug", format: "code" },
 						{ key: "from", label: "Held through" },
 						{ key: "act", label: "", format: "element" },
 					],
 					rows: features.map((f) => ({
-						name: f.name,
-						slug: f.slug,
+						name: `${f.name} (${f.slug})`,
 						from: [...(f.levels ?? []).map((l) => levels.find((x) => x.slug === l)?.name ?? l), ...(f.tags ?? []).map((t) => `tag ${t}`)].join(", ") || "—",
 						act: { type: "menu", action_id: "feature_menu", label: "Edit", items: [{ label: "Edit", value: `edit:${f.slug}` }, { label: "Remove", value: `remove:${f.slug}` }] },
 					})),
@@ -339,9 +333,9 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 			block_id: current ? `feature:${current.slug}` : "feature:new",
 			fields: [
 				{ type: "text_input", action_id: "name", label: "Name", placeholder: "Ad-free", initial_value: current?.name ?? "" },
-				...(current ? [] : [{ type: "text_input", action_id: "slug", label: "Slug (made from the name when left empty)", placeholder: "ad-free" }]),
+				...(current ? [] : [{ type: "text_input", action_id: "slug", label: "Slug (optional, fixed once saved)", placeholder: "ad-free" }]),
 				...(levels.length ? [{ type: "checkbox", action_id: "levels", label: "Levels that hold it", options: levelOptions(levels), initial_value: current?.levels ?? [] }] : []),
-				{ type: "text_input", action_id: "tags", label: "Shopify tags that hold it (comma separated, optional)", initial_value: current?.tags?.join(", ") ?? "" },
+				{ type: "text_input", action_id: "tags", label: "Shopify tags, comma separated (optional)", initial_value: current?.tags?.join(", ") ?? "" },
 			],
 			submit: { label: current ? "Save feature" : "Add feature", action_id: "feature_save" },
 		},
@@ -373,7 +367,7 @@ function filesTab(env: AccessEnv): unknown[] {
 						{ key: "who", label: "Who can download" },
 						{ key: "act", label: "", format: "element" },
 					],
-					rows: files.map((f) => ({ folder: f.folder, who: describeRule(f), act: { type: "button", action_id: "file_remove", label: "Remove", style: "danger", value: f.folder } })),
+					rows: files.map((f) => ({ folder: f.folder, who: describeRule(f), act: { type: "button", action_id: "file_remove", label: "Remove", style: "secondary", value: f.folder, confirm: { title: "Stop protecting this folder?", text: "Anyone with a file's link can download it again.", confirm: "Remove", deny: "Cancel" } } })),
 				}
 			: { type: "context", text: "No protected folders: every file is public." },
 		{ type: "header", text: "Protect a folder" },
@@ -382,10 +376,10 @@ function filesTab(env: AccessEnv): unknown[] {
 			block_id: "file",
 			fields: [
 				{ type: "text_input", action_id: "folder", label: "Media folder name", placeholder: "Member downloads" },
-				{ type: "toggle", action_id: "members", label: "Signed-in members (with a level ticked below, if any)", initial_value: true },
-				...(levels.length ? [{ type: "checkbox", action_id: "levels", label: "Levels", options: levelOptions(levels), condition: { field: "members", eq: true } }] : []),
+				{ type: "toggle", action_id: "members", label: "Signed-in members", initial_value: true },
+				...(levels.length ? [{ type: "checkbox", action_id: "levels", label: "Only these levels (none = any member)", options: levelOptions(levels), condition: { field: "members", eq: true } }] : []),
 				...(features.length ? [{ type: "checkbox", action_id: "features", label: "Features", options: features.map((f) => ({ label: f.name, value: f.slug })) }] : []),
-				{ type: "toggle", action_id: "entries", label: "Readers of a published entry that uses the file", initial_value: false },
+				{ type: "toggle", action_id: "entries", label: "Readers of an entry that uses it", initial_value: false },
 			],
 			submit: { label: "Save folder", action_id: "file_save" },
 		},
@@ -395,19 +389,18 @@ function filesTab(env: AccessEnv): unknown[] {
 /** The Access page, opened on `tab`. */
 export async function accessPage(env: AccessEnv, tab: Tab = "levels", toast?: Toast, edit?: { level?: string; feature?: string }): Promise<Blocks> {
 	const panels = [
-		{ label: "Levels", blocks: levelsTab(env, edit?.level) },
-		{ label: "Site rules", blocks: siteTab(env) },
-		{ label: "Content types", blocks: typesTab(env) },
-		{ label: "Taxonomies", blocks: await taxonomiesTab(env) },
-		{ label: "Features", blocks: featuresTab(env, edit?.feature) },
-		{ label: "Protected files", blocks: filesTab(env) },
+		// Four short tabs so they fit across a phone without scrolling the page.
+		{ label: "Levels", blocks: [...levelsTab(env, edit?.level), { type: "divider" }, { type: "header", text: "Features" }, ...featuresTab(env, edit?.feature)] },
+		{ label: "Rules", blocks: [{ type: "header", text: "Site default" }, ...siteTab(env), { type: "divider" }, { type: "header", text: "Content types" }, ...typesTab(env)] },
+		{ label: "Terms", blocks: await taxonomiesTab(env) },
+		{ label: "Files", blocks: filesTab(env) },
 	];
 	return {
 		toast,
 		blocks: [
 			{ type: "header", text: "Access" },
 			{ type: "context", text: "Who can read what. Shopify decides who holds which tags; these settings only say what each tag opens." },
-			{ type: "tab", panels, default_tab: Math.max(0, TABS.indexOf(tab)) },
+			{ type: "tab", panels, default_tab: PANEL[tab] ?? 0 },
 		],
 	};
 }
@@ -652,8 +645,8 @@ export interface PanelEntry {
 const MODES = [
 	{ label: "Follow the site rules", value: "inherit" },
 	{ label: "Free to everyone", value: "open" },
-	{ label: "Only the levels ticked below", value: "levels" },
-	{ label: "The site rules, and also a level ticked below", value: "add" },
+	{ label: "Only some levels", value: "levels" },
+	{ label: "Site rules plus a level", value: "add" },
 ];
 
 function words(required: Requirement, levels: LevelConfig[]): string {
@@ -683,16 +676,16 @@ export async function entryPanel(env: AccessEnv, entry: PanelEntry, toast?: Toas
 				fields: [
 					{ type: "select", action_id: "mode", label: "Who can read it", options: MODES, initial_value: own?.mode ?? "inherit" },
 					...(hasLevels
-						? [{ type: "checkbox", action_id: "levels", label: "Levels (a reader needs any one; none ticked = any signed-in member)", options: levelOptions(levels), initial_value: own?.levels ?? [] }]
+						? [{ type: "checkbox", action_id: "levels", label: "Levels (any one; none = any member)", options: levelOptions(levels), initial_value: own?.levels ?? [], condition: { field: "mode", neq: "inherit" } }]
 						: []),
-					{ type: "number_input", action_id: "drip", label: "Members can read it after this many days of membership (0 = the rules decide)", min: 0, max: 3650, initial_value: own?.drip ?? 0 },
-					{ type: "toggle", action_id: "no_meter", label: "Never count toward the meter", initial_value: own?.meter === false },
-					{ type: "date_input", action_id: "locked_until", label: "Locked until, then free to everyone (UTC)", initial_value: day(own?.lockedUntil) },
-					{ type: "date_input", action_id: "open_until", label: "Free until, then locked (UTC)", initial_value: day(own?.openUntil) },
+					{ type: "number_input", action_id: "drip", label: "Days of membership first (0 = rules decide)", min: 0, max: 3650, initial_value: own?.drip ?? 0 },
+					{ type: "toggle", action_id: "no_meter", label: "Never metered", initial_value: own?.meter === false },
+					{ type: "date_input", action_id: "locked_until", label: "Locked until (then free, UTC)", initial_value: day(own?.lockedUntil) },
+					{ type: "date_input", action_id: "open_until", label: "Free until (then locked, UTC)", initial_value: day(own?.openUntil) },
 				],
 				submit: { label: "Save access", action_id: "entry_save" },
 			},
-			{ type: "context", text: "A Paywall break or Members only block in the body can lock part of it to other levels. Readers holding a Sold on its own block's tag read all of it." },
+			{ type: "context", text: "Paywall break and Members only blocks can still lock parts of the body." },
 		],
 	};
 }
