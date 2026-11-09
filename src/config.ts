@@ -192,6 +192,19 @@ export function env(name: string): string {
 	return typeof value === "string" ? value.trim() : "";
 }
 
+/**
+ * Names of REDEEMID_ variables that are set but that RedeemID doesn't read,
+ * such as a misspelled secret or a WordPress plugin constant. Names only,
+ * never values.
+ */
+export function unknownEnvNames(): string[] {
+	if (typeof process === "undefined" || !process.env) return [];
+	const known = new Set<string>(Object.values(ENV));
+	return Object.keys(process.env)
+		.filter((k) => k.startsWith("REDEEMID_") && !known.has(k))
+		.sort();
+}
+
 /** The store origin, e.g. https://shop.example.com. */
 export function shopOrigin(config: RedeemIDConfig): string {
 	const raw = storeDomain(config).replace(/\/+$/, "");

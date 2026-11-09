@@ -44,3 +44,20 @@ describe("agents", () => {
 		await expect(levelChanges(config, m.stores, { since: "soon" })).rejects.toThrow("since must be a date");
 	});
 });
+
+describe("unknownEnvNames", () => {
+	it("names REDEEMID_ variables RedeemID doesn't read, never their values", async () => {
+		const { unknownEnvNames } = await import("../src/config.js");
+		process.env.REDEEMID_ADMIN_CLIENT_ID = "abc";
+		process.env.REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID = "abc";
+		try {
+			const names = unknownEnvNames();
+			expect(names).toContain("REDEEMID_ADMIN_CLIENT_ID");
+			expect(names).not.toContain("REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID");
+			expect(names.join()).not.toContain("abc");
+		} finally {
+			delete process.env.REDEEMID_ADMIN_CLIENT_ID;
+			delete process.env.REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID;
+		}
+	});
+});
