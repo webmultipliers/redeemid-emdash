@@ -35,7 +35,7 @@ Shopify's compliance topics (`customers/data_request`, `customers/redact`, `shop
 
 ## 3. The site
 
-Add the package and config as in the [README](../README.md#install), with `shop` set to the store's domain. A custom customer-account domain works as well as `*.myshopify.com`.
+Add the package and config as in the [README](../README.md#quick-start), with `shop` set to the store's domain. A custom customer-account domain works as well as `*.myshopify.com`.
 
 Set the secrets. On Cloudflare Workers:
 
