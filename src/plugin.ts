@@ -6,8 +6,9 @@
  *     plugins: [redeemidPlugin(config)],
  *   })
  *
- * It adds four Portable Text blocks to the editor, a Members page, a Status
- * page and a dashboard widget. Sign-in, webhooks and checkout stay on the
+ * It adds Portable Text blocks to the editor, an Access panel on every entry,
+ * admin pages (Members, Access, Webhooks, App events, Reports, Status, Access
+ * test, Privacy), a daily webhook health check and a dashboard widget. Sign-in, webhooks and checkout stay on the
  * auth provider's routes.
  *
  * - "Paywall break" (`redeemid-paywall`): everything after it in the body is
@@ -24,7 +25,7 @@
  * part after a paywall break off the page for readers who can't read it.
  */
 
-import type { ResolvedPlugin, RouteContext } from "emdash";
+import type { PluginContext, ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
 import { describe, levelsFor, SIGNED_IN, type Terms } from "./access.js";
@@ -37,8 +38,10 @@ import { EDITOR_PANELS, PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
-import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
+import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
+import { record } from "./log.js";
+import { eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, WEBHOOK_TABS, webhooksPage, type MonitorEnv, type WebhookTab } from "./monitor.js";
 import { z } from "astro/zod";
 import { AgentError, explainAccess, getMember, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
 
@@ -191,7 +194,8 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 		version: VERSION,
 		// content:read: the editor's Access panel reads the entry, and its
 		// rule follows the entry's slug and goes with the entry.
-		capabilities: ["content:read"],
+		// email:send: the daily webhook check can warn staff by email.
+		capabilities: ["content:read", "email:send"],
 		admin: {
 			pages: PAGES,
 			widgets: WIDGETS,
@@ -200,6 +204,13 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 		},
 		mcp: agentTools(code),
 		hooks: {
+			"plugin:activate": async (_event, ctx) => {
+				await scheduleHealth(ctx);
+			},
+			cron: async (event, ctx) => {
+				if (event.name !== HEALTH_TASK) return;
+				await healthCheck(monitorEnv(await live(), await memberStores(), ctx));
+			},
 			"content:afterSave": async (event) => {
 				const id = typeof event.content.id === "string" ? event.content.id : null;
 				if (!id) return;
@@ -223,7 +234,11 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 					try {
 						const env = await accessEnv(await live());
 						const panel = await panelEntry(ctx, entry.collection, entry.id);
-						if (i.type === "form_submit" && i.action_id === "entry_save") return await entrySave(env, panel, i.values ?? {});
+						if (i.type === "form_submit" && i.action_id === "entry_save") {
+							const out = await entrySave(env, panel, i.values ?? {});
+							await record({ event: "settings.saved", label: `entry rule (${entry.collection})`, status: "ok", origin: "staff" });
+							return out;
+						}
 						return await entryPanel(env, panel);
 					} catch (e) {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load access", description: (e as Error).message }] };
@@ -235,15 +250,25 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 					const i = (ctx.input ?? {}) as { type?: string; page?: string; action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string };
 					try {
 						const config = await live();
-						if ((i.type === "block_action" || i.type === "form_submit") && isAccessAction(i.action_id)) return await accessAction(await accessEnv(config), i);
-						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx.request, i);
+						if ((i.type === "block_action" || i.type === "form_submit") && isAccessAction(i.action_id)) {
+							const out = await accessAction(await accessEnv(config), i);
+							if (out.toast?.type === "success") await record({ event: "settings.saved", label: `access: ${String(i.action_id).replace(/_/g, " ")}`, status: "ok", origin: "staff" });
+							return out;
+						}
+						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx, i);
 						if (i.type !== "page_load") return { blocks: [] };
 						if (i.page === "/") return await membersPage(config);
 						if (i.page === "/access") return await accessPage(await accessEnv(config));
+						if (i.page === "/webhooks") {
+							await scheduleHealth(ctx);
+							return await webhooksPage(monitorEnv(config, await memberStores(), ctx));
+						}
+						if (i.page === "/events") return await eventsPage(await memberStores());
+						if (i.page === "/reports") return await reportsPage(config, await memberStores());
 						if (i.page === "/status") return await statusPage(config, ctx.request);
 						if (i.page === "/test") return await accessTest(config);
 						if (i.page === "/privacy") return await privacyPage(await memberStores());
-						if (i.page === "widget:status") return await statusWidget(config);
+						if (i.page === "widget:status") return await statusWidget(config, ctx);
 					} catch (e) {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load this page", description: (e as Error).message }] };
 					}
@@ -252,6 +277,22 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 			},
 		},
 	});
+}
+
+/** What the Webhooks page and the daily check work with. */
+function monitorEnv(config: RedeemIDConfig, s: Stores, ctx: PluginContext): MonitorEnv {
+	return { config, s, kv: ctx.kv, uri: ctx.url(WEBHOOK_PATH), email: ctx.email };
+}
+
+/** Make sure the daily webhook check is scheduled (on Workers it runs from the site's Cron Trigger). */
+async function scheduleHealth(ctx: PluginContext): Promise<void> {
+	try {
+		if (!ctx.cron) return;
+		const tasks = await ctx.cron.list();
+		if (!tasks.some((t) => t.name === HEALTH_TASK)) await ctx.cron.schedule(HEALTH_TASK, { schedule: "@daily" });
+	} catch {
+		// Scheduling is best effort; Check now still works.
+	}
 }
 
 /** The code's config with what the admin saved. */
@@ -387,14 +428,17 @@ function agentTools(config: RedeemIDConfig) {
 
 // ---------------------------------------------------------------- actions
 
-const webhookUri = (request: Request) => `${new URL(request.url).origin}/_emdash/api/auth/redeemid/webhook`;
-
 async function action(
 	config: RedeemIDConfig,
-	request: Request,
+	ctx: RouteContext,
 	i: { action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string },
 ) {
 	const s = await memberStores();
+	const monitor = () => monitorEnv(config, s, ctx);
+	const cursorOf = (v: unknown) => {
+		const c = (v as { cursor?: unknown } | null)?.cursor;
+		return typeof c === "string" && c ? c : undefined;
+	};
 	const fail = (e: unknown) => ({ type: "error" as const, message: (e as Error).message });
 	switch (i.action_id) {
 		case "members_back":
@@ -442,14 +486,34 @@ async function action(
 		}
 		case "webhooks_register": {
 			try {
-				const { added, failed } = await registerWebhooks(config, webhookUri(request));
+				const { added, failed } = await registerWebhooks(config, monitor().uri);
 				const done = added.length ? `Registered ${added.length} webhooks.` : failed.length ? "" : "Nothing was missing.";
 				const refused = failed.map((f) => `Shopify refused ${f.topic}: ${f.message}`).join(" ");
-				return { ...(await statusPage(config, request)), toast: { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") } };
+				await record({ event: "staff.webhooks", label: "register", status: failed.length ? `${failed.length} refused` : `${added.length} registered`, level: failed.length ? "warn" : "ok", origin: "staff" });
+				return webhooksPage(monitor(), "setup", { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") });
 			} catch (e) {
-				return { ...(await statusPage(config, request)), toast: fail(e) };
+				return webhooksPage(monitor(), "setup", fail(e));
 			}
 		}
+		case "webhooks_tab": {
+			const tab = WEBHOOK_TABS.includes(i.value as WebhookTab) ? (i.value as WebhookTab) : "received";
+			return webhooksPage(monitor(), tab);
+		}
+		case "deliveries_page":
+			return webhooksPage(monitor(), "received", undefined, cursorOf(i.value));
+		case "health_check": {
+			const r = await healthCheck({ ...monitor(), by: "staff" });
+			const message = r.problems.length ? `Checked: ${r.problems.length === 1 ? "1 problem" : `${r.problems.length} problems`}.` : "Checked: subscriptions are in place and deliveries look healthy.";
+			return webhooksPage(monitor(), "health", { type: r.problems.length ? "info" : "success", message });
+		}
+		case "monitor_save":
+			return webhooksPage(monitor(), "health", await saveMonitor(ctx.kv, i.values));
+		case "events_filter":
+			return eventsPage(s, { event: String(i.values?.event ?? "") || undefined, problems: i.values?.problems === true });
+		case "events_show":
+			return eventsPage(s, { event: String(i.value ?? "") || undefined });
+		case "events_page":
+			return eventsPage(s, parseFilter(i.block_id), cursorOf(i.value));
 		case "access_test":
 			return accessTest(config, i.values);
 		case "member_export": {
@@ -624,10 +688,6 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 	const levels = config.levels ?? [];
 	const rules = config.rules ?? [];
 	const delivery = await lastDelivery().catch(() => null);
-	const webhooks = await webhooksSection(config, webhookUri(request));
-	const deliveries = await memberStores()
-		.then((s) => deliveriesSection(s))
-		.catch(() => [{ type: "context", text: "Couldn't read deliveries." }]);
 	return {
 		blocks: [
 			{ type: "header", text: "Status" },
@@ -662,11 +722,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 						},
 					]
 				: []),
-			{ type: "divider" },
-			{ type: "header", text: "Webhooks" },
-			...webhooks,
-			{ type: "header", text: "Recent deliveries" },
-			...deliveries,
+			{ type: "context", text: "Deliveries, their health and the webhook subscriptions are under Webhooks; everything RedeemID did is under App events." },
 			{ type: "divider" },
 			{ type: "header", text: "Shopify settings" },
 			{
@@ -725,16 +781,19 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 	};
 }
 
-async function statusWidget(config: RedeemIDConfig) {
+async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 	const c = await checks(config);
 	const members = await allMembers().catch(() => []);
+	const check = await lastCheck(ctx.kv).catch(() => null);
 	return {
 		blocks: [
+			...(check?.problems.length ? [{ type: "banner", variant: "alert", title: "Webhooks need attention", description: check.problems[0]!.text }] : []),
 			{
 				type: "fields",
 				fields: [
 					{ label: "Sign-in", value: c.discovery.startsWith("OK") && c.clientId ? "Ready" : "Not ready" },
 					{ label: "Members", value: String(members.length) },
+					{ label: "Webhooks", value: check ? (check.problems.length ? `${check.problems.length} to look at` : "Healthy") : "Not checked yet" },
 				],
 			},
 		],

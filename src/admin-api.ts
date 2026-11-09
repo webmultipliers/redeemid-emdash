@@ -12,6 +12,7 @@
 import { env, ENV, shopOrigin, type RedeemIDConfig } from "./config.js";
 import { USER_AGENT } from "./shopify.js";
 import { cleanTags, emptyMember, stampTags, type MemberRecord, type Stores } from "./storage.js";
+import { timed } from "./log.js";
 
 export const ADMIN_API_VERSION = "2026-10";
 
@@ -68,7 +69,13 @@ export async function adminScopes(config: RedeemIDConfig, fetcher: typeof fetch 
 	return (await token(config, fetcher)).scope;
 }
 
-export async function admin<T>(config: RedeemIDConfig, query: string, variables: Record<string, unknown> = {}, fetcher: typeof fetch = fetch, retry = true): Promise<T> {
+/** One Admin API call, recorded under App events by its operation name (never its variables or answer). */
+export async function admin<T>(config: RedeemIDConfig, query: string, variables: Record<string, unknown> = {}, fetcher: typeof fetch = fetch): Promise<T> {
+	const op = (/(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "query").replace(/^RedeemID/, "") || "query";
+	return timed("shopify.admin", op, () => call<T>(config, query, variables, fetcher, true));
+}
+
+async function call<T>(config: RedeemIDConfig, query: string, variables: Record<string, unknown>, fetcher: typeof fetch, retry: boolean): Promise<T> {
 	const t = await token(config, fetcher);
 	const res = await fetcher(`${shopOrigin(config)}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
 		method: "POST",
@@ -77,7 +84,7 @@ export async function admin<T>(config: RedeemIDConfig, query: string, variables:
 	});
 	if (res.status === 401 && retry) {
 		tokens.delete(shopOrigin(config));
-		return admin(config, query, variables, fetcher, false);
+		return call(config, query, variables, fetcher, false);
 	}
 	const body = (await res.json().catch(() => ({}))) as { data?: T; errors?: Array<{ message?: string }> };
 	if (!res.ok || !body.data) throw new AdminError(body.errors?.[0]?.message ?? `Admin API request failed (${res.status}).`);

@@ -537,6 +537,8 @@ export async function readEntry(
 			await s.meter.put(key, { ...record, items: used.items });
 			const { emit } = await import("./events.js");
 			const data = { userId: user.id, entry: `${entry.collection}:${entry.id}`, used: used.items.length, limit: meter.limit, period: record.period };
+			const { record: log } = await import("./log.js");
+			await log({ event: used.left === 0 ? "meter.exhausted" : "meter.used", label: entry.collection, status: used.left === 0 ? "used up" : `${used.left} left`, origin: "member" });
 			await emit(config, "meter.used", data);
 			if (used.left === 0) await emit(config, "meter.exhausted", data);
 		}

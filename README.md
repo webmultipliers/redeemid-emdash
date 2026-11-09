@@ -16,7 +16,7 @@ Readers sign in with the store's own customer account. Their Shopify customer ta
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Content and templates](#content-and-templates)
-- [Guides](#guides): [rules](#rules), [access settings in the admin](#access-settings-in-the-admin), [meter and drip](#meter-and-drip), [selling one entry](#selling-one-entry-on-its-own), [features](#features), [shop](#shop), [preferences](#preferences), [protected files](#protected-files), [privacy requests](#privacy-requests), [staff tools](#staff-tools), [AI agents and the command line](#ai-agents-and-the-command-line), [replacement text](#replacement-text), [events](#events), [caching](#caching), [rate limits](#rate-limits)
+- [Guides](#guides): [rules](#rules), [access settings in the admin](#access-settings-in-the-admin), [meter and drip](#meter-and-drip), [selling one entry](#selling-one-entry-on-its-own), [features](#features), [shop](#shop), [preferences](#preferences), [protected files](#protected-files), [privacy requests](#privacy-requests), [staff tools](#staff-tools), [webhooks, app events and reports](#webhooks-app-events-and-reports), [AI agents and the command line](#ai-agents-and-the-command-line), [replacement text](#replacement-text), [events](#events), [caching](#caching), [rate limits](#rate-limits)
 - [Reference](#reference): [config](#config), [secrets](#secrets), [components](#components), [editor blocks](#editor-blocks), [modules](#modules), [routes](#routes), [notices](#notices)
 - [Guarantees](#guarantees)
 - [Troubleshooting](#troubleshooting)
@@ -50,7 +50,10 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 **For staff, in the EmDash admin**
 - Access page: levels, site rules, the meter, every content type and taxonomy (new ones appear on their own), features and protected folders. No code change needed.
 - Members page, member detail (resync, add and remove tags in Shopify), a bulk resync you start yourself.
-- Status page: every setting, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules.
+- Webhooks page: what Shopify sent and what became of it, delivery health with a daily check and email warnings, and the subscriptions with a Register button.
+- App events: webhooks, sign-ins and refusals, Admin API calls, staff actions and settings saves, filterable, kept 30 days.
+- Reports: members by level, who joined and left by week, sign-ins and metered reads.
+- Status page: every setting, store discovery, levels and rules.
 - Access test, Privacy page, and a dashboard widget.
 
 **For developers**
@@ -148,7 +151,7 @@ Use `<Content>` in place of `<PortableText>` for every body that may be locked. 
 ### 6. Check it
 
 1. Finish EmDash setup as staff first. Store customers can't create the first account.
-2. Open **Plugins → RedeemID → Status**. Every setting should say Set. Press **Register webhooks**.
+2. Open **Plugins → RedeemID → Status**. Every setting should say Set. Then open **Webhooks → Setup** and press **Register**.
 3. Tag a test customer `member` in Shopify, open a locked post, and sign in as that customer. The post opens.
 4. Remove the tag in Shopify. The post locks again once the webhook arrives.
 
@@ -381,10 +384,22 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API toke
 
 - **Member detail.** Levels, tags and features; resync from Shopify; add and remove tags. Tag edits are made in Shopify and read back. Nothing is granted on the site.
 - **Bulk resync.** Reads the 25 members synced longest ago, few enough for the Workers free limit of 50 database queries a request. Press it again for the next 25. It never runs on its own.
-- **Webhooks.** The Status page lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
-- **Recent deliveries** and an **Access test** (a collection, an entry, terms and a reader's tags in; the verdict out).
+- **Webhook subscriptions.** Webhooks → Setup lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
+- **Access test.** A collection, an entry, terms and a reader's tags in; the verdict out.
 
 Resync updates email, name and tags. Enabled or disabled status comes only from the enable and disable webhooks.
+
+### Webhooks, app events and reports
+
+Members gain and lose access only when Shopify sends tag changes, so RedeemID shows what arrived and warns when deliveries stop.
+
+- **Webhooks → Received.** Each delivery's topic, what became of it (processed, skipped, older than what's stored, not used) and the customer ID, with counts of deliveries turned away (bad signature) and failed (storage errors; Shopify sends those again).
+- **Webhooks → Health.** Once a day RedeemID registers again any subscription Shopify dropped (with the Admin API app), and warns when no webhook has come in for a number of days (3 by default, 0 turns it off), or when deliveries were turned away or failed in the last day. **Check now** runs it at once. Warnings show on the page and the dashboard widget, and go by email to the address you set when the site has an EmDash email provider: once when problems start or change, then once a week while they last.
+- **Webhooks → Setup.** The endpoint, whether signatures can be checked, and the subscriptions.
+- **App events.** What RedeemID did and what came of it: webhooks received, turned away and failed, sign-ins and refusals (by reason), Admin API calls (by operation, with timings), resyncs, tag edits, webhook registrations, settings saves, outbound events that failed, metered reads and the health checks. Filter by event or show problems only. Entries hold ids, labels and outcomes, never bodies, tokens or emails.
+- **Reports.** Members on each level, who joined and left in the last 30 days and by week for 12 weeks (from each member's tag dates), sign-ins and metered reads.
+
+App events and delivery records are kept 30 days. The daily check runs from EmDash's scheduler: on Node it runs by itself; on Cloudflare Workers, add a Cron Trigger to the site's Worker as EmDash's deployment guide describes. The plugin asks for `email:send` only to send these warnings.
 
 ### AI agents and the command line
 
@@ -591,7 +606,7 @@ Reword one with `messages={{ cart_empty: "…" }}`, or for every page with `text
 - **A setting shows Missing on the Status page.** Check the name: the Status page lists any `REDEEMID_` variable it doesn't read. Set it as a runtime secret, not a build variable. On Workers, a deploy can remove plain-text dashboard variables, so use encrypted secrets.
 - **Sign-in comes back with a notice.** The code says why; see [notices](#notices). `sign_in_unavailable` means store discovery failed, usually a wrong `shop`. `not_configured` means the client ID or `shop` is missing.
 - **Register webhooks names a refused topic.** The app lacks a scope, such as `read_customer_merge` for `customers/merge`. Add it to the app, have the store accept the new version, and press Register again.
-- **Tags changed in Shopify but the site didn't follow.** Check Recent deliveries on the Status page. Resync the member from their page, or ask them to press Refresh membership.
+- **Tags changed in Shopify but the site didn't follow.** Check Webhooks → Received and Health, and App events with Problems only. Resync the member from their page, or ask them to press Refresh membership.
 - **A member sees the visitor's page.** A cache is serving it. See [caching](#caching).
 
 ## Develop

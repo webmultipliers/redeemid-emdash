@@ -11,6 +11,9 @@ import { VERSION } from "./version.js";
 export const PAGES = [
 	{ path: "/", label: "Members", icon: "users" },
 	{ path: "/access", label: "Access", icon: "lock" },
+	{ path: "/webhooks", label: "Webhooks", icon: "pulse" },
+	{ path: "/events", label: "App events", icon: "list" },
+	{ path: "/reports", label: "Reports", icon: "chart" },
 	{ path: "/status", label: "Status", icon: "pulse" },
 	{ path: "/test", label: "Access test", icon: "search" },
 	{ path: "/privacy", label: "Privacy", icon: "lock" },

@@ -12,6 +12,7 @@ import { getAuthProviderStorage } from "emdash/api/route-utils";
 
 import { PROVIDER_ID } from "./config.js";
 import type { AccessRecord } from "./settings.js";
+import type { LogEntry } from "./log.js";
 
 export interface MemberRecord {
 	/** Numeric Shopify customer id, also the record id. */
@@ -78,6 +79,10 @@ export function stampTags(m: MemberRecord, now = new Date().toISOString()): Memb
 export interface DeliveryRecord {
 	topic: string;
 	receivedAt: string;
+	/** What became of it: processed, skipped, stale, ignored, or pending while it runs. */
+	outcome?: string;
+	/** The Shopify customer it was about, when it named one. */
+	customerId?: string | null;
 }
 
 /** One privacy request: an export or erase, and where it came from. Names no one but the customer id. */
@@ -99,6 +104,7 @@ export const STORAGE_CONFIG = {
 	meter: { indexes: ["userId"] },
 	requests: { indexes: ["at", "customerId", "status"] },
 	access: { indexes: ["kind"] },
+	log: { indexes: ["at", "event", "level"] },
 };
 
 export interface Stores {
@@ -108,6 +114,8 @@ export interface Stores {
 	requests: StorageCollection<PrivacyRequest>;
 	/** Access settings saved in the admin and editor (see settings.ts). */
 	access: StorageCollection<AccessRecord>;
+	/** App events (see log.ts). */
+	log: StorageCollection<LogEntry>;
 }
 
 export function stores(db: unknown): Stores {
