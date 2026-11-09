@@ -25,7 +25,7 @@ import { signInUrl } from "./access.js";
 import { readCart } from "./cart.js";
 import { keysFromPath, pathAccess, refusal } from "./files.js";
 import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
-import { siteConfig } from "./site-config.js";
+import { shareConfig, siteConfig } from "./site-config.js";
 
 const SUBSCRIBER = 10;
 
@@ -55,7 +55,9 @@ async function withUser(context: { locals: unknown; session?: { get(k: string): 
 	const { createKyselyAdapter } = await import("@emdash-cms/auth/adapters/kysely");
 	const user = await createKyselyAdapter(locals.emdash.db as never).getUserById(sessionUser.id);
 	if (!user || user.disabled) return context;
-	return { ...context, locals: { ...locals, user: { id: user.id, role: user.role, disabled: user.disabled } } };
+	const next = { ...locals, user: { id: user.id, role: user.role, disabled: user.disabled } };
+	shareConfig(locals, next);
+	return { ...context, locals: next };
 }
 
 /** Keep one visitor's response out of every shared cache, the route cache included. */
@@ -75,7 +77,7 @@ export function keepPrivate(context: { cache?: { set(options: false): void } }, 
 export const onRequest = defineMiddleware(async (context, next) => {
 	const { locals, url } = context;
 	const user = (locals as { user?: { role?: number } | null }).user;
-	const config = siteConfig((locals as { emdash?: { config?: unknown } }).emdash?.config);
+	const config = await siteConfig(locals);
 
 	// Protected files: checked for everyone, on every download.
 	const keys = config?.files?.length ? keysFromPath(url.pathname) : null;

@@ -10,7 +10,7 @@
  */
 
 import { adminConfigured } from "./admin-api.js";
-import { describe as describeRequirement, dripDays, levelsFor, membership, passes, requirement, termTree, type Requirement, type Terms } from "./access.js";
+import { applyEntryRule, entryRuleFor, describe as describeRequirement, dripDays, levelsFor, membership, passes, requirement, termTree, type Requirement, type Terms } from "./access.js";
 import { ENV, env, storeDomain, unknownEnvNames, type RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
 import { bodyClauses } from "./files.js";
@@ -42,6 +42,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 	let terms: Terms = input.terms ?? {};
 	let parts: string[][] = [];
 	let entry: { id: string; title: string | null } | null = null;
+	let own: ReturnType<typeof entryRuleFor> = null;
 	let item: SoldItem | null = null;
 	if (input.id) {
 		const { getEmDashEntry } = await import("emdash");
@@ -53,6 +54,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 		parts = bodyClauses(body);
 		item = soldItem(body);
 		entry = { id: String(result?.entry?.id ?? input.id), title: typeof data.title === "string" ? data.title : null };
+		own = entryRuleFor(config, collection, typeof data.id === "string" ? data.id : null) ?? entryRuleFor(config, collection, input.id);
 	}
 
 	let tags = cleanTags(input.tags ?? []);
@@ -67,7 +69,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 	const disabled = member?.status === "disabled";
 	const held = disabled ? [] : levelsFor(tags, levels);
 	const tree = await termTree(config.rules, collection, terms);
-	const required: Requirement = requirement(config.rules, collection, terms, { combine: config.combine, tree });
+	const required: Requirement = applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), own);
 	const owned = !disabled && holdsItem(item, tags);
 	const canReadRule = owned || required === null || (signedIn && !disabled && passes(held, required));
 	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
@@ -90,7 +92,8 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 		canRead: canReadRule,
 		reason: canReadRule ? "allowed" : !signedIn ? "sign_in" : disabled ? "disabled" : "upgrade",
 		offered: !canReadRule && missing ? name(missing[0] as string) : null,
-		dripDays: owned ? 0 : dripDays(config.rules, collection, terms, tree),
+		dripDays: owned ? 0 : dripDays(config.rules, collection, terms, tree, own),
+		entryRule: own ? { mode: own.mode, levels: own.levels.map(name), drip: own.drip ?? 0, neverMetered: own.meter === false, lockedUntil: own.lockedUntil ?? null, openUntil: own.openUntil ?? null } : null,
 		soldOnItsOwn: item ? { tag: item.tag, product: item.product, held: owned } : null,
 		parts: partResults,
 		note: "Drip and the meter depend on the member's dates and use, so they can still change what the page shows.",
@@ -109,6 +112,7 @@ export function getRules(config: RedeemIDConfig): Record<string, unknown> {
 		teaser: config.teaser ?? {},
 		features: config.features ?? [],
 		files: config.files ?? [],
+		entries: Object.values(config.entries ?? {}).filter((e, i, all) => all.findIndex((x) => x.entryId === e.entryId) === i),
 	};
 }
 

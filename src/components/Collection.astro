@@ -21,7 +21,7 @@ interface Props {
 }
 
 const { handle, limit = 12, productHref, showTitle = false } = Astro.props;
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 let c: Collection | null = null;
 if (config) {
 	try {

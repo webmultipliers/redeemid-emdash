@@ -1,9 +1,13 @@
 /**
  * RedeemID configuration.
  *
- * Levels and rules live in code (astro.config.mjs), so they are versioned with
- * the site. Secrets come from the environment and never from config.
+ * Levels and rules can be set in code (astro.config.mjs) as the site's
+ * defaults, and changed in the admin (Plugins → RedeemID → Access), which
+ * wins for each setting it saves (see settings.ts). Secrets come from the
+ * environment and never from config.
  */
+
+import type { EntryRule } from "./settings.js";
 
 /** A member level, held by Shopify customers with its tags. */
 export interface LevelConfig {
@@ -26,9 +30,11 @@ export interface LevelConfig {
  *
  * - A rule with `taxonomy` and `term` covers entries that carry that term, or
  *   a child of it in a hierarchical taxonomy (a child's own rule wins over its
- *   parent's).
+ *   parent's). With `collection: "*"` it covers that term in every
+ *   collection; a rule for the same term and a named collection wins there.
  * - A rule with neither covers the whole collection.
- * - `collection: "*"` is the site default, for collections with no rule.
+ * - `collection: "*"` with neither is the site default, for collections with
+ *   no rule.
  *
  * Term rules beat the collection rule, which beats the site default. When
  * several term rules cover one entry, a reader must pass every one of them
@@ -44,7 +50,8 @@ export interface RuleConfig {
 	/** Level slugs, any of which may read. An empty list means any signed-in member. */
 	levels: string[];
 	/**
-	 * A term rule that opens its entries to everyone, whatever else covers them
+	 * Opens the entries to everyone: a term rule whatever else covers them, a
+	 * collection rule or the site default unless a term rule locks them.
 	 * `levels` is ignored.
 	 */
 	open?: boolean;
@@ -161,6 +168,11 @@ export interface RedeemIDConfig {
 	 * under /_emdash is refused to Subscribers (see guard.ts).
 	 */
 	memberPaths?: string[];
+	/**
+	 * Entries' own rules by "collection:id" (or "collection:slug"). Usually set
+	 * in the editor's Access panel rather than here.
+	 */
+	entries?: Record<string, EntryRule>;
 	/**
 	 * Only for local tests: lets `shop` be a full http:// origin of a fake store.
 	 * Never set this on a live site.

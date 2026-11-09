@@ -13,7 +13,7 @@
 import type { APIRoute } from "astro";
 
 import { safeReturn, signInUrl } from "../access.js";
-import { readConfig } from "../config.js";
+import { siteConfig } from "../site-config.js";
 import { emit } from "../events.js";
 import { allowSave, formValues, PreferenceError, preferenceFields, preferencesConfigured, readPreferences, savePreferences } from "../preferences.js";
 import { memberForUser, stores } from "../storage.js";
@@ -26,7 +26,7 @@ const json = (status: number, body: unknown) =>
 
 async function context(locals: unknown, session: { get(k: string): Promise<unknown> } | undefined) {
 	const emdash = (locals as { emdash?: { config?: unknown; db?: unknown } }).emdash;
-	const config = readConfig(emdash?.config);
+	const config = await siteConfig(locals);
 	if (!config || !preferencesConfigured(config) || !emdash?.db) return { error: "unavailable" as const };
 	const user = (await session?.get("user")) as { id?: string } | undefined;
 	if (!user?.id) return { error: "sign_in" as const, config };

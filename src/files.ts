@@ -101,7 +101,7 @@ async function readsWhole(astro: AstroLike, entry: { collection: string; id: str
 		const m = (await viewer(astro)).member;
 		if (m && m.status !== "disabled" && holdsItem(item, m.tags)) return true;
 	}
-	const verdict = await readEntry(astro, { collection: entry.collection, terms });
+	const verdict = await readEntry(astro, { collection: entry.collection, terms, ruleId: entry.id });
 	if (!verdict.allowed) return false;
 	const clauses = bodyClauses(body);
 	return clauses.every((clause) => clause.some((l) => verdict.viewer.levels.includes(l) || (l === "signed-in" && verdict.viewer.signedIn)));

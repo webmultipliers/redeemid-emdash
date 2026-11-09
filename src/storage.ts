@@ -11,6 +11,7 @@ import type { StorageCollection } from "emdash";
 import { getAuthProviderStorage } from "emdash/api/route-utils";
 
 import { PROVIDER_ID } from "./config.js";
+import type { AccessRecord } from "./settings.js";
 
 export interface MemberRecord {
 	/** Numeric Shopify customer id, also the record id. */
@@ -97,6 +98,7 @@ export const STORAGE_CONFIG = {
 	deliveries: { indexes: ["receivedAt"] },
 	meter: { indexes: ["userId"] },
 	requests: { indexes: ["at", "customerId", "status"] },
+	access: { indexes: ["kind"] },
 };
 
 export interface Stores {
@@ -104,6 +106,8 @@ export interface Stores {
 	deliveries: StorageCollection<DeliveryRecord>;
 	meter: StorageCollection<MeterRecord>;
 	requests: StorageCollection<PrivacyRequest>;
+	/** Access settings saved in the admin and editor (see settings.ts). */
+	access: StorageCollection<AccessRecord>;
 }
 
 export function stores(db: unknown): Stores {

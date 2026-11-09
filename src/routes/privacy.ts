@@ -12,7 +12,7 @@ import type { APIRoute } from "astro";
 import { getPublicOrigin } from "emdash/api/route-utils";
 
 import { safeReturn, signInUrl } from "../access.js";
-import { readConfig } from "../config.js";
+import { siteConfig } from "../site-config.js";
 import { eraseMember, exportRequest } from "../privacy.js";
 import { memberForUser, stores } from "../storage.js";
 import { fail } from "./shared.js";
@@ -26,7 +26,7 @@ async function context(locals: unknown, session: { get(k: string): Promise<unkno
 	if (!user?.id) return null;
 	const s = stores(emdash.db);
 	const member = await memberForUser(s, user.id);
-	return member ? { s, member, config: readConfig(emdash.config), emdash } : null;
+	return member ? { s, member, config: await siteConfig(locals), emdash } : null;
 }
 
 export const GET: APIRoute = async ({ locals, session, redirect, url }) => {

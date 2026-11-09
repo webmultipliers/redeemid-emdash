@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.16, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
+**Status: 0.0.17, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
 
 ## Contents
 
@@ -16,7 +16,7 @@ Readers sign in with the store's own customer account. Their Shopify customer ta
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Content and templates](#content-and-templates)
-- [Guides](#guides): [rules](#rules), [meter and drip](#meter-and-drip), [selling one entry](#selling-one-entry-on-its-own), [features](#features), [shop](#shop), [preferences](#preferences), [protected files](#protected-files), [privacy requests](#privacy-requests), [staff tools](#staff-tools), [AI agents and the command line](#ai-agents-and-the-command-line), [replacement text](#replacement-text), [events](#events), [caching](#caching), [rate limits](#rate-limits)
+- [Guides](#guides): [rules](#rules), [access settings in the admin](#access-settings-in-the-admin), [meter and drip](#meter-and-drip), [selling one entry](#selling-one-entry-on-its-own), [features](#features), [shop](#shop), [preferences](#preferences), [protected files](#protected-files), [privacy requests](#privacy-requests), [staff tools](#staff-tools), [AI agents and the command line](#ai-agents-and-the-command-line), [replacement text](#replacement-text), [events](#events), [caching](#caching), [rate limits](#rate-limits)
 - [Reference](#reference): [config](#config), [secrets](#secrets), [components](#components), [editor blocks](#editor-blocks), [modules](#modules), [routes](#routes), [notices](#notices)
 - [Guarantees](#guarantees)
 - [Troubleshooting](#troubleshooting)
@@ -26,8 +26,8 @@ Readers sign in with the store's own customer account. Their Shopify customer ta
 
 1. **Sign in.** A reader clicks "Sign in", signs in on the store's customer account page, and comes back signed in as an EmDash Subscriber. That role only means "signed in". It never opens content.
 2. **Mirror.** RedeemID keeps a copy of the customer: email, name, tags and whether the account is enabled. Signed Shopify webhooks keep it current.
-3. **Levels.** You map tags to levels, such as `gold-member` to Gold. Tags come from Shopify Flow, a subscription app or staff, never from the site.
-4. **Rules.** You say which collections or terms need which levels. Editors can also drop a Paywall break or a Members only block into any body.
+3. **Levels.** You map tags to levels and name them whatever you like, such as `gold-member` to Gold. Tags come from Shopify Flow, a subscription app or staff, never from the site.
+4. **Rules.** You say which content types or terms need which levels, in the admin (Plugins → RedeemID → Access) or in code. Each entry can have its own rule in the editor's Access panel, and editors can drop a Paywall break or a Members only block into any body.
 5. **Render.** Templates render bodies with `<Content>`. Readers who pass see everything. Everyone else gets a teaser and the wall, and the locked part never reaches the page.
 
 Selling a membership is ordinary Shopify: a product, a checkout, and a Flow workflow that tags the customer when the order is paid. RedeemID shows the product and starts checkout, and access follows the tag.
@@ -42,11 +42,13 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 **For editors**
 - Paywall break, Members only, Sold on its own, Plan, Product, Collection, Contribution and Preferences blocks in the EmDash editor.
-- Rules by collection, term (with child terms) or site default, plus terms that open entries to everyone.
+- An Access panel on every entry: follow the site rules, free to everyone, only some levels, or the site rules plus a level, with drip, meter and date windows.
+- Rules by content type, term (with child terms) or site default, plus terms that open entries to everyone.
 - Teasers, a monthly or weekly meter, drip by days of membership, and badges that show what an entry needs.
 - Protected files: downloads in chosen media folders check the reader's access.
 
 **For staff, in the EmDash admin**
+- Access page: levels, site rules, the meter, every content type and taxonomy (new ones appear on their own), features and protected folders. No code change needed.
 - Members page, member detail (resync, add and remove tags in Shopify), a bulk resync you start yourself.
 - Status page: every setting, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules.
 - Access test, Privacy page, and a dashboard widget.
@@ -112,6 +114,8 @@ export default defineConfig({
 ```
 
 Pass the same `config` to `redeemid()` and `redeemidPlugin()`. Every option is in the [config reference](#config).
+
+Levels, rules, the meter, features, protected folders, teasers and the join link in this config are the site's defaults. You can leave them all out and set them under **Plugins → RedeemID → Access** instead; see [access settings in the admin](#access-settings-in-the-admin).
 
 ### 4. Set the secrets
 
@@ -214,6 +218,8 @@ Each rule names a collection and the levels, any of which may read. An empty `le
 | `{ collection: "reports", levels: ["gold"] }` | Every entry in the collection |
 | `{ collection: "posts", taxonomy: "category", term: "investigations", levels: ["gold"] }` | Entries with that term, or a child of it in a hierarchical taxonomy. A child's own rule wins over its parent's. |
 | `{ collection: "posts", taxonomy: "tag", term: "free-to-read", levels: [], open: true }` | Opens entries with that term to everyone, whatever else covers them |
+| `{ collection: "pages", levels: [], open: true }` | Opens a whole collection to everyone, unless a term rule locks an entry |
+| `{ collection: "*", taxonomy: "category", term: "members", levels: ["member"] }` | That term in every collection, new ones included. A rule for the same term and a named collection wins there. |
 | `{ collection: "*", levels: [] }` | The site default, for collections with no rule of their own |
 | `{ collection: "posts", taxonomy: "category", term: "archive", levels: ["member"], drip: 30 }` | Drip: members read these entries 30 days after their level started |
 | `{ collection: "posts", taxonomy: "category", term: "exclusive", levels: ["pro"], meter: false }` | The meter never opens these entries |
@@ -221,6 +227,29 @@ Each rule names a collection and the levels, any of which may read. An empty `le
 Term rules beat the collection's rule, which beats the site default. When several term rules cover one entry (a story in Investigations, which needs Gold, and Culture, which needs Silver), readers must pass every one of them, so only members with both read it. Set `combine: "any"` to let one be enough.
 
 Levels can need several tags: `{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" }`. A level's `wall` is what the wall says to readers it would let in, and its `joinUrl` overrides `join.href`.
+
+### Access settings in the admin
+
+Everything about who reads what can be set in the EmDash admin, so a new content type, taxonomy or level never needs a code change. Under **Plugins → RedeemID → Access**:
+
+- **Levels.** Add, rename and remove levels and the Shopify tags that grant them. Name them anything; the slug is made from the name. A level that rules, features or folders still use can't be removed.
+- **Site rules.** The site default, how term rules combine, the meter and the wall's join link.
+- **Content types.** Who can read each collection, with drip, the meter and the teaser. Every collection on the site is listed, including ones made after RedeemID was set up.
+- **Taxonomies.** Rules for terms in every taxonomy, for one collection or every collection the taxonomy is on.
+- **Features** and **Protected files.**
+
+The first save of a setting copies its value from your code config, so nothing is lost, and from then on the admin's value is used. **Use the code's setting** removes the admin's copy. Saved settings are kept in the site's database and read once per request.
+
+Each saved entry also gets an **Access** panel in the editor. It shows who can read the entry right now and which rule says so, and sets the entry's own rule:
+
+| Choice | Readers need |
+| --- | --- |
+| Follow the site rules | What the rules say (the default) |
+| Free to everyone | Nothing |
+| Only the levels ticked | One of those levels (none ticked: any signed-in member) |
+| The site rules, and also a level ticked | What the rules say and one of those levels |
+
+It can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
 
 ### Meter and drip
 
@@ -353,7 +382,7 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API toke
 - **Member detail.** Levels, tags and features; resync from Shopify; add and remove tags. Tag edits are made in Shopify and read back. Nothing is granted on the site.
 - **Bulk resync.** Reads the 25 members synced longest ago, few enough for the Workers free limit of 50 database queries a request. Press it again for the next 25. It never runs on its own.
 - **Webhooks.** The Status page lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
-- **Recent deliveries** and an **Access test** (a collection, terms and a reader's tags in; the verdict out).
+- **Recent deliveries** and an **Access test** (a collection, an entry, terms and a reader's tags in; the verdict out).
 
 Resync updates email, name and tags. Enabled or disabled status comes only from the enable and disable webhooks.
 
@@ -420,7 +449,7 @@ No event carries an email address or a name; match people by `customerId`. Leave
 
 `redeemidGuard()` keeps every page private for a signed-in visitor or a visitor with a cart: `Cache-Control: private, no-store`, and out of Astro's route cache (it calls `cache.set(false)` after the page sets its own hint). Other visitors all get the same page, so their pages stay cacheable.
 
-A route cache keys pages by URL alone and serves stored pages without running any code. If you turn on Astro's route cache, don't cache pages that render `<Content>` or `<Gate>` for locked entries, or a member would get the visitor's copy, wall included. Call `Astro.cache.set(hint)` only on pages whose entries no rule covers.
+A route cache keys pages by URL alone and serves stored pages without running any code. If you turn on Astro's route cache, don't cache pages that render `<Content>` or `<Gate>` for locked entries, or a member would get the visitor's copy, wall included. Call `Astro.cache.set(hint)` only on pages whose entries no rule covers. Saving on the Access page or an entry's Access panel doesn't purge the route cache either, so a page cached before the change keeps its old copy until it expires.
 
 ### Rate limits
 
@@ -436,7 +465,7 @@ Each action counts separately per visitor (by `CF-Connecting-IP`), and Cloudflar
 
 ### Config
 
-Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`.
+Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels`, `rules`, `meter`, `features`, `files`, `combine`, `teaser` and `join` are defaults that the Access page can replace.
 
 | Option | Type | What it does |
 | --- | --- | --- |
@@ -456,6 +485,7 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`.
 | `agents` | `{ actions?: boolean }` | Also offer resync and tag edits to agents and the command line. |
 | `schema` | `false` | Turn off the paywalled-content JSON-LD. |
 | `memberPaths` | `string[]` | Extra `/_emdash` path prefixes signed-in members may use. Everything else there is refused to them. |
+| `entries` | `{ ["collection:id"]: EntryRule }` | Entries' own rules. Usually set in the editor's Access panel. |
 | `allowInsecureShop` | `boolean` | Local tests only: lets `shop` be an `http://` fake store. Never set it on a live site. |
 
 `redeemidGuard(options)` takes `{ rateLimit?: boolean }`.
@@ -482,9 +512,9 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | Component | Props | Use |
 | --- | --- | --- |
 | `Content` | `value`, `collection`, `terms`, `id`, `title`; slot `locked` | An entry body with breaks, Members only parts, teaser, meter and wall |
-| `Gate` | `collection`, `terms`, `levels`; slot `locked` | Locks any part of a template |
+| `Gate` | `collection`, `terms`, `id`, `levels`; slot `locked` | Locks any part of a template |
 | `LockedPanel` | `reason`, `required`, … | The wall on its own |
-| `AccessBadge` | `collection`, `terms`, `content`, `free`, `class` | What an entry needs, with a lock for readers kept out |
+| `AccessBadge` | `collection`, `terms`, `content`, `id`, `free`, `class` | What an entry needs, with a lock for readers kept out |
 | `Account` | | Sign in, or the member's name, levels, Account and Sign out |
 | `MemberCard` | `title` | Levels, past levels, meter, features, Refresh membership |
 | `Preferences` | `title`, `heading`, `label`; slot `signed-out` | The member's preference form |

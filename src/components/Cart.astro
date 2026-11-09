@@ -12,7 +12,7 @@ interface Props {
 	label?: string;
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const { label = text(config, "Cart") } = Astro.props;
 const ref = await readCart(Astro.session);
 const count = ref?.count ?? 0;

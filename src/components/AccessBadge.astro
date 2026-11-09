@@ -3,7 +3,7 @@
  * The level an entry needs, read from its rules (and from a paywall break
  * with levels):
  *
- *   <AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} />
+ *   <AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} id={post.id} />
  *
  * Open entries show `free` ("Free"; pass free="" to show nothing). The badge
  * carries `data-redeemid-level` (the level slugs) for styling, and
@@ -19,21 +19,23 @@ interface Props {
 	terms?: Terms;
 	/** The entry's body, so a paywall break's levels count. */
 	content?: unknown[] | null;
+	/** The entry's id or slug, so its own rule from the editor counts. */
+	id?: string;
 	free?: string;
 	class?: string;
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
-const { collection, terms, content, free = text(config, "Free"), class: className } = Astro.props;
+const config = await siteConfig(Astro.locals);
+const { collection, terms, content, id, free = text(config, "Free"), class: className } = Astro.props;
 const split = splitAtPaywall(content);
 const required = split.paywall && split.levels.length
 	? [split.levels]
-	: await entryRequirement(config, collection, terms);
+	: await entryRequirement(config, collection, terms, id);
 const label = describe(required, config?.levels, free, text(config, "Signed in"));
 const item = soldItem(content);
 const owner = item ? (await viewer(Astro)).member : null;
 const owned = Boolean(owner && owner.status !== "disabled" && holdsItem(item, owner.tags));
-const locked = required !== null && !owned && !(await canRead(Astro, { collection, terms }, { required })).allowed;
+const locked = required !== null && !owned && !(await canRead(Astro, { collection, terms, id }, { required })).allowed;
 const slugs = required?.flat().join(" ") || (required ? "signed-in" : "free");
 ---
 

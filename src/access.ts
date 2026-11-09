@@ -11,6 +11,7 @@
  */
 
 import type { LevelConfig, RedeemIDConfig, RuleConfig } from "./config.js";
+import type { EntryRule } from "./settings.js";
 import { siteConfig } from "./site-config.js";
 import { memberForUser, stores, type MemberRecord } from "./storage.js";
 
@@ -108,9 +109,14 @@ function combined(rules: RuleConfig[], mode: "all" | "any"): string[][] {
 	return reduce(rules.map((r) => r.levels));
 }
 
+/** Rules that can cover `collection`: its own, and term rules for every collection ("*"). */
+function rulesFor(rules: RuleConfig[], collection: string): RuleConfig[] {
+	return rules.filter((r) => r.collection === collection || (r.collection === "*" && r.taxonomy && r.term));
+}
+
 /** The rules that decide an entry: matching term rules, else the collection's, else the site default. */
 function deciding(rules: RuleConfig[], collection: string, terms: Terms, tree?: TermTree): RuleConfig[] | "open" {
-	const forCollection = rules.filter((r) => r.collection === collection);
+	const forCollection = rulesFor(rules, collection);
 	const matched: RuleConfig[] = [];
 	for (const [taxonomy, list] of Object.entries(terms)) {
 		const taxRules = forCollection.filter((r) => r.taxonomy === taxonomy && r.term);
@@ -123,7 +129,9 @@ function deciding(rules: RuleConfig[], collection: string, terms: Terms, tree?: 
 				seen.add(slug);
 				const own = taxRules.filter((r) => r.term === slug);
 				if (own.length > 0) {
-					matched.push(...own);
+					// A rule for this collection beats one for every collection.
+					const specific = own.filter((r) => r.collection === collection);
+					matched.push(...(specific.length ? specific : own));
 					break;
 				}
 				slug = parents[slug] ?? null;
@@ -132,9 +140,54 @@ function deciding(rules: RuleConfig[], collection: string, terms: Terms, tree?: 
 	}
 	if (matched.some((r) => r.open)) return "open";
 	if (matched.length > 0) return matched;
-	const whole = forCollection.filter((r) => !r.taxonomy && !r.term && !r.open);
+	const whole = forCollection.filter((r) => r.collection === collection && !r.taxonomy && !r.term);
+	if (whole.some((r) => r.open)) return "open";
 	if (whole.length > 0) return whole;
-	return rules.filter((r) => r.collection === "*" && !r.taxonomy && !r.term && !r.open);
+	const site = rules.filter((r) => r.collection === "*" && !r.taxonomy && !r.term);
+	if (site.some((r) => r.open)) return "open";
+	return site;
+}
+
+/** Where the site's rules for an entry come from, in words, for the editor. */
+export function ruleSource(rules: RuleConfig[] = [], collection: string, terms: Terms = {}, tree?: TermTree): string {
+	const found = deciding(rules, collection, terms, tree);
+	const termRules = (list: RuleConfig[]) => [...new Set(list.map((r) => `${r.taxonomy}: ${r.term}`))].join(", ");
+	if (found === "open") {
+		const opener = rulesFor(rules, collection).filter((r) => r.open && r.taxonomy);
+		const hit = opener.filter((r) => (terms[r.taxonomy!] ?? []).some((t) => slugOf(t) === r.term));
+		if (hit.length) return `A term that makes it free (${termRules(hit)})`;
+		return rules.some((r) => r.collection === collection && r.open && !r.taxonomy) ? `The rule for ${collection} (free)` : "The site default (free)";
+	}
+	if (found.length === 0) return "No rule covers it";
+	if (found[0]!.taxonomy) return `Terms: ${termRules(found)}`;
+	if (found[0]!.collection === collection) return `The rule for ${collection}`;
+	return "The site default";
+}
+
+/** The entry's own rule (set in the editor), by id or slug. */
+export function entryRuleFor(config: RedeemIDConfig | null, collection: string, id?: string | null): EntryRule | null {
+	if (!config?.entries || !id) return null;
+	return config.entries[`${collection}:${id}`] ?? null;
+}
+
+/**
+ * The site's requirement with the entry's own rule applied (see EntryRule).
+ * `now` decides the date windows.
+ */
+export function applyEntryRule(site: Requirement, own: EntryRule | null, now = Date.now()): Requirement {
+	if (!own) return site;
+	if (own.openUntil && now < Date.parse(own.openUntil)) return null;
+	if (own.lockedUntil && now >= Date.parse(own.lockedUntil)) return null;
+	switch (own.mode) {
+		case "open":
+			return null;
+		case "levels":
+			return [own.levels];
+		case "add":
+			return reduce([...(site ?? []), own.levels]);
+		default:
+			return site;
+	}
 }
 
 /**
@@ -156,14 +209,18 @@ export function requirement(
 }
 
 /** Days of membership the entry's deciding rules ask for (the largest drip), or 0. */
-export function dripDays(rules: RuleConfig[] = [], collection: string, terms: Terms = {}, tree?: TermTree): number {
+export function dripDays(rules: RuleConfig[] = [], collection: string, terms: Terms = {}, tree?: TermTree, own?: EntryRule | null): number {
+	if (own && typeof own.drip === "number" && own.drip > 0) return own.drip;
+	if (own?.mode === "open" || own?.mode === "levels") return 0;
 	const found = deciding(rules, collection, terms, tree);
 	if (found === "open") return 0;
 	return Math.max(0, ...found.map((r) => (typeof r.drip === "number" && r.drip > 0 ? r.drip : 0)));
 }
 
 /** May the meter open the entry? Not when a deciding rule says `meter: false`. */
-export function meterable(rules: RuleConfig[] = [], collection: string, terms: Terms = {}, tree?: TermTree): boolean {
+export function meterable(rules: RuleConfig[] = [], collection: string, terms: Terms = {}, tree?: TermTree, own?: EntryRule | null): boolean {
+	if (own?.meter === false) return false;
+	if (own?.mode === "levels") return true;
 	const found = deciding(rules, collection, terms, tree);
 	return found === "open" || !found.some((r) => r.meter === false);
 }
@@ -229,7 +286,7 @@ export function membership(member: MemberRecord, levels: LevelConfig[] = []): { 
 /** How much of this period's meter the signed-in reader has used, or null when no meter runs. */
 export async function meterUsage(astro: AstroLike): Promise<{ used: number; limit: number; period: "month" | "week" } | null> {
 	const locals = astro.locals as Locals;
-	const meter = siteConfig(locals.emdash?.config)?.meter;
+	const meter = (await siteConfig(locals))?.meter;
 	const user = locals.user;
 	const db = locals.emdash?.db;
 	if (!meter || !(meter.limit > 0) || !user?.id || !db) return null;
@@ -291,7 +348,7 @@ export function describe(required: Requirement, levels: LevelConfig[] = [], open
  */
 export async function termTree(rules: RuleConfig[] = [], collection: string, terms: Terms = {}): Promise<TermTree> {
 	const tree: TermTree = {};
-	const forCollection = rules.filter((r) => r.collection === collection && r.taxonomy && r.term);
+	const forCollection = rulesFor(rules, collection).filter((r) => r.taxonomy && r.term);
 	const wanted = Object.entries(terms).filter(([taxonomy, list]) => {
 		const own = new Set(forCollection.filter((r) => r.taxonomy === taxonomy).map((r) => r.term));
 		return own.size > 0 && (list ?? []).some((t) => !own.has(slugOf(t)));
@@ -316,15 +373,21 @@ export async function termTree(rules: RuleConfig[] = [], collection: string, ter
 	return tree;
 }
 
-/** The entry's requirement with the site's config, walking term parents. */
+/**
+ * The entry's requirement with the site's config, walking term parents. With
+ * `id` (EmDash's id or the slug), the entry's own rule from the editor applies.
+ */
 export async function entryRequirement(
 	config: RedeemIDConfig | null,
 	collection: string,
 	terms: Terms = {},
+	id?: string | null,
 ): Promise<Requirement> {
 	if (!config) return null;
+	const own = entryRuleFor(config, collection, id);
+	if (own && (own.mode === "open" || own.mode === "levels") && !own.openUntil && !own.lockedUntil) return applyEntryRule(null, own);
 	const tree = await termTree(config.rules, collection, terms);
-	return requirement(config.rules, collection, terms, { combine: config.combine, tree });
+	return applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), own);
 }
 
 const viewers = new WeakMap<object, Promise<Viewer>>();
@@ -354,7 +417,7 @@ async function readViewer(astro: AstroLike): Promise<Viewer> {
 	// Member-specific output must never be shared by a cache.
 	astro.response?.headers.set("Cache-Control", "private, no-store");
 
-	const config = siteConfig(locals.emdash?.config);
+	const config = await siteConfig(locals);
 	const db = locals.emdash?.db;
 	if (!config || !db) return { signedIn: true, member: null, levels: [] };
 
@@ -369,16 +432,16 @@ async function readViewer(astro: AstroLike): Promise<Viewer> {
  */
 export async function canRead(
 	astro: AstroLike,
-	entry: { collection: string; terms?: Terms },
+	entry: { collection: string; terms?: Terms; id?: string; ruleId?: string },
 	override?: { levels: string[] } | { required: string[][] },
 ): Promise<Verdict> {
 	const locals = astro.locals as Locals;
-	const config: RedeemIDConfig | null = siteConfig(locals.emdash?.config);
+	const config: RedeemIDConfig | null = await siteConfig(locals);
 	const required: Requirement = override
 		? "required" in override
 			? override.required
 			: [override.levels]
-		: await entryRequirement(config, entry.collection, entry.terms);
+		: await entryRequirement(config, entry.collection, entry.terms, entry.ruleId ?? entry.id);
 	const v = await viewer(astro);
 
 	if (required === null) return { allowed: true, reason: "open", required: [], viewer: v };
@@ -426,17 +489,18 @@ export function signOutUrl(returnTo = "/"): string {
  */
 export async function readEntry(
 	astro: AstroLike,
-	entry: { collection: string; terms?: Terms; id?: string },
+	entry: { collection: string; terms?: Terms; id?: string; ruleId?: string },
 	override?: { required: string[][] },
 ): Promise<Verdict> {
 	const verdict = await canRead(astro, entry, override);
 	const locals = astro.locals as Locals;
-	const config = siteConfig(locals.emdash?.config);
+	const config = await siteConfig(locals);
 	if (!config) return verdict;
 
 	if (verdict.allowed && verdict.reason === "allowed" && verdict.viewer.member) {
+		const own = entryRuleFor(config, entry.collection, entry.ruleId ?? entry.id);
 		const tree = await termTree(config.rules, entry.collection, entry.terms);
-		const days = dripDays(config.rules, entry.collection, entry.terms, tree);
+		const days = dripDays(config.rules, entry.collection, entry.terms, tree, own);
 		const opensAt = dripOpensAt(memberSince(verdict.viewer.member, config.levels), days);
 		if (days > 0 && (!opensAt || opensAt.getTime() > Date.now())) {
 			return { ...verdict, allowed: false, reason: "drip", opensAt: opensAt ?? undefined };
@@ -458,7 +522,7 @@ export async function readEntry(
 	) {
 		return verdict;
 	}
-	if (!meterable(config.rules, entry.collection, entry.terms, await termTree(config.rules, entry.collection, entry.terms))) {
+	if (!meterable(config.rules, entry.collection, entry.terms, await termTree(config.rules, entry.collection, entry.terms), entryRuleFor(config, entry.collection, entry.ruleId ?? entry.id))) {
 		return verdict;
 	}
 	const period = meter.period ?? "month";

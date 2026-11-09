@@ -223,6 +223,46 @@ try {
 	});
 	check("members can't open the plugin's admin pages", memberAdmin.res.status === 401 || memberAdmin.res.status === 403, String(memberAdmin.res.status));
 
+	// Access settings in the admin: levels named by the site, rules for any content type, an entry's own rule.
+	const accessCall = async (input) =>
+		admin.go("/_emdash/api/plugins/redeemid/admin", {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+			body: JSON.stringify(input),
+		});
+	const accessPage = await accessCall({ type: "page_load", page: "/access" });
+	check("Access page lists levels, content types and taxonomies from the site", accessPage.res.status === 200 && accessPage.text.includes("Content types") && accessPage.text.includes("Posts") && accessPage.text.includes("Categories") && accessPage.text.includes("from the site's code"), accessPage.text.slice(0, 300));
+	const addLevel = await accessCall({ type: "form_submit", action_id: "level_save", block_id: "level:new", values: { name: "Patrons of the Arts", tags: "patron", match: "any" } });
+	check("staff add a level with their own name", addLevel.text.includes("Level added.") && addLevel.text.includes("patrons-of-the-arts"), addLevel.text.slice(0, 300));
+	const manifestAfter = await admin.go("/_emdash/api/manifest");
+	check("the editor's level pickers offer the new level", manifestAfter.text.includes("Patrons of the Arts"));
+	const welcomeApi = await admin.go("/_emdash/api/content/posts/welcome");
+	const welcomeId = (welcomeApi.text.match(/"id":"([0-9A-Z]{20,})"/) ?? [])[1];
+	const panel = async (body) =>
+		admin.go(`/_emdash/api/content/posts/${welcomeId}/plugin-extensions/redeemid/panel/access`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+			body: JSON.stringify(body),
+		});
+	const panelLoad = await panel({ type: "panel_load" });
+	check("the editor's Access panel shows who can read the entry", Boolean(welcomeId) && panelLoad.text.includes("Right now: free to everyone."), `${welcomeId} ${panelLoad.res.status} ${panelLoad.text.slice(0, 300)}`);
+	const panelSave = await panel({ type: "form_submit", action_id: "entry_save", block_id: "entry", values: { mode: "levels", levels: ["patrons-of-the-arts"], drip: 0, no_meter: false } });
+	check("the panel saves the entry's own rule", panelSave.text.includes("Access saved.") && panelSave.text.includes("Patrons of the Arts"), panelSave.text.slice(0, 300));
+	const ownVisitor = await visitor.go("/posts/welcome");
+	check("an entry's own rule locks it for visitors", !ownVisitor.text.includes("starter post") && ownVisitor.text.includes('data-redeemid-reason="sign_in"') && ownVisitor.text.includes("Patrons of the Arts"), ownVisitor.text.slice(0, 200));
+	const ownMember = await member.go("/posts/welcome");
+	check("a member without the level is asked to upgrade", ownMember.text.includes('data-redeemid-reason="upgrade"'));
+	await panel({ type: "form_submit", action_id: "entry_save", block_id: "entry", values: { mode: "inherit", drip: 0, no_meter: false } });
+	const backOpen = await visitor.go("/posts/welcome");
+	check("back to the site rules, the entry is open again", backOpen.text.includes("starter post"));
+	const typeRule = await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "signed-in", drip: 0, no_meter: false, teaser: 0 } });
+	check("staff set a rule for a whole content type", typeRule.text.includes("Saved."), typeRule.text.slice(0, 200));
+	await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "none", drip: 0, no_meter: false, teaser: 0 } });
+	const levelGone = await accessCall({ type: "block_action", action_id: "level_menu", value: "remove:patrons-of-the-arts" });
+	check("an unused level can be removed", levelGone.text.includes("Level removed."), levelGone.text.slice(0, 200));
+	const backToCode = await accessCall({ type: "block_action", action_id: "reset", value: "levels" });
+	check("levels go back to the code's", backToCode.text.includes("Using the code's setting again."));
+
 	// Staff tools: member detail, resync, tag edits written to Shopify, bulk resync, webhooks, access test.
 	const adminAct = async (input) =>
 		admin.go("/_emdash/api/plugins/redeemid/admin", {

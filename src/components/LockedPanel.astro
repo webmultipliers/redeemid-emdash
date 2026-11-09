@@ -33,7 +33,7 @@ const { reason, required = [], held = [], opensAt, meterLeft, meterPeriod, item 
 const opens = opensAt
 	? new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" }).format(opensAt)
 	: null;
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const missing = required.find((clause) => clause.length > 0 && !passes(held, [clause]));
 const level = missing ? config?.levels?.find((l) => l.slug === missing[0]) : undefined;
 const joinHref = level?.joinUrl ?? config?.join?.href;

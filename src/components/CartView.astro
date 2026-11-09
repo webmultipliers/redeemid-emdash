@@ -20,7 +20,7 @@ interface Props {
 	empty?: string;
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const { productHref, empty = text(config, "Your cart is empty.") } = Astro.props;
 const ref = await readCart(Astro.session);
 let cart: CartDetails | null = null;

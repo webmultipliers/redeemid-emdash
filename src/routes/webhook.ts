@@ -8,7 +8,8 @@
 
 import type { APIRoute } from "astro";
 
-import { env, ENV, readConfig } from "../config.js";
+import { env, ENV } from "../config.js";
+import { siteConfig } from "../site-config.js";
 import { levelChange } from "../events.js";
 import { stores } from "../storage.js";
 import { apply, kindOf, verifyHmac } from "../webhooks.js";
@@ -49,7 +50,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	try {
-		const config = readConfig(emdash.config);
+		const config = await siteConfig(locals);
 		const outcome = await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic), config);
 		return new Response(outcome, { status: 200 });
 	} catch (e) {

@@ -14,7 +14,8 @@ import { createKyselyAdapter, type AuthTables } from "@emdash-cms/auth/adapters/
 import type { APIRoute } from "astro";
 import type { Kysely } from "kysely";
 
-import { env, ENV, PROVIDER_ID, readConfig, storeDomain } from "../config.js";
+import { env, ENV, PROVIDER_ID, storeDomain } from "../config.js";
+import { siteConfig } from "../site-config.js";
 import { emit, levelChange } from "../events.js";
 import { levelsFor } from "../access.js";
 import { discover, exchangeCode, identity, logoutUrl, ShopifyError, verifyIdToken, type Discovery } from "../shopify.js";
@@ -32,7 +33,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 	session?.delete(SESSION_FLOW);
 	const returnTo = flow?.returnTo ?? "/";
 
-	const config = readConfig(emdash?.config);
+	const config = await siteConfig(locals);
 	const clientId = env(ENV.clientId);
 	if (!config || !storeDomain(config) || !clientId || !emdash?.db || !session) return fail(redirect, returnTo, "not_configured");
 

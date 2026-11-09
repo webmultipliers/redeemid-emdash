@@ -21,7 +21,7 @@ interface Props {
 	buyLabel?: string;
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const { handle, heading = "h2", compact = false, addLabel = text(config, "Add to cart"), buyLabel = text(config, "Buy now") } = Astro.props;
 let p: Product | null = null;
 if (config) {

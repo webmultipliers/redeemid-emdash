@@ -5,7 +5,7 @@
  */
 
 import { adminConfigured, adminScopes, editTags, registerWebhooks, resync, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
-import { describe, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
+import { applyEntryRule, describe, entryRuleFor, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
 import type { RedeemIDConfig } from "./config.js";
 import { levelChange } from "./events.js";
 import { featuresFor } from "./features.js";
@@ -269,6 +269,7 @@ export function parseTerms(raw: string): Terms {
 /** The access test: what an entry needs, and whether a reader with these tags passes. */
 export async function accessTest(config: RedeemIDConfig, values: Record<string, unknown> = {}): Promise<Blocks> {
 	const collection = String(values.collection ?? "").trim();
+	const entryId = String(values.entry ?? "").trim();
 	const termsRaw = String(values.terms ?? "").trim();
 	const tags = cleanTags(String(values.tags ?? ""));
 	const signedIn = values.signed_in !== false;
@@ -278,6 +279,7 @@ export async function accessTest(config: RedeemIDConfig, values: Record<string, 
 		block_id: "access_test",
 		fields: [
 			{ type: "text_input", action_id: "collection", label: "Collection", placeholder: "posts", initial_value: collection },
+			{ type: "text_input", action_id: "entry", label: "Entry id or slug (optional: applies its own rule)", initial_value: entryId },
 			{ type: "text_input", action_id: "terms", label: "Terms (taxonomy:slug, comma separated)", placeholder: "category:investigations, tag:free-to-read", initial_value: termsRaw },
 			{ type: "text_input", action_id: "tags", label: "Reader's Shopify tags (comma separated)", placeholder: "gold-member", initial_value: tags.join(", ") },
 			{ type: "toggle", action_id: "signed_in", label: "Signed in", initial_value: signedIn },
@@ -292,7 +294,7 @@ export async function accessTest(config: RedeemIDConfig, values: Record<string, 
 	if (collection) {
 		const terms = parseTerms(termsRaw);
 		const tree = await termTree(config.rules, collection, terms);
-		const required = requirement(config.rules, collection, terms, { combine: config.combine, tree });
+		const required = applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), entryRuleFor(config, collection, entryId));
 		const held = levelsFor(tags, levels);
 		const ok = required === null || (signedIn && passes(held, required));
 		out.push(

@@ -17,10 +17,12 @@ interface Props {
 	collection?: string;
 	terms?: Terms;
 	levels?: string[];
+	/** The entry's id or slug, so its own rule from the editor counts. */
+	id?: string;
 }
 
-const { collection = "", terms, levels } = Astro.props;
-const verdict = await canRead(Astro, { collection, terms }, levels ? { levels } : undefined);
+const { collection = "", terms, levels, id } = Astro.props;
+const verdict = await canRead(Astro, { collection, terms, id }, levels ? { levels } : undefined);
 ---
 
 {verdict.allowed ? (

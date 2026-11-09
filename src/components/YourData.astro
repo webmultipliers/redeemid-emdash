@@ -16,7 +16,7 @@ interface Props {
 	heading?: "h2" | "h3" | "h4";
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const { title = text(config, "Your data"), heading = "h2" } = Astro.props;
 const v = await viewer(Astro);
 const route = "/_emdash/api/auth/redeemid/privacy";

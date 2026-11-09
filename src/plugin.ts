@@ -27,11 +27,13 @@
 import type { ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
-import { describe, levelsFor, SIGNED_IN } from "./access.js";
-import { env, ENV, storeDomain, unknownEnvNames, type RedeemIDConfig } from "./config.js";
+import { describe, levelsFor, SIGNED_IN, type Terms } from "./access.js";
+import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, isAccessAction, type AccessEnv, type PanelEntry } from "./access-admin.js";
+import { entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
+import { env, ENV, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
-import { PAGES, WIDGETS } from "./descriptor.js";
+import { EDITOR_PANELS, PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
@@ -54,11 +56,22 @@ import {
 
 export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, ITEM_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK };
 
+/**
+ * The editor's level pickers. Declared once when the plugin starts, then kept
+ * in step (in place) with the levels saved in the admin: EmDash builds the
+ * editor's manifest from these same arrays on each request.
+ */
+const levelOptions: Array<{ label: string; value: string }> = [];
+const planLevelOptions: Array<{ label: string; value: string }> = [];
+
+export function setLevelOptions(levels: LevelConfig[] = []): void {
+	const mine = levels.map((l) => ({ label: l.name, value: l.slug }));
+	levelOptions.splice(0, levelOptions.length, { label: "Signed in (any member)", value: SIGNED_IN }, ...mine);
+	planLevelOptions.splice(0, planLevelOptions.length, ...mine);
+}
+
 function blocks(config: RedeemIDConfig) {
-	const levelOptions = [
-		{ label: "Signed in (any member)", value: SIGNED_IN },
-		...(config.levels ?? []).map((l) => ({ label: l.name, value: l.slug })),
-	];
+	setLevelOptions(config.levels);
 	return [
 		{
 			type: PAYWALL_BLOCK,
@@ -119,7 +132,7 @@ function blocks(config: RedeemIDConfig) {
 					type: "checkbox" as const,
 					action_id: "levels",
 					label: "Levels this plan gives (members on them see \"You're on this plan\")",
-					options: (config.levels ?? []).map((l) => ({ label: l.name, value: l.slug })),
+					options: planLevelOptions,
 				},
 			],
 		},
@@ -170,26 +183,63 @@ function blocks(config: RedeemIDConfig) {
 	];
 }
 
-export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
+export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
+	onLevels(setLevelOptions);
+	const live = () => liveConfig(code);
 	return definePlugin({
 		id: "redeemid",
 		version: VERSION,
-		capabilities: [],
+		// content:read: the editor's Access panel reads the entry, and its
+		// rule follows the entry's slug and goes with the entry.
+		capabilities: ["content:read"],
 		admin: {
 			pages: PAGES,
 			widgets: WIDGETS,
-			portableTextBlocks: blocks(config),
+			editorPanels: EDITOR_PANELS,
+			portableTextBlocks: blocks(code),
 		},
-		mcp: agentTools(config),
+		mcp: agentTools(code),
+		hooks: {
+			"content:afterSave": async (event) => {
+				const id = typeof event.content.id === "string" ? event.content.id : null;
+				if (!id) return;
+				const slug = typeof event.content.slug === "string" ? event.content.slug : null;
+				await entrySlugChanged((await memberStores()).access, event.collection, id, slug).catch(() => undefined);
+			},
+			"content:afterDelete": async (event) => {
+				if (!event.permanent) return;
+				await (await memberStores()).access.delete(entryKey(event.id)).catch(() => undefined);
+			},
+		},
 		routes: {
-			...agentRoutes(config),
+			...agentRoutes(code),
+			"access-panel": {
+				permission: "content:edit_own",
+				request: { body: "json" as const },
+				handler: async (ctx: RouteContext) => {
+					const i = (ctx.input ?? {}) as { type?: string; action_id?: string; values?: Record<string, unknown> };
+					const entry = ctx.ui && "entry" in ctx.ui ? ctx.ui.entry : undefined;
+					if (!entry) return { blocks: [{ type: "context", text: "Save the entry first." }] };
+					try {
+						const env = await accessEnv(await live());
+						const panel = await panelEntry(ctx, entry.collection, entry.id);
+						if (i.type === "form_submit" && i.action_id === "entry_save") return await entrySave(env, panel, i.values ?? {});
+						return await entryPanel(env, panel);
+					} catch (e) {
+						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load access", description: (e as Error).message }] };
+					}
+				},
+			},
 			admin: {
 				handler: async (ctx: RouteContext) => {
 					const i = (ctx.input ?? {}) as { type?: string; page?: string; action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string };
 					try {
+						const config = await live();
+						if ((i.type === "block_action" || i.type === "form_submit") && isAccessAction(i.action_id)) return await accessAction(await accessEnv(config), i);
 						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx.request, i);
 						if (i.type !== "page_load") return { blocks: [] };
 						if (i.page === "/") return await membersPage(config);
+						if (i.page === "/access") return await accessPage(await accessEnv(config));
 						if (i.page === "/status") return await statusPage(config, ctx.request);
 						if (i.page === "/test") return await accessTest(config);
 						if (i.page === "/privacy") return await privacyPage(await memberStores());
@@ -204,6 +254,54 @@ export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
 	});
 }
 
+/** The code's config with what the admin saved. */
+async function liveConfig(code: RedeemIDConfig): Promise<RedeemIDConfig> {
+	const { getDb } = await import("emdash/runtime");
+	return (await withSaved(code, await getDb())) ?? code;
+}
+
+/** Everything the Access screens read: saved settings and the site's content types and taxonomies, as they are now. */
+async function accessEnv(config: RedeemIDConfig): Promise<AccessEnv> {
+	const { getDb } = await import("emdash/runtime");
+	const db = await getDb();
+	const store = stores(db).access;
+	const emdash = await import("emdash");
+	const collections = (await new emdash.SchemaRegistry(db as never).listCollections()) as Array<{ slug: string; label: string }>;
+	const taxonomies = (await emdash.getTaxonomyDefs()) as Array<{ name: string; label: string; collections: string[] }>;
+	return {
+		code: config,
+		store,
+		saved: await loadAccess(store),
+		collections: collections.map((c) => ({ slug: c.slug, label: c.label || c.slug })),
+		taxonomies: taxonomies.map((t) => ({ name: t.name, label: t.label || t.name, collections: t.collections ?? [] })),
+		terms: async (taxonomy) => {
+			type Node = { slug: string; label?: string; name?: string; children?: Node[] };
+			const out: Array<{ slug: string; label: string }> = [];
+			const walk = (list: Node[], path: string) =>
+				list.forEach((n) => {
+					const label = `${path}${n.label || n.slug}`;
+					out.push({ slug: n.slug, label });
+					walk(n.children ?? [], `${label} › `);
+				});
+			walk((await emdash.getTaxonomyTerms(taxonomy)) as Node[], "");
+			return out;
+		},
+	};
+}
+
+/** The saved entry the editor's panel is on: its slug and terms. */
+async function panelEntry(ctx: RouteContext, collection: string, id: string): Promise<PanelEntry> {
+	const item = await ctx.content?.get(collection, id).catch(() => null);
+	const emdash = await import("emdash");
+	const terms: Terms = {};
+	for (const t of (await emdash.getTaxonomyDefs()) as Array<{ name: string; collections: string[] }>) {
+		if (!(t.collections ?? []).includes(collection)) continue;
+		const list = (await emdash.getEntryTerms(collection, id, t.name)) as Array<{ slug: string; id: string; parentId?: string }>;
+		if (list.length) terms[t.name] = list.map((x) => ({ slug: x.slug, id: x.id, parentId: x.parentId ?? null }));
+	}
+	return { collection, id, slug: item?.slug ?? null, terms };
+}
+
 export default createPlugin;
 
 // ---------------------------------------------------------------- agents and CLI
@@ -211,9 +309,11 @@ export default createPlugin;
 const STAFF = "users:read" as const;
 
 /** Staff-only JSON routes, also offered as MCP tools. */
-function agentRoutes(config: RedeemIDConfig) {
+function agentRoutes(code: RedeemIDConfig) {
+	let config = code;
 	const run = (fn: (s: Stores, input: Record<string, unknown>) => Promise<unknown> | unknown) => async (ctx: RouteContext) => {
 		try {
+			config = await liveConfig(code);
 			return { ok: true, result: await fn(await memberStores(), (ctx.input ?? {}) as Record<string, unknown>) };
 		} catch (e) {
 			if (e instanceof AgentError || e instanceof AdminError) return { ok: false, error: e.message };
@@ -229,7 +329,7 @@ function agentRoutes(config: RedeemIDConfig) {
 		"site-health": route(EMPTY, (s) => siteHealth(config, s)),
 		"level-changes": route(CHANGES, (s, i) => levelChanges(config, s, i as { since: string; level?: string })),
 	};
-	if (!config.agents?.actions) return read;
+	if (!code.agents?.actions) return read;
 	return {
 		...read,
 		"resync-member": route(CUSTOMER, async (s, i) => {
@@ -580,7 +680,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 			},
 			{ type: "divider" },
 			{ type: "header", text: "Levels" },
-			{ type: "context", text: "Set in astro.config.mjs." },
+			{ type: "context", text: "Change levels and rules under Access." },
 			levels.length
 				? {
 						type: "table",

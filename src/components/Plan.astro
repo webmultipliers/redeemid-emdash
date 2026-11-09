@@ -25,7 +25,7 @@ interface Props {
 	heldLabel?: string;
 }
 
-const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const config = await siteConfig(Astro.locals);
 const { handle, label = text(config, "Join"), title, levels = [], heldLabel = text(config, "You're on this plan.") } = Astro.props;
 let p: Plan | null = null;
 if (config) {
