@@ -9,6 +9,7 @@ import { describe, levelsFor, membership, passes, requirement, termTree, type Te
 import type { RedeemIDConfig } from "./config.js";
 import { levelChange } from "./events.js";
 import { featuresFor } from "./features.js";
+import { recentRequests } from "./privacy.js";
 import { cleanTags, numericId, type MemberRecord, type Stores } from "./storage.js";
 
 /** Members resynced per click; well inside Shopify's query cost limits. */
@@ -80,6 +81,97 @@ export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Bl
 				? { type: "actions", elements: [{ type: "button", action_id: "member_resync", label: "Resync from Shopify", style: "primary", value: m.customerId }] }
 				: { type: "divider" },
 			{ type: "context", text: "Tags are written to Shopify, then read back. Shopify stays the only source of access." },
+			...privacySection(m.customerId),
+		],
+	};
+}
+
+/** Export and erase for one member, on their detail page. */
+function privacySection(customerId: string): unknown[] {
+	const erase = {
+		type: "button",
+		action_id: "member_erase",
+		label: "Erase site data",
+		style: "danger",
+		value: customerId,
+		confirm: {
+			title: "Erase this member's data on the site?",
+			text: "Removes their synced record and meter here. Their site user and everything in Shopify stay. If they sign in again they're linked again.",
+			confirm: "Erase",
+			deny: "Cancel",
+			style: "danger",
+		},
+	};
+	const shopify = adminConfigured()
+		? [
+				{
+					type: "button",
+					action_id: "member_shopify_erase",
+					label: "Also request erasure in Shopify",
+					style: "danger",
+					value: customerId,
+					confirm: {
+						title: "Ask Shopify to erase this customer?",
+						text: "Shopify erases the customer's personal data across the store, orders included, after a waiting period. Needs the write_customer_data_erasure scope.",
+						confirm: "Request erasure",
+						deny: "Cancel",
+						style: "danger",
+					},
+				},
+				{ type: "button", action_id: "member_shopify_cancel", label: "Cancel the Shopify erasure", style: "secondary", value: customerId },
+			]
+		: [];
+	return [
+		{ type: "header", text: "Privacy" },
+		{ type: "actions", elements: [{ type: "button", action_id: "member_export", label: "Export data", style: "secondary", value: customerId }, erase, ...shopify] },
+		{ type: "context", text: "Export shows everything RedeemID keeps about this member. Erasing removes it from the site; Shopify stays the record of the customer." },
+	];
+}
+
+/** The member's export, as JSON, under their detail page. */
+export function exportBlocks(detail: Blocks, data: unknown): Blocks {
+	return { ...detail, blocks: [...detail.blocks, { type: "header", text: "Export" }, { type: "code", language: "jsonc", code: JSON.stringify(data, null, 2) }] };
+}
+
+/** Every privacy request: what came in, from where, and what's still open. */
+export async function privacyPage(s: Stores, toast?: Blocks["toast"], extra: unknown[] = []): Promise<Blocks> {
+	const items = await recentRequests(s);
+	return {
+		toast,
+		blocks: [
+			{ type: "header", text: "Privacy requests" },
+			{ type: "context", text: "Exports and erasures of what RedeemID keeps, from members, staff and Shopify's compliance webhooks. Open requests need staff: send a Shopify data request's export to the store owner, then mark it done." },
+			items.length
+				? {
+						type: "table",
+						page_action_id: "privacy_requests",
+						columns: [
+							{ key: "at", label: "When", format: "relative_time" },
+							{ key: "kind", label: "Request" },
+							{ key: "source", label: "From" },
+							{ key: "customer", label: "Shopify customer" },
+							{ key: "status", label: "Status", format: "badge" },
+							{ key: "act", label: "", format: "element" },
+						],
+						rows: items.map(({ id, data: r }) => ({
+							at: r.at,
+							kind: r.kind === "export" ? "Export" : "Erase",
+							source: { member: "Member, on the site", staff: "Staff", shopify: "Shopify" }[r.source] + (r.shopifyRequestId ? ` (request ${r.shopifyRequestId})` : "") + (r.note ? `: ${r.note}` : ""),
+							customer: r.customerId ?? "All",
+							status: r.status === "open" ? "Open" : "Done",
+							act:
+								r.status === "open"
+									? {
+											type: "button",
+											action_id: "privacy_done",
+											label: r.kind === "export" && r.customerId ? "Export and mark done" : "Mark done",
+											value: id,
+										}
+									: null,
+						})),
+					}
+				: { type: "context", text: "No requests yet." },
+			...extra,
 		],
 	};
 }

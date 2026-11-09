@@ -34,7 +34,8 @@ import { stores, type MemberRecord } from "./storage.js";
 import { PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { adminConfigured } from "./admin-api.js";
-import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, memberDetail, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
+import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
+import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
 import { textProblems } from "./text.js";
 
 import {
@@ -176,6 +177,7 @@ export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
 						if (i.page === "/") return await membersPage(config);
 						if (i.page === "/status") return await statusPage(config, ctx.request);
 						if (i.page === "/test") return await accessTest(config);
+						if (i.page === "/privacy") return await privacyPage(await memberStores());
 						if (i.page === "widget:status") return await statusWidget(config);
 					} catch (e) {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load this page", description: (e as Error).message }] };
@@ -254,6 +256,41 @@ async function action(
 		}
 		case "access_test":
 			return accessTest(config, i.values);
+		case "member_export": {
+			const id = String(i.value ?? "");
+			const m = await s.members.get(id);
+			if (!m) return membersPage(config);
+			return exportBlocks(memberDetail(config, m, { type: "success", message: "Export below." }), await exportRequest(s, id, "staff"));
+		}
+		case "member_erase": {
+			const id = String(i.value ?? "");
+			await eraseMember(config, s, id, "staff");
+			return { ...(await membersPage(config)), toast: { type: "success", message: "Erased from the site." } };
+		}
+		case "member_shopify_erase":
+		case "member_shopify_cancel": {
+			const id = String(i.value ?? "");
+			const m = await s.members.get(id);
+			try {
+				if (i.action_id === "member_shopify_erase") await requestShopifyErasure(config, s, id);
+				else await cancelShopifyErasure(config, s, id);
+				const message = i.action_id === "member_shopify_erase" ? "Shopify will erase the customer after its waiting period." : "The Shopify erasure is cancelled.";
+				return m ? memberDetail(config, m, { type: "success", message }) : privacyPage(s, { type: "success", message });
+			} catch (e) {
+				return m ? memberDetail(config, m, fail(e)) : privacyPage(s, fail(e));
+			}
+		}
+		case "privacy_done": {
+			const r = await closeRequest(s, String(i.value ?? ""));
+			if (r?.kind === "export" && r.customerId) {
+				const data = await exportMember(s, r.customerId);
+				return privacyPage(s, { type: "success", message: "Marked done. Send the export below to the store owner." }, [
+					{ type: "header", text: `Export for customer ${r.customerId}` },
+					{ type: "code", language: "jsonc", code: JSON.stringify(data, null, 2) },
+				]);
+			}
+			return privacyPage(s, { type: "success", message: "Marked done." });
+		}
 	}
 	return { blocks: [] };
 }

@@ -15,7 +15,7 @@
 import { env, ENV, type RedeemIDConfig } from "./config.js";
 import { USER_AGENT } from "./shopify.js";
 
-export type EventName = "member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved";
+export type EventName = "member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved" | "member.erased";
 
 const TIMEOUT_MS = 3000;
 

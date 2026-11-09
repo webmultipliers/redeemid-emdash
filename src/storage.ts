@@ -79,16 +79,31 @@ export interface DeliveryRecord {
 	receivedAt: string;
 }
 
+/** One privacy request: an export or erase, and where it came from. Names no one but the customer id. */
+export interface PrivacyRequest {
+	kind: "export" | "erase";
+	/** member: on the site; staff: in the admin; shopify: a compliance webhook. */
+	source: "member" | "staff" | "shopify";
+	customerId: string | null;
+	at: string;
+	/** open: staff still need to act (a Shopify data request, or a Shopify erasure that's pending). */
+	status: "open" | "done";
+	shopifyRequestId?: string | null;
+	note?: string;
+}
+
 export const STORAGE_CONFIG = {
 	members: { indexes: ["email", "userId", "syncedAt"] },
 	deliveries: { indexes: ["receivedAt"] },
 	meter: { indexes: ["userId"] },
+	requests: { indexes: ["at", "customerId", "status"] },
 };
 
 export interface Stores {
 	members: StorageCollection<MemberRecord>;
 	deliveries: StorageCollection<DeliveryRecord>;
 	meter: StorageCollection<MeterRecord>;
+	requests: StorageCollection<PrivacyRequest>;
 }
 
 export function stores(db: unknown): Stores {

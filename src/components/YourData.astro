@@ -1,0 +1,42 @@
+---
+/**
+ * The member's own data, for an account page: "Download my data" (everything
+ * this site keeps about them, as JSON) and "Delete my data", which erases it
+ * after they tick a box and signs them out. Their store account and orders
+ * stay; the text says so. Visitors get nothing.
+ *
+ *   <YourData />
+ */
+import { viewer } from "../access.js";
+import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
+
+interface Props {
+	title?: string;
+	heading?: "h2" | "h3" | "h4";
+}
+
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { title = text(config, "Your data"), heading = "h2" } = Astro.props;
+const v = await viewer(Astro);
+const route = "/_emdash/api/auth/redeemid/privacy";
+const here = Astro.url.pathname;
+const H = heading;
+---
+
+{v.signedIn && v.member && (
+	<section class="redeemid-data">
+		<H class="redeemid-data__title">{title}</H>
+		<p>
+			<a href={`${route}?return=${encodeURIComponent(here)}`} download>{text(config, "Download my data")}</a>
+		</p>
+		<form method="post" action={route} class="redeemid-data__erase">
+			<input type="hidden" name="return" value={here} />
+			<p>{text(config, "Deleting removes what this site keeps about you and signs you out. Your store account and orders stay; ask the store to delete those.")}</p>
+			<label>
+				<input type="checkbox" name="confirm" value="yes" required /> {text(config, "I understand")}
+			</label>
+			<button type="submit">{text(config, "Delete my data")}</button>
+		</form>
+	</section>
+)}

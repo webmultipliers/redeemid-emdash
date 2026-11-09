@@ -59,6 +59,7 @@ export function redeemid(config: RedeemIDConfig): AuthProviderDescriptor {
 			{ pattern: `${BASE}/cart-edit`, entrypoint: "@redeemid/emdash/routes/cart-edit.ts" },
 			{ pattern: `${BASE}/account`, entrypoint: "@redeemid/emdash/routes/account.ts" },
 			{ pattern: `${BASE}/preferences`, entrypoint: "@redeemid/emdash/routes/preferences.ts" },
+			{ pattern: `${BASE}/privacy`, entrypoint: "@redeemid/emdash/routes/privacy.ts" },
 		],
 		publicRoutes: [`${BASE}/`],
 		storage: STORAGE_CONFIG,

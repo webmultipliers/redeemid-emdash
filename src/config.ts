@@ -94,7 +94,7 @@ export interface PreferenceConfig {
 export interface EventsConfig {
 	url: string;
 	/** Send only these events. All of them when left out. */
-	only?: Array<"member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved">;
+	only?: Array<"member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved" | "member.erased">;
 }
 
 export interface MeterConfig {
