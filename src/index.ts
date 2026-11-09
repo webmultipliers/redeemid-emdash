@@ -70,11 +70,14 @@ export function redeemid(config: RedeemIDConfig): AuthProviderDescriptor {
  * Astro integration that keeps members (EmDash Subscribers) out of EmDash's
  * content API and admin, so only RedeemID's checks decide who reads what.
  */
-export function redeemidGuard(): AstroIntegration {
+export function redeemidGuard(options: { rateLimit?: boolean } = {}): AstroIntegration {
 	return {
 		name: "@redeemid/emdash/guard",
 		hooks: {
 			"astro:config:setup": ({ addMiddleware }) => {
+				// Cloudflare Workers only: limits Sign in, Buy and cart changes per
+				// visitor with the REDEEMID_RATE_LIMIT Rate Limiting binding.
+				if (options.rateLimit) addMiddleware({ entrypoint: "@redeemid/emdash/rate-limit-cloudflare.ts", order: "pre" });
 				addMiddleware({ entrypoint: "@redeemid/emdash/guard.ts", order: "post" });
 			},
 		},
