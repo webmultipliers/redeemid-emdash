@@ -121,7 +121,7 @@ Add the **Sold on its own** block anywhere in an entry's body. Give it the Shopi
 
 - A reader whose customer holds that tag reads the whole entry: its rule, Paywall break, Members only parts and drip don't apply, and the meter isn't used.
 - Locked readers see **Buy just this** on the wall, with the product's price from Shopify, beside the level's offer. It starts checkout for that product.
-- `<AccessBadge>` drops the lock for buyers, and protected files used by the entry reach them too.
+- `<AccessBadge>` drops the lock for buyers, and protected files in an `entries: true` folder that the entry uses reach them too.
 
 Shopify adds the tag when the order is paid, usually with a Flow workflow (Order paid → the line item is that product → add the customer tag). The site never grants it, so a refund workflow that removes the tag takes the entry away again. A tag on an entry that's open to everyone changes nothing.
 
