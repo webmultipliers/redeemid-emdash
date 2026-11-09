@@ -147,8 +147,26 @@ describe("Admin API", () => {
 
 	it("registers only the topics missing for this address", async () => {
 		const { fetcher } = shop();
-		const added = await registerWebhooks(config, "https://site.test/hook", fetcher);
+		const { added, failed } = await registerWebhooks(config, "https://site.test/hook", fetcher);
 		expect(added).toEqual(WEBHOOK_TOPICS.filter((t) => t !== "CUSTOMERS_UPDATE"));
+		expect(failed).toEqual([]);
+	});
+
+	it("keeps registering after Shopify refuses one topic", async () => {
+		const { fetcher } = fakeFetch((url, body) => {
+			if (url.endsWith("/admin/oauth/access_token")) return { access_token: "tok", scope: "read_customers,write_customers", expires_in: 86399 };
+			const { query, variables } = JSON.parse(body);
+			if (query.includes("webhookSubscriptions(")) return { data: { webhookSubscriptions: { nodes: [] } } };
+			if (query.includes("webhookSubscriptionCreate("))
+				return { data: { webhookSubscriptionCreate: { userErrors: variables.topic === "CUSTOMERS_MERGE" ? [{ field: ["topic"], message: "You cannot create a webhook subscription with the specified topic" }] : [] } } };
+			return { errors: [{ message: "unexpected" }] };
+		});
+		resetAdminToken();
+		const { added, failed } = await registerWebhooks(config, "https://site.test/hook", fetcher);
+		expect(added).toContain("CUSTOMER_TAGS_ADDED");
+		expect(added).toContain("CUSTOMER_TAGS_REMOVED");
+		expect(added).not.toContain("CUSTOMERS_MERGE");
+		expect(failed).toEqual([{ topic: "CUSTOMERS_MERGE", message: "You cannot create a webhook subscription with the specified topic (the app needs the read_customer_merge scope)" }]);
 	});
 });
 

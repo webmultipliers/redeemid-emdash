@@ -173,10 +173,22 @@ export async function webhookSubscriptions(config: RedeemIDConfig, fetcher: type
 	return data.webhookSubscriptions.nodes.map((n) => ({ id: n.id, topic: n.topic, uri: n.uri ?? "" }));
 }
 
-/** Register the topics RedeemID needs that no subscription sends to `uri` yet. Returns the topics it added. */
-export async function registerWebhooks(config: RedeemIDConfig, uri: string, fetcher: typeof fetch = fetch): Promise<string[]> {
+/** Scopes a topic needs beyond read_customers, to explain a refusal. */
+const TOPIC_SCOPES: Partial<Record<(typeof WEBHOOK_TOPICS)[number], string>> = { CUSTOMERS_MERGE: "read_customer_merge" };
+
+/**
+ * Register the topics RedeemID needs that no subscription sends to `uri` yet.
+ * A topic Shopify refuses doesn't stop the others: it comes back in `failed`.
+ */
+export async function registerWebhooks(
+	config: RedeemIDConfig,
+	uri: string,
+	fetcher: typeof fetch = fetch,
+): Promise<{ added: string[]; failed: Array<{ topic: string; message: string }> }> {
 	const have = await webhookSubscriptions(config, fetcher);
 	const missing = WEBHOOK_TOPICS.filter((t) => !have.some((h) => h.topic === t && h.uri === uri));
+	const added: string[] = [];
+	const failed: Array<{ topic: string; message: string }> = [];
 	for (const topic of missing) {
 		const data = await admin<{ webhookSubscriptionCreate: { userErrors: Array<{ message: string }> } }>(
 			config,
@@ -185,7 +197,8 @@ export async function registerWebhooks(config: RedeemIDConfig, uri: string, fetc
 			fetcher,
 		);
 		const err = data.webhookSubscriptionCreate.userErrors[0];
-		if (err) throw new AdminError(`${topic}: ${err.message}`);
+		if (!err) added.push(topic);
+		else failed.push({ topic, message: TOPIC_SCOPES[topic] ? `${err.message} (the app needs the ${TOPIC_SCOPES[topic]} scope)` : err.message });
 	}
-	return [...missing];
+	return { added, failed };
 }

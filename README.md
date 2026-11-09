@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.12, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.13, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -296,7 +296,7 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set (it also runs member preferences
 
 - **Member detail.** Open a member from the Members page to see their levels, tags and features, resync them from Shopify, or add and remove tags. Tag edits are made in Shopify, then read back; nothing is granted on the EmDash side.
 - **Bulk resync.** Reads the 50 members synced longest ago from Shopify in one request. Run it again for the next 50. It never runs on its own.
-- **Webhooks.** The Status page lists the store's subscriptions to this site and registers any that are missing (`customers/redact` stays in the app's own settings).
+- **Webhooks.** The Status page lists the store's subscriptions to this site and registers any that are missing (`customers/redact` stays in the app's own settings). A topic Shopify refuses, such as `customers/merge` without the `read_customer_merge` scope, is named with the reason and doesn't stop the others.
 - **Recent deliveries.** The last webhooks the site took, with their topics and times.
 - **Access test.** Enter a collection, terms and a reader's tags to see what the entry needs and whether that reader gets in.
 
