@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.14, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.14, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, paywall markup, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -310,12 +310,14 @@ EmDash has no content filter hook, so templates decide what to render. Render th
 ---
 import Content from "@redeemid/emdash/components/Content.astro";
 ---
-<Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id}>
+<Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title}>
 	<a slot="locked" href="/join/">Become a member</a>
 </Content>
 ```
 
 Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it ("Signed in" for any member), or when none are picked the entry's rule. With none picked and no rule covering the entry, the break changes nothing. A body with no break follows the entry's rule as a whole; readers it keeps out see the collection's `teaser` (the paragraphs within that many words, never half a paragraph), if one is set. Plain `<PortableText>` ignores the break and shows everything, so use `<Content>` for any body that may hold one.
+
+On the entry's own page (with `id`), a locked entry also gets Google's paywalled-content markup: JSON-LD saying `isAccessibleForFree: false`, with the wall (`.redeemid-locked`) as the part that isn't free. Search engines can then tell a paywall from cloaking. Pass `title` for its headline. Set `schema: false` in the config if an SEO plugin already adds this markup.
 
 A "Members only" block starts a part for the levels picked on it (none picked: the entry's rule, or any signed-in member) that runs to the next "Members only: end" block. Readers who can't read it see the wall there, and the body goes on after the end block.
 

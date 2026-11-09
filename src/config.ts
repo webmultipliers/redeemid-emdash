@@ -151,6 +151,12 @@ export interface RedeemIDConfig {
 	 */
 	teaser?: Record<string, number>;
 	/**
+	 * Google's paywalled-content markup (isAccessibleForFree false, pointing at
+	 * the wall) on the page of each locked entry, printed by <Content> when it
+	 * gets `id`. Set false when an SEO plugin already adds it.
+	 */
+	schema?: false;
+	/**
 	 * Extra /_emdash path prefixes signed-in members may use. Everything else
 	 * under /_emdash is refused to Subscribers (see guard.ts).
 	 */

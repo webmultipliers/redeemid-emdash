@@ -24,6 +24,11 @@
  * `drip` keeps it shut until the member has held their level that many days,
  * and config `meter` lets signed-in readers open a few locked entries each
  * period (each entry counts once). Leave `id` off in lists.
+ *
+ * With `id`, a locked entry's page also gets Google's paywalled-content
+ * markup (isAccessibleForFree false, pointing at the wall), the same for
+ * every reader. Pass `title` for its headline. Config `schema: false` turns
+ * it off.
  */
 import { PortableText } from "emdash/ui";
 
@@ -37,11 +42,13 @@ interface Props {
 	value?: unknown[] | null;
 	collection?: string;
 	terms?: Terms;
-	/** The entry's id, on its own page: turns on drip and the meter. */
+	/** The entry's id, on its own page: turns on drip, the meter and the paywall markup. */
 	id?: string;
+	/** The entry's title, for the paywall markup's headline. */
+	title?: string;
 }
 
-const { value, collection = "", terms, id } = Astro.props;
+const { value, collection = "", terms, id, title } = Astro.props;
 const split = splitAtPaywall(value);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
 const entryRule = await entryRequirement(config, collection, terms);
@@ -77,6 +84,19 @@ async function parts(blocks: unknown[]) {
 }
 const before = await parts(shown);
 const after = await parts(rest);
+// Google's paywalled-content markup, on the entry's own page when any of it is locked.
+const lockedEntry = Boolean(split.paywall ? required : entryRule) || sections(value ?? []).some((s) => s.members);
+const schema =
+	id && lockedEntry && config?.schema !== false
+		? JSON.stringify({
+				"@context": "https://schema.org",
+				"@type": "Article",
+				...(title ? { headline: title } : {}),
+				url: Astro.url.origin + Astro.url.pathname,
+				isAccessibleForFree: false,
+				hasPart: { "@type": "WebPageElement", isAccessibleForFree: false, cssSelector: ".redeemid-locked" },
+			}).replace(/</g, "\\u003c")
+		: null;
 const metered = verdict.reason === "metered" ? (verdict as Verdict) : null;
 const week = metered?.meter?.period === "week";
 const left = metered?.meterLeft ?? 0;
@@ -88,6 +108,7 @@ const meterText =
 			: text(config, week ? "You have {count} free reads left this week." : "You have {count} free reads left this month.", { count: left });
 ---
 
+{schema && <script type="application/ld+json" set:html={schema} />}
 {metered && (
 	<p class="redeemid-meter" role="status" data-redeemid-left={metered.meterLeft}>
 		{meterText}
