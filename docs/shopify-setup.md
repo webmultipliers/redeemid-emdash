@@ -29,7 +29,9 @@ RedeemID keeps tags and status current from webhooks. Point these topics at `htt
 
 Subscribe them from a Shopify app on the store (for example a Dev Dashboard app). If the app already sends webhooks to another site, add this URL as extra subscriptions. `customers/merge` needs the `read_customer_merge` scope. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
 
-For the staff tools (member resync, tag edits written to Shopify, the Register webhooks button) and member preferences, give the same app the `read_customers` and `write_customers` Admin API scopes and set its **client ID** as well. RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization.
+For the staff tools (member resync, tag edits written to Shopify, the Register webhooks button) and member preferences, give the same app the `read_customers` and `write_customers` Admin API scopes and set its **client ID** as well. RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization. For the **Also request erasure in Shopify** button on a member's page, add the optional `write_customer_data_erasure` scope.
+
+Shopify's compliance topics (`customers/data_request`, `customers/redact`, `shop/redact`) reach only apps that declare them in the app's configuration, under `[webhooks.privacy_compliance]`. Point all three at the same webhook URL. RedeemID logs each one on the Privacy page.
 
 ## 3. The site
 

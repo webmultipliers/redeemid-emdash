@@ -50,7 +50,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	try {
 		const config = readConfig(emdash.config);
-		const outcome = await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic));
+		const outcome = await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic), config);
 		return new Response(outcome, { status: 200 });
 	} catch (e) {
 		console.error("[redeemid] webhook failed:", topic, (e as Error).message);

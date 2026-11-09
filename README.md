@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.10, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.11, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -17,6 +17,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
 - **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on, or leaving it to the entry's rule. `<Content>` renders the body and leaves the rest off the page for everyone else.
 - **Members only block.** For a members part in the middle of a body: "Members only" (pick the levels) and "Members only: end". Everyone else sees the wall in its place and reads on after it.
+- **Sold on its own block.** Sell one entry by itself: buyers get a Shopify tag that opens the whole entry whatever its levels say, and locked readers see "Buy just this" with the price.
 - **The wall.** Readers kept out see why and what to do next: sign in, or join, with each level's own wall text. `<Notices>` shows the messages sign-in, Buy, Cart and Account send readers back with.
 - **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
 - **Shop.** `<Product>`, `<Collection>` and `<CartView>` (with the Product and Collection blocks) give the site product pages, collection grids and a cart page with quantities and discount codes. `<Contribution>` (and its block) takes pay-what-you-want amounts. Carts note the page each sale started on.
@@ -24,6 +25,8 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels; open a member to resync them or add and remove tags, which are written to Shopify), a bulk resync you start yourself, a Status page (secrets, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules), an Access test and a dashboard widget.
 - **Member preferences.** Members see and change customer fields you define in Shopify, such as topics or a newsletter choice, with `<Preferences>` or its block. Answers are saved on the Shopify customer, ready for Flow, segments and email; the site keeps no copy.
 - **Protected files.** Put uploads in a media folder named in `files`, and every download checks the reader's levels, features or the entries that use the file. Copied links are no use to anyone else.
+- **Privacy requests.** Members download or delete what the site keeps about them with `<YourData>`. Staff export or erase any member, and can ask Shopify to erase the customer too. Shopify's compliance webhooks are handled and logged on a Privacy page.
+- **AI agents and a command line.** Staff questions (can this reader read this entry, who is this member, what changed) as MCP tools for EmDash's MCP server, and as the `redeemid-emdash` command.
 - **Replacement text.** Put any string members and visitors see in your own words, one string at a time, with `text`.
 - **Outbound events.** Signed JSON POSTs to a URL of yours when a member signs in, their levels change, or they use the meter, for a CRM, an email tool or your own code.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
@@ -112,6 +115,16 @@ Each rule names a collection and the levels, any of which may read. An empty `le
 
 Term rules beat the collection's rule, which beats the site default. When several term rules cover one entry (a story in Investigations, Gold, and Culture, Silver), readers must pass every one of them, so only Gold + Silver members read it. Set `combine: "any"` to let one of them be enough.
 
+### Selling one entry on its own
+
+Add the **Sold on its own** block anywhere in an entry's body. Give it the Shopify customer tag buyers get, such as `item-big-story`, and the Shopify product that sells it (its handle, or a link to it). Then:
+
+- A reader whose customer holds that tag reads the whole entry: its rule, Paywall break, Members only parts and drip don't apply, and the meter isn't used.
+- Locked readers see **Buy just this** on the wall, with the product's price from Shopify, beside the level's offer. It starts checkout for that product.
+- `<AccessBadge>` drops the lock for buyers, and protected files in an `entries: true` folder that the entry uses reach them too.
+
+Shopify adds the tag when the order is paid, usually with a Flow workflow (Order paid → the line item is that product → add the customer tag). The site never grants it, so a refund workflow that removes the tag takes the entry away again. A tag on an entry that's open to everyone changes nothing.
+
 ### Meter and drip
 
 The meter lets a signed-in reader who can't read an entry open it anyway, `limit` entries per `period` (`"month"`, the default, or `"week"`, in UTC). Each entry counts once per period, when its own page renders through `<Content>` with an `id`; lists, feeds, search and the content API never count. Visitors get the wall and a nudge to sign in. While it runs, `<Content>` says how many free reads are left; when it runs out, the wall says so. Rules with `meter: false` are never metered, and the meter never opens an entry a member is waiting on by drip.
@@ -190,6 +203,56 @@ Limits:
 - Image services that fetch the file without the reader's cookies, such as a CDN image resizer, get refused, so keep protected images out of resized `<Image>` output.
 - Moving a file out of the folder makes it public again.
 
+### Privacy requests
+
+What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, when they first signed in and were last synced) and their meter. Preference answers stay on the Shopify customer. Webhook deliveries keep only a topic and a time. Shopify stays the record of the customer, so erasing on the site never erases Shopify data. It can only ask Shopify to.
+
+| Started | What happens |
+| --- | --- |
+| A member, with `<YourData>` on an account page | **Download my data** returns their record and meter as JSON. **Delete my data** needs a ticked box, erases both, and signs them out. |
+| Staff, on a member's page in the admin | **Export data** shows the same JSON. **Erase site data** erases it. **Also request erasure in Shopify** asks Shopify to erase the customer across the store, orders included. Shopify waits before it does, and **Cancel the Shopify erasure** withdraws it. That needs the `write_customer_data_erasure` scope on the Admin API app. |
+| Shopify `customers/data_request` | An open request on the **Privacy** page. Press **Export and mark done**, then send the export to the store owner. |
+| Shopify `customers/redact` | The member's record and meter are erased. |
+| Shopify `shop/redact` | Every member record and meter is erased. |
+
+The Privacy page lists every request with where it came from and the Shopify customer ID. It never shows an email or a name. An erase sends the `member.erased` event with `customerId` and `source`, so a CRM that took earlier events can delete its copy too.
+
+Erasing leaves the site's own user account (EmDash's users table) in place; delete it in the admin's Users if the person asks. If they sign in again, they're linked again and get back whatever Shopify still grants.
+
+The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, and `POST` with `confirm=yes` erases. It only acts for the signed-in member and refuses a POST from another origin.
+
+### AI agents and the command line
+
+RedeemID answers the questions staff ask in the admin as data, for AI agents and for scripts. All of them need an administrator. They read what the site has synced. None of them grants access, edits a level or a rule, or returns a secret.
+
+| MCP tool | Command | What it answers |
+| --- | --- | --- |
+| `explain_access` | `access <collection>` | Can this reader read this entry, and why. Give the entry by `id` (its terms and body are read from the site) or by `terms`. Give the reader by Shopify `tags`, a member's `customerId`, or `signedIn: false`. The answer covers what the entry needs, the reader's levels, the result and reason, the level a locked reader is offered, drip days, and each members-only part. |
+| `list_levels` | `levels` | Every level, the tags that grant it, its wall text and join link. |
+| `get_rules` | `rules` | How rules combine, every rule, the meter, teasers, features and protected-file rules. |
+| `get_member` | `member <id or email>` | One synced member: status, tags, levels with start dates, past levels, features, last sync. |
+| `site_health` | `health` | Whether each setting is in place (yes or no, never a value), the last webhook, open privacy requests and ignored text replacements. |
+| `level_changes` | `changes --since <date>` | Who joined or left a level since a date. |
+
+With `agents: { actions: true }` in the config, three actions are offered too:
+
+| MCP tool | Command | What it does |
+| --- | --- | --- |
+| `resync_member` | `resync <customer id>` | Reads one member from Shopify and updates the site. Changes nothing in Shopify. |
+| `resync_batch` | `resync-batch` | Reads the 50 members synced longest ago. |
+| `edit_member_tags` | `tags <customer id> --add a,b --remove c` | Adds or removes tags on the Shopify customer, then reads back what Shopify holds. It's marked destructive for agents. |
+
+**Agents.** EmDash's MCP server is at `/_emdash/api/mcp`, on EmDash versions with plugin MCP tools. RedeemID's tools stay off until an administrator turns them on for RedeemID under **Plugins**. Turning them on approves the list as it stands, and a release that changes the list needs approving again. The agent uses an EmDash API token with the `mcp:tools` or `mcp:tools:redeemid` scope, made by an administrator. Tool names carry the plugin's prefix, for example `redeemid__explain_access`.
+
+**Command line.**
+
+```sh
+npx -p @redeemid/emdash redeemid-emdash access posts --id my-story --tags gold-member --url https://example.com
+npx -p @redeemid/emdash redeemid-emdash member jane@example.com
+```
+
+It signs in the way EmDash's own CLI does: `--token`, or `EMDASH_TOKEN`, or the token `emdash login` saved for the site. The site comes from `--url` or `EMDASH_URL`. Output is JSON. Each command calls a staff-only route at `/_emdash/api/plugins/redeemid/<name>`, so scripts can call the same routes directly with a POST and a JSON body.
+
 ### Replacement text
 
 ```ts
@@ -221,6 +284,7 @@ With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to t
 | `meter.used` | `userId` (EmDash), `entry` (`collection:id`), `used`, `limit`, `period` (`2026-11`, or `2026-W45` by week) |
 | `meter.exhausted` | the same, sent with the last free read |
 | `preferences.saved` | `customerId`, `fields` (the `namespace.key` names changed) |
+| `member.erased` | `customerId`, `source` (`member`, `staff` or `shopify`) |
 
 No event carries an email address or a name: match people by the Shopify `customerId`. `only` limits which events are sent; leave it out for all of them.
 

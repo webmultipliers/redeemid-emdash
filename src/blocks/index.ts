@@ -13,6 +13,7 @@ export const blockComponents = {
 	"redeemid-paywall": Marker,
 	"redeemid-members": Marker,
 	"redeemid-members-end": Marker,
+	"redeemid-item": Marker,
 	"redeemid-plan": PlanBlock,
 	"redeemid-product": ProductBlock,
 	"redeemid-collection": CollectionBlock,

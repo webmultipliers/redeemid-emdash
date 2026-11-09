@@ -14,6 +14,10 @@
  * - No break: the entry's rule covers the whole body; readers it keeps out see
  *   the collection's teaser (config `teaser`, in words), if any.
  *
+ * - "Sold on its own": readers holding the block's Shopify tag read the whole
+ *   entry, whatever its rule, breaks and drip say. Others see "Buy just this"
+ *   on the wall when the block names a product.
+ *
  * Readers kept out get the wall (LockedPanel), with the "locked" slot on top.
  *
  * Pass `id` on the entry's own page so drip and the meter apply: a rule's
@@ -23,8 +27,8 @@
  */
 import { PortableText } from "emdash/ui";
 
-import { canRead, entryRequirement, readEntry, type Terms, type Verdict } from "../access.js";
-import { sections, splitAtPaywall, teaser } from "../blocks-names.js";
+import { canRead, entryRequirement, readEntry, viewer, type Terms, type Verdict } from "../access.js";
+import { holdsItem, sections, soldItem, splitAtPaywall, teaser } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 import { text } from "../text.js";
 import LockedPanel from "./LockedPanel.astro";
@@ -41,11 +45,15 @@ const { value, collection = "", terms, id } = Astro.props;
 const split = splitAtPaywall(value);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
 const entryRule = await entryRequirement(config, collection, terms);
+// Bought on its own: the whole entry, no meter, no drip.
+const item = soldItem(value);
+const reader = item ? (await viewer(Astro)).member : null;
+const owned = Boolean(reader && reader.status !== "disabled" && holdsItem(item, reader.tags));
 // A break with levels picked locks the rest to them; with none picked it
 // follows the entry's rule, and does nothing when no rule covers the entry.
 const required = split.paywall ? (split.levels.length ? [split.levels] : entryRule) : undefined;
 const verdict: Verdict | { allowed: true; reason: "open" } =
-	split.paywall && required === null
+	owned || (split.paywall && required === null)
 		? { allowed: true, reason: "open" }
 		: id
 			? await readEntry(Astro, { collection, terms, id }, required ? { required } : undefined)
@@ -58,7 +66,7 @@ const rest = verdict.allowed ? split.locked : [];
 async function parts(blocks: unknown[]) {
 	const out: Array<{ blocks: unknown[]; verdict?: Verdict }> = [];
 	for (const section of sections(blocks)) {
-		if (!section.members) {
+		if (!section.members || owned) {
 			out.push({ blocks: section.blocks });
 			continue;
 		}
@@ -89,7 +97,7 @@ const meterText =
 	!p.verdict || p.verdict.allowed ? (
 		p.blocks.length > 0 && <PortableText value={p.blocks} />
 	) : (
-		<LockedPanel reason={p.verdict.reason} required={p.verdict.required} held={p.verdict.viewer.levels} />
+		<LockedPanel reason={p.verdict.reason} required={p.verdict.required} held={p.verdict.viewer.levels} item={item} />
 	),
 )}
 {verdict.allowed ? (
@@ -97,7 +105,7 @@ const meterText =
 		!p.verdict || p.verdict.allowed ? (
 			p.blocks.length > 0 && <PortableText value={p.blocks} />
 		) : (
-			<LockedPanel reason={p.verdict.reason} required={p.verdict.required} held={p.verdict.viewer.levels} />
+			<LockedPanel reason={p.verdict.reason} required={p.verdict.required} held={p.verdict.viewer.levels} item={item} />
 		),
 	)
 ) : (
@@ -108,6 +116,7 @@ const meterText =
 		opensAt={verdict.opensAt}
 		meterLeft={verdict.meterLeft}
 		meterPeriod={verdict.meter?.period}
+		item={item}
 	>
 		<slot name="locked" />
 	</LockedPanel>

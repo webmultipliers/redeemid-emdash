@@ -641,6 +641,40 @@
 						"updates"
 					]
 				}
+			},
+			{
+				"id": "post-single",
+				"slug": "single-story",
+				"status": "published",
+				"data": {
+					"title": "Single story",
+					"excerpt": "Pro, or bought on its own.",
+					"content": [
+						{
+							"_type": "redeemid-item",
+							"_key": "it",
+							"tag": "item-single-story",
+							"product": "https://shop.example.com/products/single-story"
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "SINGLE-BODY: for Pro, or buyers of this story.",
+									"_key": "s0s"
+								}
+							],
+							"_key": "s0"
+						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"pro"
+					]
+				}
 			}
 		]
 	}

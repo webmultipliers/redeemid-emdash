@@ -1,4 +1,4 @@
-import type { DeliveryRecord, MemberRecord, MeterRecord, Stores } from "../src/storage.js";
+import type { DeliveryRecord, MemberRecord, MeterRecord, PrivacyRequest, Stores } from "../src/storage.js";
 
 /** Just enough of StorageCollection for unit tests. */
 function collection<T>() {
@@ -33,8 +33,10 @@ export function memoryStores() {
 	const members = collection<MemberRecord>();
 	const deliveries = collection<DeliveryRecord>();
 	const meter = collection<MeterRecord>();
+	const requests = collection<PrivacyRequest>();
 	return {
-		stores: { members, deliveries, meter } as unknown as Stores,
+		stores: { members, deliveries, meter, requests } as unknown as Stores,
+		requests: requests.rows,
 		members: members.rows,
 		deliveries: deliveries.rows,
 		meter: meter.rows,

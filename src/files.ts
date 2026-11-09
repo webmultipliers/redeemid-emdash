@@ -17,7 +17,7 @@
  */
 
 import { readEntry, viewer, type AstroLike, type Terms } from "./access.js";
-import { PAYWALL_BLOCK, sections, splitAtPaywall } from "./blocks-names.js";
+import { holdsItem, ITEM_BLOCK, PAYWALL_BLOCK, sections, soldItem, splitAtPaywall } from "./blocks-names.js";
 import type { FileRule, RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
 import { text } from "./text.js";
@@ -79,7 +79,7 @@ async function entriesUsing(db: unknown, mediaId: string): Promise<Array<{ colle
 }
 
 /** The levels picked on an entry body's breaks and members-only parts: readers must hold one from each. */
-function bodyClauses(body: unknown): string[][] {
+export function bodyClauses(body: unknown): string[][] {
 	const blocks = Array.isArray(body) ? body : [];
 	const out: string[][] = [];
 	const split = splitAtPaywall(blocks);
@@ -95,9 +95,14 @@ async function readsWhole(astro: AstroLike, entry: { collection: string; id: str
 	const data = result?.entry?.data;
 	if (!data) return false;
 	const terms = data.terms as Terms | undefined;
+	const body = Object.values(data).find((v) => Array.isArray(v) && v.some((b) => [PAYWALL_BLOCK, "redeemid-members", ITEM_BLOCK].includes((b as { _type?: string })?._type ?? "")));
+	const item = soldItem(body);
+	if (item) {
+		const m = (await viewer(astro)).member;
+		if (m && m.status !== "disabled" && holdsItem(item, m.tags)) return true;
+	}
 	const verdict = await readEntry(astro, { collection: entry.collection, terms });
 	if (!verdict.allowed) return false;
-	const body = Object.values(data).find((v) => Array.isArray(v) && v.some((b) => (b as { _type?: string })?._type === PAYWALL_BLOCK || (b as { _type?: string })?._type === "redeemid-members"));
 	const clauses = bodyClauses(body);
 	return clauses.every((clause) => clause.some((l) => verdict.viewer.levels.includes(l) || (l === "signed-in" && verdict.viewer.signedIn)));
 }

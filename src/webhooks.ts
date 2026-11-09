@@ -7,6 +7,8 @@
  */
 
 import { cleanTags, emptyMember, numericId, stampTags, type MemberRecord, type Stores } from "./storage.js";
+import type { RedeemIDConfig } from "./config.js";
+import { eraseAll, eraseMember, shopifyDataRequest } from "./privacy.js";
 
 export type Kind = "profile" | "delete" | "status" | "tags" | "merge" | "compliance" | "ignored";
 
@@ -94,16 +96,27 @@ export async function apply(
 	payload: Record<string, unknown>,
 	/** Called after a member is written, with their tags before (null when new). */
 	onWrite?: (beforeTags: string[] | null, after: MemberRecord) => Promise<void> | void,
+	/** For the member.erased event on customers/redact. */
+	config?: RedeemIDConfig | null,
 ): Promise<Outcome> {
 	const kind = kindOf(topic);
 	if (!kind || kind === "ignored") return "ignored";
 
 	if (kind === "compliance") {
-		// customers/redact: drop the mirror for that customer. data_request and
-		// shop/redact need staff action (or are covered by deleting the app).
+		// Every compliance topic is logged as a privacy request (see privacy.ts).
+		const id = customerOf(payload);
 		if (topic === "customers/redact") {
-			const id = customerOf(payload);
-			if (id) await s.members.delete(id);
+			if (id) await eraseMember(config ?? null, s, id, "shopify");
+			return id ? "processed" : "skipped";
+		}
+		if (topic === "customers/data_request") {
+			if (!id) return "skipped";
+			const req = (payload.data_request as { id?: unknown } | undefined)?.id;
+			await shopifyDataRequest(s, id, req === undefined || req === null ? null : String(req));
+			return "processed";
+		}
+		if (topic === "shop/redact") {
+			await eraseAll(config ?? null, s);
 			return "processed";
 		}
 		return "skipped";

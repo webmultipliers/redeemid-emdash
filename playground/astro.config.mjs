@@ -31,6 +31,8 @@ const config = {
 	// Files in this media folder reach Pro members and staff only.
 	files: [{ folder: "Pro downloads", levels: ["pro"] }, { folder: "Story files", entries: true }],
 	preferences: [{ key: "preferences.topics" }, { key: "preferences.newsletter" }, { key: "preferences.level", access: "view" }, { key: "membership.since" }],
+	// Agents and the CLI may also resync members and edit tags in Shopify.
+	agents: { actions: true },
 	// One wall string in the site's own words; the second is ignored (its original has no {name}).
 	text: { "This is for members. {signIn} to read on.": "Members only. {signIn} to keep reading.", "Sign out": "Leave, {name}" },
 	// Signed member events go to the fake store in the e2e test.
