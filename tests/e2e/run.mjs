@@ -127,6 +127,7 @@ try {
 	check("uncovered post is open to visitors", open.res.status === 200 && open.text.includes("starter post"));
 	const locked = await visitor.go("/posts/members-only");
 	check("members post is locked for visitors", locked.res.status === 200 && !locked.text.includes("MEMBER-BODY") && locked.text.includes('data-redeemid-reason="sign_in"'));
+	check("replacement text changes that one wall string, link kept", /Members only\. <a href="[^"]*login[^"]*">Sign in<\/a> to keep reading\./.test(locked.text) && !locked.text.includes("to read on"), (locked.text.match(/Members only[^]{0,200}/) ?? [""])[0]);
 	check("locked page shows the excerpt teaser", locked.text.includes("Open to every member level."));
 	check("badge names the levels and shows the lock", /class="redeemid-badge is-locked"[^>]*data-redeemid-level="member pro"/.test(locked.text) && locked.text.includes("Member or Pro"), (locked.text.match(/<span class="redeemid-badge[^]*?<\/span>\s*<\/span>|<span class="redeemid-badge[^>]*>[^<]*/) ?? [""])[0]);
 	const openBadge = await visitor.go("/posts/welcome");
@@ -205,6 +206,8 @@ try {
 	const membersPage = await adminPage("/");
 	check("Members page lists the signed-in member", membersPage.res.status === 200 && membersPage.text.includes(shop.customer.email), `${membersPage.res.status} ${membersPage.text.slice(0, 200)}`);
 	const statusPage = await adminPage("/status");
+	check("Status page lists the ignored replacement", statusPage.text.includes("1 in use, 1 ignored") && statusPage.text.includes("text_problems"));
+	check("an ignored replacement leaves the original", signIn.text.includes(">Sign out</button>") && !signIn.text.includes("Leave,"));
 	check("Status page reports sign-in ready", statusPage.text.includes("Sign-in is ready") && statusPage.text.includes("/_emdash/api/auth/redeemid/webhook"), statusPage.text.slice(0, 300));
 	const memberAdmin = await member.go("/_emdash/api/plugins/redeemid/admin", {
 		method: "POST",

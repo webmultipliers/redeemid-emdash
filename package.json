@@ -18,6 +18,7 @@
 		"./features": "./src/features.ts",
 		"./events": "./src/events.ts",
 		"./preferences": "./src/preferences.ts",
+		"./text": "./src/text.ts",
 		"./plugin": "./src/plugin.ts",
 		"./blocks": "./src/blocks/index.ts",
 		"./components/*": "./src/components/*",

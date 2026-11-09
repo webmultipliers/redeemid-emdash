@@ -20,6 +20,7 @@ import { readEntry, viewer, type AstroLike, type Terms } from "./access.js";
 import { PAYWALL_BLOCK, sections, splitAtPaywall } from "./blocks-names.js";
 import type { FileRule, RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
+import { text } from "./text.js";
 
 export const FILE_PATH = "/_emdash/api/media/file/";
 const SUBSCRIBER = 10;
@@ -171,14 +172,19 @@ export async function pathAccess(astro: AstroLike, config: RedeemIDConfig | null
 	return { protected: false };
 }
 
+function escapeHtml(s: string): string {
+	return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 /** The page a refused download gets. */
-export function refusal(reason: "sign_in" | "denied", signIn: string): Response {
+export function refusal(reason: "sign_in" | "denied", signIn: string, config: RedeemIDConfig | null = null): Response {
 	const status = reason === "sign_in" ? 401 : 403;
-	const text =
+	const t = (s: string) => escapeHtml(text(config, s));
+	const body =
 		reason === "sign_in"
-			? `<p>Sign in to download this file.</p><p><a href="${signIn}">Sign in</a></p>`
-			: `<p>Your membership doesn't include this file.</p>`;
-	return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>File not available</title></head><body><main>${text}</main></body></html>`, {
+			? `<p>${t("Sign in to download this file.")}</p><p><a href="${escapeHtml(signIn)}">${t("Sign in")}</a></p>`
+			: `<p>${t("Your membership doesn't include this file.")}</p>`;
+	return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>${t("File not available")}</title></head><body><main>${body}</main></body></html>`, {
 		status,
 		headers: { "content-type": "text/html; charset=utf-8", "cache-control": "private, no-store", "x-robots-tag": "noindex" },
 	});

@@ -11,6 +11,7 @@
 import { viewer } from "../access.js";
 import { preferencesConfigured, readPreferences, type PreferenceField } from "../preferences.js";
 import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
 
 interface Props {
 	title?: string;
@@ -19,8 +20,8 @@ interface Props {
 	label?: string;
 }
 
-const { title = "Your preferences", heading = "h2", label = "Save preferences" } = Astro.props;
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { title = text(config, "Your preferences"), heading = "h2", label = text(config, "Save preferences") } = Astro.props;
 const v = await viewer(Astro);
 const m = v.member;
 let fields: PreferenceField[] = [];
@@ -37,7 +38,7 @@ const here = Astro.url.pathname + Astro.url.search.replace(/[?&]redeemid_notice=
 const H = heading;
 const id = (key: string) => `redeemid-pref-${key.replace(/[^\w-]/g, "-")}`;
 const show = (f: PreferenceField) =>
-	f.value === null || (Array.isArray(f.value) && f.value.length === 0) ? "Not set" : Array.isArray(f.value) ? f.value.join(", ") : f.type === "boolean" ? (f.value ? "Yes" : "No") : String(f.value);
+	f.value === null || (Array.isArray(f.value) && f.value.length === 0) ? text(config, "Not set") : Array.isArray(f.value) ? f.value.join(", ") : f.type === "boolean" ? text(config, f.value ? "Yes" : "No") : String(f.value);
 const editable = fields.filter((f) => f.editable);
 ---
 
@@ -45,7 +46,7 @@ const editable = fields.filter((f) => f.editable);
 	<section class="redeemid-preferences">
 		<H class="redeemid-preferences__title">{title}</H>
 		{failed ? (
-			<p>Your preferences can't be loaded right now. Try again in a few minutes.</p>
+			<p>{text(config, "Your preferences can't be loaded right now. Try again in a few minutes.")}</p>
 		) : (
 			<form method="post" action="/_emdash/api/auth/redeemid/preferences">
 				<input type="hidden" name="return" value={here} />
@@ -74,7 +75,7 @@ const editable = fields.filter((f) => f.editable);
 								<label for={id(f.key)}>{f.name}</label>
 								{f.choices ? (
 									<select id={id(f.key)} name={`pref:${f.key}`}>
-										<option value="">Not set</option>
+										<option value="">{text(config, "Not set")}</option>
 										{f.choices.map((c) => <option value={c} selected={f.value === c}>{c}</option>)}
 									</select>
 								) : f.type === "multi_line_text_field" || f.type === "list.single_line_text_field" ? (
@@ -86,7 +87,7 @@ const editable = fields.filter((f) => f.editable);
 								) : (
 									<input id={id(f.key)} type="text" name={`pref:${f.key}`} maxlength={f.max ? Number(f.max) : undefined} value={typeof f.value === "string" ? f.value : ""} />
 								)}
-								{f.type === "list.single_line_text_field" && !f.choices && <small>One per line.</small>}
+								{f.type === "list.single_line_text_field" && !f.choices && <small>{text(config, "One per line.")}</small>}
 							</>
 						)}
 						{f.description && f.editable && <small class="redeemid-preferences__help">{f.description}</small>}

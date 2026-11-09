@@ -5,12 +5,15 @@
  */
 import { cartUrl } from "../access.js";
 import { readCart } from "../cart.js";
+import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
 
 interface Props {
 	label?: string;
 }
 
-const { label = "Cart" } = Astro.props;
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { label = text(config, "Cart") } = Astro.props;
 const ref = await readCart(Astro.session);
 const count = ref?.count ?? 0;
 const here = Astro.url.pathname + Astro.url.search;

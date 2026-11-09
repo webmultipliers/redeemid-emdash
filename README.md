@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.10, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.10, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -24,6 +24,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels; open a member to resync them or add and remove tags, which are written to Shopify), a bulk resync you start yourself, a Status page (secrets, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules), an Access test and a dashboard widget.
 - **Member preferences.** Members see and change customer fields you define in Shopify, such as topics or a newsletter choice, with `<Preferences>` or its block. Answers are saved on the Shopify customer, ready for Flow, segments and email; the site keeps no copy.
 - **Protected files.** Put uploads in a media folder named in `files`, and every download checks the reader's levels, features or the entries that use the file. Copied links are no use to anyone else.
+- **Replacement text.** Put any string members and visitors see in your own words, one string at a time, with `text`.
 - **Outbound events.** Signed JSON POSTs to a URL of yours when a member signs in, their levels change, or they use the meter, for a CRM, an email tool or your own code.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
@@ -188,6 +189,22 @@ Limits:
 - Only EmDash's file route is checked. Don't give the storage bucket a public URL of its own.
 - Image services that fetch the file without the reader's cookies, such as a CDN image resizer, get refused, so keep protected images out of resized `<Image>` output.
 - Moving a file out of the folder makes it public again.
+
+### Replacement text
+
+```ts
+text: {
+	"Sign in": "Log in",
+	"This is for members. {signIn} to read on.": "Members only. {signIn} to keep reading.",
+	"This is for {level} members.": "{level} members only.",
+},
+```
+
+Each key is a string's original English; its value is the new text. Only the strings you name change. There is no find-and-replace across strings, so replacing "Sign in" leaves "Sign in to download this file." alone: to change a word everywhere, replace each string that uses it. `STRINGS` in `@redeemid/emdash/text` lists every string, grouped by where it shows (account, badge, cart, wall, meter, member card, notices, plan, preferences, product, files).
+
+Some strings have placeholders such as `{level}` or `{signIn}` (a link), filled in when the text shows. A replacement may use its original's placeholders, in any order or not at all, but no others. Text is plain: HTML in a replacement shows as typed. A replacement that uses another placeholder, or names a string RedeemID doesn't show, is ignored, so the original shows, and the Status page lists it with the reason.
+
+Props win over `text`: a `label` or `title` you pass, or Notices `messages`, is used as given. Staff screens in the admin aren't covered.
 
 ### Events
 

@@ -12,6 +12,7 @@
 import { canRead, describe, entryRequirement, type Terms } from "../access.js";
 import { splitAtPaywall } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
 
 interface Props {
 	collection: string;
@@ -22,13 +23,13 @@ interface Props {
 	class?: string;
 }
 
-const { collection, terms, content, free = "Free", class: className } = Astro.props;
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { collection, terms, content, free = text(config, "Free"), class: className } = Astro.props;
 const split = splitAtPaywall(content);
 const required = split.paywall && split.levels.length
 	? [split.levels]
 	: await entryRequirement(config, collection, terms);
-const label = describe(required, config?.levels, free);
+const label = describe(required, config?.levels, free, text(config, "Signed in"));
 const locked = required !== null && !(await canRead(Astro, { collection, terms }, { required })).allowed;
 const slugs = required?.flat().join(" ") || (required ? "signed-in" : "free");
 ---
@@ -40,6 +41,6 @@ const slugs = required?.flat().join(" ") || (required ? "signed-in" : "free");
 	>
 		{locked && <span class="redeemid-badge__lock" aria-hidden="true">🔒&#xFE0E; </span>}
 		{label}
-		{locked && <span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap"> (locked)</span>}
+		{locked && <span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">{text(config, " (locked)")}</span>}
 	</span>
 )}

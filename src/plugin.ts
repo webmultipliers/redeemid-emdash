@@ -35,6 +35,7 @@ import { PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { adminConfigured } from "./admin-api.js";
 import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, memberDetail, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
+import { textProblems } from "./text.js";
 
 import {
 	COLLECTION_BLOCK,
@@ -376,6 +377,13 @@ async function lastDelivery(): Promise<string | null> {
 	return d ? `${d.topic} at ${d.receivedAt}` : null;
 }
 
+function textSummary(config: RedeemIDConfig): string {
+	const all = Object.keys(config.text ?? {}).length;
+	const ignored = textProblems(config).length;
+	if (!all) return "None";
+	return ignored ? `${all - ignored} in use, ${ignored} ignored` : `${all} in use`;
+}
+
 async function statusPage(config: RedeemIDConfig, request: Request) {
 	const c = await checks(config);
 	const origin = new URL(request.url).origin;
@@ -404,8 +412,22 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 					{ label: "Events", value: config.events?.url ? `${config.events.url}${env(ENV.eventsSecret) ? "" : " (REDEEMID_EVENTS_SECRET missing)"}` : "Off" },
 					{ label: "Storefront API access", value: c.storefront },
 					{ label: "Last webhook", value: delivery ?? "None received yet" },
+					{ label: "Replacement text", value: textSummary(config) },
 				],
 			},
+			...(textProblems(config).length
+				? [
+						{
+							type: "table",
+							page_action_id: "text_problems",
+							columns: [
+								{ key: "original", label: "Ignored replacement for" },
+								{ key: "problem", label: "Why" },
+							],
+							rows: textProblems(config),
+						},
+					]
+				: []),
 			{ type: "divider" },
 			{ type: "header", text: "Webhooks" },
 			...webhooks,

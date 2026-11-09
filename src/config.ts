@@ -127,6 +127,11 @@ export interface RedeemIDConfig {
 	preferences?: PreferenceConfig[];
 	/** Protected files, by media folder. See FileRule. */
 	files?: FileRule[];
+	/**
+	 * Replacement text, by each string's original English, e.g.
+	 * { "Sign in": "Log in" }. One string at a time; see text.ts for the list.
+	 */
+	text?: Record<string, string>;
 	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
 	join?: { href: string; label?: string };
 	/**

@@ -26,6 +26,7 @@ import { PortableText } from "emdash/ui";
 import { canRead, entryRequirement, readEntry, type Terms, type Verdict } from "../access.js";
 import { sections, splitAtPaywall, teaser } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
 import LockedPanel from "./LockedPanel.astro";
 
 interface Props {
@@ -69,14 +70,19 @@ async function parts(blocks: unknown[]) {
 const before = await parts(shown);
 const after = await parts(rest);
 const metered = verdict.reason === "metered" ? (verdict as Verdict) : null;
-const per = metered?.meter?.period === "week" ? "this week" : "this month";
+const week = metered?.meter?.period === "week";
+const left = metered?.meterLeft ?? 0;
+const meterText =
+	left === 0
+		? text(config, week ? "This is your last free read this week." : "This is your last free read this month.")
+		: left === 1
+			? text(config, week ? "You have 1 free read left this week." : "You have 1 free read left this month.")
+			: text(config, week ? "You have {count} free reads left this week." : "You have {count} free reads left this month.", { count: left });
 ---
 
 {metered && (
 	<p class="redeemid-meter" role="status" data-redeemid-left={metered.meterLeft}>
-		{metered.meterLeft === 0
-			? `This is your last free read ${per}.`
-			: `You have ${metered.meterLeft} free ${metered.meterLeft === 1 ? "read" : "reads"} left ${per}.`}
+		{meterText}
 	</p>
 )}
 {before.map((p) =>

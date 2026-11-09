@@ -4,6 +4,7 @@
  */
 import { siteConfig } from "../site-config.js";
 import { accountUrl, signInUrl, signOutUrl, viewer } from "../access.js";
+import { text } from "../text.js";
 
 const v = await viewer(Astro);
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
@@ -14,14 +15,14 @@ const names = (config?.levels ?? []).filter((l) => v.levels.includes(l.slug)).ma
 <div class="redeemid-account" data-redeemid-signed-in={v.signedIn ? "true" : "false"}>
 	{v.signedIn ? (
 		<>
-			<span class="redeemid-account__who">{v.member?.firstName ?? v.member?.email ?? "Signed in"}</span>
+			<span class="redeemid-account__who">{v.member?.firstName ?? v.member?.email ?? text(config, "Signed in")}</span>
 			{names.length > 0 && <span class="redeemid-account__levels">{names.join(", ")}</span>}
-			<a class="redeemid-account__link" href={accountUrl(here)}>Account</a>
+			<a class="redeemid-account__link" href={accountUrl(here)}>{text(config, "Account")}</a>
 			<form method="post" action={signOutUrl(here)}>
-				<button type="submit">Sign out</button>
+				<button type="submit">{text(config, "Sign out")}</button>
 			</form>
 		</>
 	) : (
-		<a href={signInUrl(here)}>{config?.label ?? "Sign in"}</a>
+		<a href={signInUrl(here)}>{config?.label ?? text(config, "Sign in")}</a>
 	)}
 </div>

@@ -11,6 +11,7 @@ import { cartUrl } from "../access.js";
 import { readCart, saveCart } from "../cart.js";
 import { siteConfig } from "../site-config.js";
 import { cartDetails, money, type CartDetails } from "../storefront.js";
+import { text } from "../text.js";
 
 interface Props {
 	/** Link for each line's product; `{handle}` is replaced. */
@@ -19,8 +20,8 @@ interface Props {
 	empty?: string;
 }
 
-const { productHref, empty = "Your cart is empty." } = Astro.props;
 const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const { productHref, empty = text(config, "Your cart is empty.") } = Astro.props;
 const ref = await readCart(Astro.session);
 let cart: CartDetails | null = null;
 let failed = false;
@@ -43,7 +44,7 @@ const code = cart?.discountCodes[0];
 
 <section class="redeemid-cartview" data-redeemid-cart-count={cart?.totalQuantity ?? 0}>
 	{failed ? (
-		<p>Your cart isn't available right now. Try again in a few minutes.</p>
+		<p>{text(config, "Your cart isn't available right now. Try again in a few minutes.")}</p>
 	) : !cart || cart.lines.length === 0 ? (
 		<p class="redeemid-cartview__empty">{empty}</p>
 	) : (
@@ -57,20 +58,20 @@ const code = cart?.discountCodes[0];
 								{href(l.productHandle) ? <a href={href(l.productHandle)}>{l.productTitle}</a> : l.productTitle}
 								{l.variantTitle && l.variantTitle !== "Default Title" && <span> · {l.variantTitle}</span>}
 							</p>
-							<p class="redeemid-cartview__price">{money(l.price)} each · {money(l.total)}</p>
+							<p class="redeemid-cartview__price">{text(config, "{price} each · {total}", { price: money(l.price), total: money(l.total) })}</p>
 							<form method="post" action={action} class="redeemid-cartview__quantity">
 								<input type="hidden" name="action" value="update" />
 								<input type="hidden" name="line" value={l.id} />
 								<input type="hidden" name="return" value={here} />
-								<label for={`q-${l.id}`}>Quantity</label>
+								<label for={`q-${l.id}`}>{text(config, "Quantity")}</label>
 								<input id={`q-${l.id}`} name="quantity" type="number" min="0" max="1000" value={l.quantity} inputmode="numeric" />
-								<button type="submit">Update</button>
+								<button type="submit">{text(config, "Update")}</button>
 							</form>
 							<form method="post" action={action}>
 								<input type="hidden" name="action" value="remove" />
 								<input type="hidden" name="line" value={l.id} />
 								<input type="hidden" name="return" value={here} />
-								<button type="submit" class="redeemid-cartview__remove">Remove<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap"> {l.productTitle}</span></button>
+								<button type="submit" class="redeemid-cartview__remove">{text(config, "Remove")}<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap"> {l.productTitle}</span></button>
 							</form>
 						</div>
 					</li>
@@ -79,19 +80,19 @@ const code = cart?.discountCodes[0];
 			<form method="post" action={action} class="redeemid-cartview__discount">
 				<input type="hidden" name="action" value="discount" />
 				<input type="hidden" name="return" value={here} />
-				<label for="redeemid-discount">Discount code</label>
+				<label for="redeemid-discount">{text(config, "Discount code")}</label>
 				<input id="redeemid-discount" name="code" type="text" value={code?.code ?? ""} autocomplete="off" />
-				<button type="submit">Apply</button>
-				{code && !code.applicable && <p class="redeemid-cartview__code-note">{code.code} doesn't apply to this cart.</p>}
+				<button type="submit">{text(config, "Apply")}</button>
+				{code && !code.applicable && <p class="redeemid-cartview__code-note">{text(config, "{code} doesn't apply to this cart.", { code: code.code })}</p>}
 			</form>
 			<dl class="redeemid-cartview__totals">
-				<dt>Subtotal</dt>
+				<dt>{text(config, "Subtotal")}</dt>
 				<dd>{money(cart.subtotal)}</dd>
-				<dt>Total</dt>
+				<dt>{text(config, "Total")}</dt>
 				<dd>{money(cart.total)}</dd>
 			</dl>
-			<p class="redeemid-cartview__note">Taxes and shipping are worked out at checkout.</p>
-			<a class="redeemid-cartview__checkout" href={cartUrl(here)}>Checkout</a>
+			<p class="redeemid-cartview__note">{text(config, "Taxes and shipping are worked out at checkout.")}</p>
+			<a class="redeemid-cartview__checkout" href={cartUrl(here)}>{text(config, "Checkout")}</a>
 		</>
 	)}
 </section>

@@ -2,8 +2,11 @@
 /**
  * The message for a `?redeemid_notice=` code that sign-in, Buy, Cart and
  * Account send readers back with. Renders nothing without one. Pass
- * `messages` to reword any of them.
+ * `messages` to reword any of them (config `text` does too, for every page).
  */
+import { siteConfig } from "../site-config.js";
+import { text as replace } from "../text.js";
+
 interface Props {
 	messages?: Record<string, string>;
 }
@@ -34,7 +37,9 @@ const DEFAULTS: Record<string, string> = {
 
 const { messages = {} } = Astro.props;
 const code = Astro.url.searchParams.get("redeemid_notice") ?? "";
-const text = code ? (messages[code] ?? DEFAULTS[code]) : undefined;
+const config = siteConfig((Astro.locals as { emdash?: { config?: unknown } }).emdash?.config);
+const fallback = DEFAULTS[code];
+const text = code ? (messages[code] ?? (fallback ? replace(config, fallback) : undefined)) : undefined;
 ---
 
 {text && (

@@ -59,10 +59,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		} catch (e) {
 			// Fail closed: a file we can't check isn't served.
 			console.error("[redeemid] file check failed:", (e as Error).message);
-			return refusal("denied", signInUrl(url.pathname));
+			return refusal("denied", signInUrl(url.pathname), config);
 		}
 		if (verdict.protected) {
-			if (!verdict.allowed) return refusal(verdict.reason, signInUrl(url.pathname));
+			if (!verdict.allowed) return refusal(verdict.reason, signInUrl(url.pathname), config);
 			const res = await next();
 			const out = new Response(res.body, res);
 			out.headers.set("cache-control", "private, no-store");
