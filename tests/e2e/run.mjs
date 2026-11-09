@@ -146,6 +146,11 @@ try {
 	check("Notices shows the notice for its code", notice.text.includes('data-redeemid-notice="cart_empty"') && notice.text.includes("Your cart is empty."));
 	const openBreak = await visitor.go("/posts/open-break");
 	check("a break with no levels changes nothing when no rule covers the post", openBreak.text.includes("OB-INTRO") && openBreak.text.includes("OB-REST"));
+	const ld = (t) => [...t.matchAll(/<script type="application\/ld\+json">([^<]*)<\/script>/g)].map((m) => JSON.parse(m[1])).find((d) => "isAccessibleForFree" in d);
+	const lockedLd = ld(locked.text);
+	check("a locked post carries the paywall markup pointing at the wall", lockedLd?.isAccessibleForFree === false && lockedLd?.hasPart?.cssSelector === ".redeemid-locked" && typeof lockedLd?.headline === "string" && lockedLd.url.endsWith("/posts/members-only"), JSON.stringify(lockedLd));
+	check("a Members only part is marked too", ld(section.text)?.isAccessibleForFree === false);
+	check("an open post has no paywall markup", !ld(open.text) && !ld(openBreak.text));
 	check("visitor page stays cacheable", !/private/.test(locked.res.headers.get("cache-control") ?? ""), locked.res.headers.get("cache-control"));
 
 	// Member signs in through the store and comes back to the post.
@@ -154,6 +159,8 @@ try {
 	check("sign-in returns to the post", signIn.url.pathname === "/posts/members-only", signIn.url.href);
 	check("member reads the members post", signIn.text.includes("MEMBER-BODY"), signIn.text.slice(0, 300));
 	check("member page is private", /private/.test(signIn.res.headers.get("cache-control") ?? ""), signIn.res.headers.get("cache-control"));
+	const memberOpen = await member.go("/posts/welcome");
+	check("a member's open page is private too", memberOpen.res.headers.get("cache-control") === "private, no-store", memberOpen.res.headers.get("cache-control"));
 	check("token request used Basic auth and PKCE", shop.tokenRequests.at(-1)?.form.code_verifier?.length >= 43);
 	check("token request sent the site origin", shop.tokenRequests.at(-1)?.origin === SITE);
 	check("account box shows the member level", signIn.text.includes("redeemid-account__levels") && signIn.text.includes("Member"));
@@ -224,7 +231,7 @@ try {
 			body: JSON.stringify(input),
 		});
 	const cid = String(shop.customer.id);
-	check("Members page has an Open button per member", membersPage.text.includes('"action_id":"member_open"') && membersPage.text.includes("Resync 50 from Shopify"));
+	check("Members page has an Open button per member", membersPage.text.includes('"action_id":"member_open"') && membersPage.text.includes("Resync 25 from Shopify"));
 	const detail = await adminAct({ type: "block_action", action_id: "member_open", value: cid, page: "/" });
 	check("member detail shows levels, tags and the tag form", detail.text.includes("Shopify customer") && detail.text.includes("member_tag_add") && detail.text.includes("Remove in Shopify"), detail.text.slice(0, 300));
 	shop.customer.tags = ["member", "supporter"];
@@ -394,6 +401,8 @@ try {
 	check("a variant from another product isn't added", foreign.url.searchParams.get("redeemid_notice") === "plan_unavailable");
 	let cartPage = await shopper.go("/cart");
 	check("cart page lists the line, its price and the subtotal", cartPage.text.includes("Harbor tote") && cartPage.text.includes("$20.00 each") && cartPage.text.includes("$40.00") && /private/.test(cartPage.res.headers.get("cache-control") ?? ""));
+	const cartHolder = await shopper.go("/posts/welcome");
+	check("any page is private while the visitor has a cart", cartHolder.res.headers.get("cache-control") === "private, no-store", cartHolder.res.headers.get("cache-control"));
 	const lineId = (cartPage.text.match(/data-redeemid-line="([^"]+)"/) ?? [])[1];
 	await edit({ action: "update", line: lineId, quantity: "3", return: "/cart" });
 	cartPage = await shopper.go("/cart");
@@ -470,6 +479,8 @@ try {
 	const refused = await intruder.go("/_emdash/api/auth/redeemid/login?return=/posts/pro-only");
 	check("staff email is refused", refused.url.searchParams.get("redeemid_notice") === "staff_account", refused.url.href);
 	check("a refused sign-in ends the store session and comes back to the page", (shop.logouts ?? 0) === logoutsBefore + 1 && refused.url.pathname === "/posts/pro-only", refused.url.href);
+	const home = await intruder.go("/");
+	check("the refusal notice shows once", home.url.pathname === "/" && !home.url.searchParams.has("redeemid_notice"), home.url.href);
 	check("refused customer stays signed out", !refused.text.includes("PRO-BODY"));
 
 	// Sign out ends the site session and the store session.

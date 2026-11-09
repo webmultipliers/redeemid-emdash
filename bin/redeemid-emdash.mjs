@@ -28,7 +28,7 @@ Commands:
   health                  What's set up (never the values)
   changes --since <date>  Who joined or left a level [--level <slug>]
   resync <customer id>    Read one member from Shopify again *
-  resync-batch            Read the 50 members synced longest ago *
+  resync-batch            Read the 25 members synced longest ago *
   tags <customer id>      Edit tags in Shopify: --add a,b --remove c *
 
   * only when the site sets agents: { actions: true }

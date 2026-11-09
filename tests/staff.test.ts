@@ -8,7 +8,7 @@ import { customers, editTags, registerWebhooks, resetAdminToken, resync, WEBHOOK
 import type { RedeemIDConfig } from "../src/config.js";
 import { emit, levelChange } from "../src/events.js";
 import { featuresFor } from "../src/features.js";
-import { accessTest, parseTerms } from "../src/staff.js";
+import { accessTest, BULK_BATCH, bulkResync, parseTerms } from "../src/staff.js";
 import { emptyMember } from "../src/storage.js";
 import { memoryStores } from "./memory-store.js";
 
@@ -136,6 +136,33 @@ describe("Admin API", () => {
 		const { updated, missing } = await resync(config, store.stores, ["7", "9"], "resync", fetcher);
 		expect(missing).toEqual(["9"]);
 		expect(updated[0]).toMatchObject({ email: "mia@example.test", tags: ["Pro", "member"], status: "disabled", source: "resync" });
+	});
+
+	it("bulk resync stays inside the Workers Free query budget", async () => {
+		const many = Array.from({ length: 60 }, (_, i) => ({ ...customer, id: `gid://shopify/Customer/${100 + i}` }));
+		const { fetcher } = fakeFetch((url, body) => {
+			if (url.endsWith("/admin/oauth/access_token")) return { access_token: "tok", scope: "read_customers", expires_in: 86399 };
+			const { variables } = JSON.parse(body);
+			return { data: { nodes: variables.ids.map((id: string) => many.find((c) => c.id === id) ?? null) } };
+		});
+		const store = memoryStores();
+		for (const c of many) await store.stores.members.put(c.id.split("/").pop()!, emptyMember(c.id.split("/").pop()!));
+		let queries = 0;
+		const m = store.stores.members as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+		for (const k of ["get", "getMany", "put", "query"]) {
+			const f = m[k]!.bind(m);
+			m[k] = (...a: unknown[]) => (queries++, f(...a));
+		}
+		vi.stubGlobal("fetch", fetcher);
+		try {
+			const r = await bulkResync(config, store.stores);
+			expect(r.done).toBe(BULK_BATCH);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+		// A query for the batch, one read for all of it, one write each; EmDash's own reads need the rest.
+		expect(queries).toBe(BULK_BATCH + 2);
+		expect(queries).toBeLessThanOrEqual(35);
 	});
 
 	it("writes tags with tagsAdd on the customer gid", async () => {

@@ -1,16 +1,28 @@
 /**
- * Keeps members out of EmDash's own APIs and admin.
+ * Keeps members out of EmDash's own APIs and admin, and keeps their pages out
+ * of shared caches.
  *
  * EmDash's Subscriber role may read every published entry through
  * /_emdash/api/content. With RedeemID, access comes from Shopify tags only, so
  * a member with one level could otherwise read another level's posts there.
  * This middleware runs after EmDash's auth and refuses Subscribers on every
  * /_emdash path except the few public pages need.
+ *
+ * Site pages for a signed-in visitor, or a visitor with a cart, are private:
+ * `Cache-Control: private, no-store` and out of Astro's route cache. The route
+ * cache ignores Cache-Control and takes its options from `cache.set()`, which
+ * EmDash templates call on every page with the content's cache hint, and it
+ * serves a stored page to the next visitor without running any code. EmDash
+ * opts editors out, not Subscribers, so without this a member's page (locked
+ * text included) could be stored and served to anyone. A later
+ * `Astro.cache.set(hint)` turns caching back on, and the route cache reads its
+ * options only after the page has rendered, so the opt-out runs after `next()`.
  */
 
 import { defineMiddleware } from "astro:middleware";
 
 import { signInUrl } from "./access.js";
+import { readCart } from "./cart.js";
 import { keysFromPath, pathAccess, refusal } from "./files.js";
 import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
 import { siteConfig } from "./site-config.js";
@@ -46,6 +58,20 @@ async function withUser(context: { locals: unknown; session?: { get(k: string): 
 	return { ...context, locals: { ...locals, user: { id: user.id, role: user.role, disabled: user.disabled } } };
 }
 
+/** Keep one visitor's response out of every shared cache, the route cache included. */
+export function keepPrivate(context: { cache?: { set(options: false): void } }, res: Response): Response {
+	context.cache?.set(false);
+	try {
+		res.headers.set("cache-control", "private, no-store");
+		return res;
+	} catch {
+		// Immutable headers (a redirect made with Response.redirect).
+		const out = new Response(res.body, res);
+		out.headers.set("cache-control", "private, no-store");
+		return out;
+	}
+}
+
 export const onRequest = defineMiddleware(async (context, next) => {
 	const { locals, url } = context;
 	const user = (locals as { user?: { role?: number } | null }).user;
@@ -77,10 +103,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
 	if (url.pathname === "/" && !url.searchParams.has("redeemid_notice")) {
 		const after = readAfterLogout(context.cookies.get(AFTER_LOGOUT_COOKIE)?.value);
 		if (after) {
-			context.cookies.delete(AFTER_LOGOUT_COOKIE, { path: "/" });
 			const sep = after.returnTo.includes("?") ? "&" : "?";
-			return context.redirect(`${after.returnTo}${sep}redeemid_notice=${encodeURIComponent(after.code)}`);
+			const location = `${after.returnTo}${sep}redeemid_notice=${encodeURIComponent(after.code)}`;
+			return new Response(null, { status: 302, headers: { location, "cache-control": "private, no-store", "set-cookie": `${AFTER_LOGOUT_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax` } });
 		}
+	}
+
+	if (!url.pathname.startsWith("/_emdash")) {
+		const own = Boolean(user) || Boolean(await readCart(context.session as never).catch(() => null));
+		return own ? keepPrivate(context, await next()) : next();
 	}
 
 	if (!user || user.role !== SUBSCRIBER) return next();

@@ -279,7 +279,7 @@ function agentTools(config: RedeemIDConfig) {
 	};
 	if (config.agents?.actions) {
 		tools.resync_member = { route: "resync-member", input: CUSTOMER, description: "Read one member from Shopify now and update the site. Changes nothing in Shopify." };
-		tools.resync_batch = { route: "resync-batch", input: EMPTY, description: "Read the 50 members synced longest ago from Shopify. Run again for the next 50." };
+		tools.resync_batch = { route: "resync-batch", input: EMPTY, description: `Read the ${BULK_BATCH} members synced longest ago from Shopify. Run again for the next ${BULK_BATCH}.` };
 		tools.edit_member_tags = { route: "edit-member-tags", input: TAGS, destructive: true, description: "Add or remove tags on a member's Shopify customer, then read back what Shopify holds. Access follows from Shopify." };
 	}
 	return { tools };

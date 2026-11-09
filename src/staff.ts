@@ -13,7 +13,12 @@ import { recentRequests } from "./privacy.js";
 import { cleanTags, numericId, type MemberRecord, type Stores } from "./storage.js";
 
 /** Members resynced per click; well inside Shopify's query cost limits. */
-export const BULK_BATCH = 50;
+/**
+ * Members per bulk resync click. Each one costs a database write, and on the
+ * Workers Free plan one request may make only 50 database queries (EmDash's
+ * own session and settings reads included), so a batch has to leave room.
+ */
+export const BULK_BATCH = 25;
 
 type Blocks = { blocks: unknown[]; toast?: { message: string; type: "success" | "error" | "info" } };
 
