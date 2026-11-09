@@ -124,9 +124,12 @@ export async function customers(config: RedeemIDConfig, ids: string[], fetcher: 
  */
 export async function resync(config: RedeemIDConfig, s: Stores, ids: string[], source = "resync", fetcher: typeof fetch = fetch): Promise<{ updated: MemberRecord[]; missing: string[] }> {
 	const found = await customers(config, ids, fetcher);
+	// One read for the whole batch: on Workers Free one request may make only
+	// 50 database queries, and each write below is one.
+	const known = await s.members.getMany(found.map((c) => c.customerId));
 	const updated: MemberRecord[] = [];
 	for (const c of found) {
-		const m = (await s.members.get(c.customerId)) ?? emptyMember(c.customerId);
+		const m = known.get(c.customerId) ?? emptyMember(c.customerId);
 		m.email = c.email ?? m.email;
 		m.firstName = c.firstName ?? m.firstName;
 		m.lastName = c.lastName ?? m.lastName;

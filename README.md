@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.12, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.14, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -241,7 +241,7 @@ With `agents: { actions: true }` in the config, three actions are offered too:
 | MCP tool | Command | What it does |
 | --- | --- | --- |
 | `resync_member` | `resync <customer id>` | Reads one member from Shopify and updates the site. Changes nothing in Shopify. |
-| `resync_batch` | `resync-batch` | Reads the 50 members synced longest ago. |
+| `resync_batch` | `resync-batch` | Reads the 25 members synced longest ago. |
 | `edit_member_tags` | `tags <customer id> --add a,b --remove c` | Adds or removes tags on the Shopify customer, then reads back what Shopify holds. It's marked destructive for agents. |
 
 **Agents.** EmDash's MCP server is at `/_emdash/api/mcp`, on EmDash versions with plugin MCP tools. RedeemID's tools stay off until an administrator turns them on for RedeemID under **Plugins**. Turning them on approves the list as it stands, and a release that changes the list needs approving again. The agent uses an EmDash API token with the `mcp:tools` or `mcp:tools:redeemid` scope, made by an administrator. Tool names carry the plugin's prefix, for example `redeemid__explain_access`.
@@ -295,7 +295,7 @@ No event carries an email address or a name: match people by the Shopify `custom
 With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set (it also runs member preferences), RedeemID gets an Admin API token for the webhook app with the client credentials grant (the app must belong to the same Shopify organization as the store, as Dev Dashboard apps do) and needs the `read_customers` and `write_customers` scopes. Then, in the admin:
 
 - **Member detail.** Open a member from the Members page to see their levels, tags and features, resync them from Shopify, or add and remove tags. Tag edits are made in Shopify, then read back; nothing is granted on the EmDash side.
-- **Bulk resync.** Reads the 50 members synced longest ago from Shopify in one request. Run it again for the next 50. It never runs on its own.
+- **Bulk resync.** Reads the 25 members synced longest ago from Shopify in one request, few enough for the Workers Free limit of 50 database queries a request. Run it again for the next 25. It never runs on its own.
 - **Webhooks.** The Status page lists the store's subscriptions to this site and registers any that are missing (`customers/redact` stays in the app's own settings).
 - **Recent deliveries.** The last webhooks the site took, with their topics and times.
 - **Access test.** Enter a collection, terms and a reader's tags to see what the entry needs and whether that reader gets in.
@@ -359,6 +359,12 @@ import Plan from "@redeemid/emdash/components/Plan.astro";
 	<p>Shown if the product can't be loaded.</p>
 </Plan>
 ```
+
+### Caching
+
+`redeemidGuard()` keeps every site page private for a signed-in visitor or a visitor with a cart: `Cache-Control: private, no-store`, and out of Astro's route cache (it calls `cache.set(false)` after the page has set its own cache hint). Visitors with neither get the same page, so their pages stay cacheable.
+
+A route cache keys pages by URL alone and serves a stored page without running any code. So if the site turns on Astro's route cache, don't cache the pages that render `<Content>` or `<Gate>` for locked entries: a member would get the visitor's stored copy, wall included. Call `Astro.cache.set(hint)` only on pages whose entries no rule covers.
 
 ### Shop
 
