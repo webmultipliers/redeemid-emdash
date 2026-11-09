@@ -43,6 +43,7 @@ import { AgentError, explainAccess, getMember, getRules, levelChanges, listLevel
 import {
 	COLLECTION_BLOCK,
 	CONTRIBUTION_BLOCK,
+	ITEM_BLOCK,
 	MEMBERS_BLOCK,
 	MEMBERS_END_BLOCK,
 	PAYWALL_BLOCK,
@@ -51,7 +52,7 @@ import {
 	PRODUCT_BLOCK,
 } from "./blocks-names.js";
 
-export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK };
+export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, ITEM_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK };
 
 function blocks(config: RedeemIDConfig) {
 	const levelOptions = [
@@ -93,6 +94,16 @@ function blocks(config: RedeemIDConfig) {
 			icon: "users",
 			description: "Ends the members-only part; everyone reads on from here",
 			fields: [],
+		},
+		{
+			type: ITEM_BLOCK,
+			label: "Sold on its own",
+			icon: "tag",
+			description: "Buyers of this entry read all of it, whatever its levels say",
+			fields: [
+				{ type: "text_input" as const, action_id: "tag", label: "Shopify customer tag buyers get", placeholder: "item-big-story" },
+				{ type: "text_input" as const, action_id: "product", label: "Shopify product that sells it (handle or link)", placeholder: "the-big-story" },
+			],
 		},
 		{
 			type: PLAN_BLOCK,

@@ -8,6 +8,32 @@ export const PREFERENCES_BLOCK = "redeemid-preferences";
 /** Starts a members-only part of the body; it runs to the next end block. */
 export const MEMBERS_BLOCK = "redeemid-members";
 export const MEMBERS_END_BLOCK = "redeemid-members-end";
+/** Sells the entry on its own: readers holding its tag read all of it. */
+export const ITEM_BLOCK = "redeemid-item";
+
+export interface SoldItem {
+	/** The Shopify customer tag buyers get, lowercased. */
+	tag: string;
+	/** The Shopify product handle that sells it, or null. */
+	product: string | null;
+}
+
+/** The entry's "Sold on its own" block, if it has one with a tag. */
+export function soldItem(value: unknown): SoldItem | null {
+	const blocks = Array.isArray(value) ? value : [];
+	const b = blocks.find((x) => (x as { _type?: unknown })?._type === ITEM_BLOCK) as { tag?: unknown; product?: unknown } | undefined;
+	const tag = typeof b?.tag === "string" ? b.tag.trim().toLowerCase() : "";
+	if (!tag) return null;
+	const raw = typeof b?.product === "string" ? b.product.trim() : "";
+	// A handle, or a product link: /products/<handle>.
+	const handle = (/\/products\/([a-z0-9][a-z0-9-]*)/i.exec(raw)?.[1] ?? raw).toLowerCase();
+	return { tag, product: /^[a-z0-9][a-z0-9-]*$/.test(handle) ? handle : null };
+}
+
+/** Does someone with these tags hold the item? */
+export function holdsItem(item: SoldItem | null, tags: string[] | undefined): boolean {
+	return Boolean(item && tags?.some((t) => t.toLowerCase() === item.tag));
+}
 
 type Node = { _type?: unknown; levels?: unknown };
 

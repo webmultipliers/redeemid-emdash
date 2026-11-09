@@ -540,6 +540,21 @@ try {
 	const memberCall = await reader.go("/_emdash/api/plugins/redeemid/list-levels", { method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE }, body: "{}" });
 	check("members can't call the staff routes", memberCall.res.status === 401 || memberCall.res.status === 403, String(memberCall.res.status));
 
+	// Sold on its own: a Pro post its buyers read whatever their level.
+	const singleVisitor = await new Browser().go("/posts/single-story");
+	check("a post sold on its own stays locked for visitors", !singleVisitor.text.includes("SINGLE-BODY") && singleVisitor.text.includes("Buy just this") && singleVisitor.text.includes("$3.00"), singleVisitor.text.slice(0, 200));
+	shop.customer = { id: 3003, email: "single@example.com", firstName: "Sam", lastName: "Single", tags: ["member"] };
+	const buyer = new Browser();
+	await buyer.go("/_emdash/api/auth/redeemid/login?return=/posts/single-story");
+	const notYet = await buyer.go("/posts/single-story");
+	check("a member without the item is offered Buy just this beside the upgrade", !notYet.text.includes("SINGLE-BODY") && notYet.text.includes('data-redeemid-reason="upgrade"') && notYet.text.includes('name="plan" value="single-story"'), notYet.text.slice(0, 200));
+	await webhook("customer.tags_added", { customerId: "gid://shopify/Customer/3003", tags: ["item-single-story"] });
+	const itemOpen = await buyer.go("/posts/single-story");
+	check("the item's tag opens the whole post", itemOpen.text.includes("SINGLE-BODY") && !itemOpen.text.includes("Buy just this"), itemOpen.text.slice(0, 200));
+	const explainedItem = await cli("access", "posts", "--id", "single-story", "--customer", "3003");
+	check("CLI explains the item", explainedItem.code === 0 && JSON.parse(explainedItem.stdout).soldOnItsOwn?.held === true && JSON.parse(explainedItem.stdout).canRead === true, explainedItem.stderr || explainedItem.stdout.slice(0, 300));
+	shop.customer = original;
+
 	const mcp = async (method, params) => {
 		const res = await fetch(`${SITE}/_emdash/api/mcp`, {
 			method: "POST",

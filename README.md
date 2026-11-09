@@ -17,6 +17,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Account.** Members get an Account link to their Shopify customer account (orders, profile, addresses) and Sign out, which also ends the Shopify session.
 - **Paywall break block.** Editors write one body and drop a "Paywall break" block where members-only content starts, picking which levels may read on, or leaving it to the entry's rule. `<Content>` renders the body and leaves the rest off the page for everyone else.
 - **Members only block.** For a members part in the middle of a body: "Members only" (pick the levels) and "Members only: end". Everyone else sees the wall in its place and reads on after it.
+- **Sold on its own block.** Sell one entry by itself: buyers get a Shopify tag that opens the whole entry whatever its levels say, and locked readers see "Buy just this" with the price.
 - **The wall.** Readers kept out see why and what to do next: sign in, or join, with each level's own wall text. `<Notices>` shows the messages sign-in, Buy, Cart and Account send readers back with.
 - **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
 - **Shop.** `<Product>`, `<Collection>` and `<CartView>` (with the Product and Collection blocks) give the site product pages, collection grids and a cart page with quantities and discount codes. `<Contribution>` (and its block) takes pay-what-you-want amounts. Carts note the page each sale started on.
@@ -113,6 +114,16 @@ Each rule names a collection and the levels, any of which may read. An empty `le
 | `{ collection: "posts", taxonomy: "category", term: "exclusive", levels: ["pro"], meter: false }` | The meter never opens these entries |
 
 Term rules beat the collection's rule, which beats the site default. When several term rules cover one entry (a story in Investigations, Gold, and Culture, Silver), readers must pass every one of them, so only Gold + Silver members read it. Set `combine: "any"` to let one of them be enough.
+
+### Selling one entry on its own
+
+Add the **Sold on its own** block anywhere in an entry's body. Give it the Shopify customer tag buyers get, such as `item-big-story`, and the Shopify product that sells it (its handle, or a link to it). Then:
+
+- A reader whose customer holds that tag reads the whole entry: its rule, Paywall break, Members only parts and drip don't apply, and the meter isn't used.
+- Locked readers see **Buy just this** on the wall, with the product's price from Shopify, beside the level's offer. It starts checkout for that product.
+- `<AccessBadge>` drops the lock for buyers, and protected files used by the entry reach them too.
+
+Shopify adds the tag when the order is paid, usually with a Flow workflow (Order paid → the line item is that product → add the customer tag). The site never grants it, so a refund workflow that removes the tag takes the entry away again. A tag on an entry that's open to everyone changes nothing.
 
 ### Meter and drip
 

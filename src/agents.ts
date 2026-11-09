@@ -14,6 +14,7 @@ import { describe as describeRequirement, dripDays, levelsFor, membership, passe
 import { ENV, env, storeDomain, type RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
 import { bodyClauses } from "./files.js";
+import { holdsItem, soldItem, type SoldItem } from "./blocks-names.js";
 import { cleanTags, numericId, type MemberRecord, type Stores } from "./storage.js";
 import { textProblems } from "./text.js";
 
@@ -41,6 +42,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 	let terms: Terms = input.terms ?? {};
 	let parts: string[][] = [];
 	let entry: { id: string; title: string | null } | null = null;
+	let item: SoldItem | null = null;
 	if (input.id) {
 		const { getEmDashEntry } = await import("emdash");
 		const result = (await getEmDashEntry(collection, input.id)) as { entry?: { id?: string; data?: Record<string, unknown> } | null } | null;
@@ -49,6 +51,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 		terms = (data.terms as Terms | undefined) ?? {};
 		const body = Object.values(data).find((v) => Array.isArray(v) && v.some((b) => typeof (b as { _type?: unknown })?._type === "string" && String((b as { _type: string })._type).startsWith("redeemid-")));
 		parts = bodyClauses(body);
+		item = soldItem(body);
 		entry = { id: String(result?.entry?.id ?? input.id), title: typeof data.title === "string" ? data.title : null };
 	}
 
@@ -65,11 +68,12 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 	const held = disabled ? [] : levelsFor(tags, levels);
 	const tree = await termTree(config.rules, collection, terms);
 	const required: Requirement = requirement(config.rules, collection, terms, { combine: config.combine, tree });
-	const canReadRule = required === null || (signedIn && !disabled && passes(held, required));
+	const owned = !disabled && holdsItem(item, tags);
+	const canReadRule = owned || required === null || (signedIn && !disabled && passes(held, required));
 	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
 	const partResults = parts.map((clause) => ({
 		needs: clause.map(name),
-		canRead: signedIn && !disabled && (clause.includes("signed-in") || clause.some((l) => held.includes(l))),
+		canRead: owned || (signedIn && !disabled && (clause.includes("signed-in") || clause.some((l) => held.includes(l)))),
 	}));
 	const missing = required?.find((clause) => clause.length > 0 && !passes(held, [clause]));
 	return {
@@ -86,7 +90,8 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 		canRead: canReadRule,
 		reason: canReadRule ? "allowed" : !signedIn ? "sign_in" : disabled ? "disabled" : "upgrade",
 		offered: !canReadRule && missing ? name(missing[0] as string) : null,
-		dripDays: dripDays(config.rules, collection, terms, tree),
+		dripDays: owned ? 0 : dripDays(config.rules, collection, terms, tree),
+		soldOnItsOwn: item ? { tag: item.tag, product: item.product, held: owned } : null,
 		parts: partResults,
 		note: "Drip and the meter depend on the member's dates and use, so they can still change what the page shows.",
 	};

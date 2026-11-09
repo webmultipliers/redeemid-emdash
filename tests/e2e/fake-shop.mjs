@@ -43,6 +43,7 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				["gid://shopify/ProductVariant/502", "Sand", 22, false],
 			]),
 			support: product("support", "Support the newsroom", [["gid://shopify/ProductVariant/601", "Default Title", 1, true]]),
+			"single-story": product("single-story", "Single story", [["gid://shopify/ProductVariant/701", "Default Title", 3, true]]),
 		},
 		/** Admin API: token requests, webhook subscriptions, tag edits, and events RedeemID sent. */
 		adminTokens: 0,

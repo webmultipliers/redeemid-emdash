@@ -9,6 +9,8 @@
  * Anything in the default slot is shown above the built-in text.
  */
 import { passes, signInUrl, type Reason } from "../access.js";
+import type { SoldItem } from "../blocks-names.js";
+import { plan as loadPlan } from "../storefront.js";
 import { siteConfig } from "../site-config.js";
 import { text, textParts } from "../text.js";
 
@@ -23,9 +25,11 @@ interface Props {
 	/** Free reads left when a meter ran (Verdict.meterLeft); 0 shows the meter-used text. */
 	meterLeft?: number;
 	meterPeriod?: "month" | "week";
+	/** The entry's "Sold on its own" block: offers "Buy just this". */
+	item?: SoldItem | null;
 }
 
-const { reason, required = [], held = [], opensAt, meterLeft, meterPeriod } = Astro.props;
+const { reason, required = [], held = [], opensAt, meterLeft, meterPeriod, item } = Astro.props;
 const opens = opensAt
 	? new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" }).format(opensAt)
 	: null;
@@ -35,6 +39,18 @@ const level = missing ? config?.levels?.find((l) => l.slug === missing[0]) : und
 const joinHref = level?.joinUrl ?? config?.join?.href;
 const joinLabel = config?.join?.label ?? text(config, "Become a member");
 const week = meterPeriod === "week";
+// "Buy just this": the item's product and price, read from Shopify.
+let single: { handle: string; price: string } | null = null;
+if (item?.product && config && (reason === "sign_in" || reason === "upgrade" || reason === "drip")) {
+	try {
+		const p = await loadPlan(config, item.product);
+		if (p?.availableForSale && p.price) {
+			single = { handle: p.handle, price: new Intl.NumberFormat("en-US", { style: "currency", currency: p.price.currencyCode }).format(Number(p.price.amount)) };
+		}
+	} catch {
+		single = null;
+	}
+}
 const here = Astro.url.pathname + Astro.url.search;
 ---
 
@@ -60,6 +76,14 @@ const here = Astro.url.pathname + Astro.url.search;
 			{level ? text(config, "This is for {level} members.", { level: level.name }) : text(config, "Your membership doesn't include this yet.")}
 			{joinHref && <> <a href={joinHref}>{joinLabel}</a></>}
 		</p>
+	)}
+	{single && (
+		<form class="redeemid-locked__single" method="post" action="/_emdash/api/auth/redeemid/buy" data-redeemid-item={item?.tag}>
+			<input type="hidden" name="plan" value={single.handle} />
+			<input type="hidden" name="return" value={here} />
+			<p>{text(config, "Or buy just this for {price}.", { price: single.price })}</p>
+			<button type="submit">{text(config, "Buy just this")}</button>
+		</form>
 	)}
 	{reason === "disabled" && <p>{text(config, "Your account is turned off. Contact the store for help.")}</p>}
 	{reason === "unconfigured" && <p>{text(config, "This is for members.")}</p>}

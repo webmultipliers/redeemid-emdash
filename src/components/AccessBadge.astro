@@ -9,8 +9,8 @@
  * carries `data-redeemid-level` (the level slugs) for styling, and
  * `is-locked` with a lock for readers who can't read the members part.
  */
-import { canRead, describe, entryRequirement, type Terms } from "../access.js";
-import { splitAtPaywall } from "../blocks-names.js";
+import { canRead, describe, entryRequirement, viewer, type Terms } from "../access.js";
+import { holdsItem, soldItem, splitAtPaywall } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 import { text } from "../text.js";
 
@@ -30,7 +30,10 @@ const required = split.paywall && split.levels.length
 	? [split.levels]
 	: await entryRequirement(config, collection, terms);
 const label = describe(required, config?.levels, free, text(config, "Signed in"));
-const locked = required !== null && !(await canRead(Astro, { collection, terms }, { required })).allowed;
+const item = soldItem(content);
+const owner = item ? (await viewer(Astro)).member : null;
+const owned = Boolean(owner && owner.status !== "disabled" && holdsItem(item, owner.tags));
+const locked = required !== null && !owned && !(await canRead(Astro, { collection, terms }, { required })).allowed;
 const slugs = required?.flat().join(" ") || (required ? "signed-in" : "free");
 ---
 

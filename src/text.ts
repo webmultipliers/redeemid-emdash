@@ -57,6 +57,8 @@ export const STRINGS = {
 		"Your membership doesn't include this yet.",
 		"Your account is turned off. Contact the store for help.",
 		"This is for members.",
+		"Or buy just this for {price}.",
+		"Buy just this",
 	],
 	member: [
 		"Your membership",
