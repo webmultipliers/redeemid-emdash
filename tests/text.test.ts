@@ -65,7 +65,7 @@ function used(): Set<string> {
 				i++;
 			}
 		}
-		if (file.endsWith("Notices.astro")) for (const v of src.matchAll(/^\t\w+: (".*"),$/gm)) out.add(JSON.parse(v[1] as string) as string);
+		if (file.endsWith("notices.ts")) for (const v of src.matchAll(/^\t\w+: (".*"),$/gm)) out.add(JSON.parse(v[1] as string) as string);
 	}
 	return out;
 }

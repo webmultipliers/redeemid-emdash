@@ -17,6 +17,7 @@ const LIMITED: Record<string, string> = {
 	[`GET ${BASE}/login`]: "login",
 	[`POST ${BASE}/buy`]: "buy",
 	[`POST ${BASE}/cart-edit`]: "cart",
+	[`POST ${BASE}/api/cart`]: "cart",
 };
 
 /** Which limited action a request is, or null. */
@@ -56,6 +57,12 @@ export async function rateLimited(limiter: RateLimiter | undefined, request: Req
 	} catch (e) {
 		console.error("[redeemid] rate limit check failed:", (e as Error).message);
 		return null;
+	}
+	if (url.pathname.startsWith(`${BASE}/api/`)) {
+		return new Response(JSON.stringify({ error: "too_many_requests" }), {
+			status: 429,
+			headers: { "content-type": "application/json", "retry-after": "60", "cache-control": "private, no-store" },
+		});
 	}
 	const back = backTo(url, request);
 	const sep = back.includes("?") ? "&" : "?";

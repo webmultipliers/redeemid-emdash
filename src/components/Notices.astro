@@ -5,39 +5,14 @@
  * `messages` to reword any of them (config `text` does too, for every page).
  */
 import { siteConfig } from "../site-config.js";
+import { NOTICES as DEFAULTS } from "../notices.js";
 import { text as replace } from "../text.js";
 
 interface Props {
 	messages?: Record<string, string>;
 }
 
-const DEFAULTS: Record<string, string> = {
-	not_configured: "Sign-in isn't set up on this site yet.",
-	sign_in_unavailable: "Sign-in isn't available right now. Try again in a few minutes.",
-	sign_in_expired: "That sign-in took too long. Try again.",
-	staff_account: "This account can't sign in here. Use a different email.",
-	account_disabled: "Your account is turned off. Contact the store for help.",
-	too_many_requests: "Too many tries. Wait a minute, then try again.",
-	site_not_ready: "This site isn't ready for sign-in yet.",
-	email_required: "Your account needs an email address to sign in.",
-	token_failed: "Sign-in didn't finish. Try again.",
-	bad_id_token: "Sign-in didn't finish. Try again.",
-	identity_failed: "Sign-in didn't finish. Try again.",
-	plan_unavailable: "That plan isn't available right now.",
-	checkout_failed: "Checkout didn't open. Try again.",
-	cart_empty: "Your cart is empty.",
-	cart_added: "Added to your cart.",
-	cart_updated: "Your cart is updated.",
-	discount_applied: "Discount applied.",
-	discount_not_applicable: "That discount code doesn't apply to this cart.",
-	refreshed: "Your membership is up to date.",
-	preferences_saved: "Your preferences are saved.",
-	preferences_refused: "Some answers weren't saved. Check them and try again.",
-	preferences_unavailable: "Your preferences can't be saved right now. Try again in a few minutes.",
-	data_erased: "Your data on this site is deleted, and you're signed out.",
-	erase_unconfirmed: "Tick the box to confirm, then try again.",
-	account_unavailable: "Your account page isn't available right now. Try again in a few minutes.",
-};
+
 
 const { messages = {} } = Astro.props;
 const code = Astro.url.searchParams.get("redeemid_notice") ?? "";

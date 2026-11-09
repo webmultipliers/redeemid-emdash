@@ -182,3 +182,58 @@ export async function levelChanges(config: RedeemIDConfig, s: Stores, input: { s
 	} while (cursor);
 	return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
+
+// ---------------------------------------------------------------- catalog
+
+/**
+ * Catalog lookups for agents and editors: product and collection handles,
+ * prices and options, read from the Storefront API (public data). Use the
+ * handles in Product, Collection and Plan blocks.
+ */
+export async function findProducts(config: RedeemIDConfig, input: { query: string; first?: number }): Promise<Record<string, unknown>> {
+	const { searchProducts } = await import("./catalog.js");
+	const q = String(input.query ?? "").trim();
+	if (!q) throw new AgentError("query is required");
+	const page = await searchProducts(config, q, { first: Math.max(1, Math.min(25, input.first ?? 10)) });
+	return {
+		total: page.total ?? page.products.length,
+		products: page.products.map((p) => ({ handle: p.handle, title: p.title, availableForSale: p.availableForSale, price: p.price, compareAtPrice: p.compareAtPrice ?? null })),
+	};
+}
+
+export async function getProduct(config: RedeemIDConfig, input: { handle: string }): Promise<Record<string, unknown>> {
+	const { product, realOptions } = await import("./storefront.js");
+	const handle = String(input.handle ?? "").trim();
+	if (!/^[a-z0-9][a-z0-9-]*$/i.test(handle)) throw new AgentError("handle must be a Shopify product handle");
+	const p = await product(config, handle);
+	if (!p) throw new AgentError(`Shopify has no product "${handle}" on this storefront`);
+	return {
+		handle: p.handle,
+		title: p.title,
+		vendor: p.vendor ?? null,
+		productType: p.productType ?? null,
+		description: p.description,
+		availableForSale: p.availableForSale,
+		options: realOptions(p),
+		variants: p.variants.map((v) => ({ id: v.id, title: v.title, availableForSale: v.availableForSale, price: v.price, compareAtPrice: v.compareAtPrice ?? null, sku: v.sku ?? null, options: v.selectedOptions ?? [] })),
+		requiresSellingPlan: Boolean(p.requiresSellingPlan),
+		sellingPlans: p.sellingPlans ?? [],
+		images: (p.images ?? []).length,
+	};
+}
+
+export async function getCollection(config: RedeemIDConfig, input: { handle: string; first?: number }): Promise<Record<string, unknown>> {
+	const { collectionPage } = await import("./catalog.js");
+	const handle = String(input.handle ?? "").trim();
+	if (!/^[a-z0-9][a-z0-9-]*$/i.test(handle)) throw new AgentError("handle must be a Shopify collection handle");
+	const c = await collectionPage(config, handle, { first: Math.max(1, Math.min(50, input.first ?? 25)) });
+	if (!c) throw new AgentError(`Shopify has no collection "${handle}" on this storefront`);
+	return {
+		handle: c.handle,
+		title: c.title,
+		description: c.description,
+		filters: c.filters.map((f) => ({ label: f.label, type: f.type, values: f.values.map((v) => v.label) })),
+		products: c.products.map((p) => ({ handle: p.handle, title: p.title, availableForSale: p.availableForSale, price: p.price })),
+		more: c.pageInfo.hasNextPage,
+	};
+}

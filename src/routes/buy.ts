@@ -14,7 +14,8 @@ import { readConfig, storeDomain } from "../config.js";
 import { safeReturn } from "../access.js";
 import { memberForUser, stores } from "../storage.js";
 import { saveCart, readCart } from "../cart.js";
-import { addToCart, plan } from "../storefront.js";
+import { checkoutFor } from "../checkout.js";
+import { addToCart, plan, storeContext } from "../storefront.js";
 import { fail } from "./shared.js";
 
 export const prerender = false;
@@ -39,10 +40,10 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 			config,
 			current?.id ?? null,
 			{ variantId: p.variantId, sellingPlanId: p.sellingPlanId },
-			{ email: member?.email ?? null, attributes: { _redeemid_page: returnTo }, buyerIp: request.headers.get("cf-connecting-ip") },
+			{ email: member?.email ?? null, attributes: { _redeemid_page: returnTo }, buyerIp: request.headers.get("cf-connecting-ip"), context: storeContext(config, request) },
 		);
 		saveCart(session, { id: cart.id, count: cart.totalQuantity });
-		return redirect(cart.checkoutUrl, 303);
+		return redirect(await checkoutFor(config, cart, { session, request, emdashConfig: emdash?.config }), 303);
 	} catch {
 		return fail(redirect, returnTo, "checkout_failed");
 	}

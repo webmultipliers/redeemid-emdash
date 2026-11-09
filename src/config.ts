@@ -144,6 +144,20 @@ export interface RedeemIDConfig {
 	 * { "Sign in": "Log in" }. One string at a time; see text.ts for the list.
 	 */
 	text?: Record<string, string>;
+	/**
+	 * Local prices and currency through Shopify Markets: `country` is a fixed
+	 * two-letter code, or "visitor" for the country Cloudflare reports for
+	 * each request (CF-IPCountry). `language` is a Shopify language code such
+	 * as "FR". Prices are always Shopify's; leave this out for the store's
+	 * default market.
+	 */
+	market?: { country?: string; language?: string };
+	/**
+	 * Checkout. `signIn: false` stops RedeemID passing a signed-in member's
+	 * store sign-in to the cart, so they check out as a guest (their email is
+	 * still filled in).
+	 */
+	checkout?: { signIn?: false };
 	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
 	join?: { href: string; label?: string };
 	/**

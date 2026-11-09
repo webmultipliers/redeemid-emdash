@@ -5,35 +5,47 @@
  * site can give every product its own page with <Product>.
  *
  *   <Collection handle="shop" productHref="/shop/{handle}/" />
+ *   <Collection handle="shop" productHref="/shop/{handle}/" browse />
+ *
+ * `browse` adds Shopify's filters, sort orders and paging, read from the
+ * page URL (so the page must be rendered on demand). `quickAdd` adds Add to
+ * cart on cards that need no choice.
  */
+import { browseFromUrl, collectionPage, type CollectionPage } from "../catalog.js";
 import { siteConfig } from "../site-config.js";
-import { collection as loadCollection, money, type Collection } from "../storefront.js";
-import { text } from "../text.js";
+import { collection as loadCollection, storeContext, type Collection } from "../storefront.js";
+import BrowseControls from "./BrowseControls.astro";
+import ProductGrid from "./ProductGrid.astro";
 
 interface Props {
 	handle: string;
-	/** How many products, 1 to 50. */
+	/** How many products (per page with `browse`), 1 to 50. */
 	limit?: number;
 	/** Link for each product; `{handle}` is replaced. Leave out for cards without links. */
 	productHref?: string;
 	/** Show the collection's title and description above the grid. */
 	showTitle?: boolean;
+	/** Filters, sorting and paging from the page URL. */
+	browse?: boolean;
+	quickAdd?: boolean;
 }
 
-const { handle, limit = 12, productHref, showTitle = false } = Astro.props;
+const { handle, limit = 12, productHref, showTitle = false, browse = false, quickAdd = false } = Astro.props;
 const config = await siteConfig(Astro.locals);
-let c: Collection | null = null;
+const context = storeContext(config, Astro.request);
+let c: Collection | CollectionPage | null = null;
 if (config) {
 	try {
-		c = await loadCollection(config, handle, limit);
+		c = browse ? await collectionPage(config, handle, browseFromUrl(Astro.url.searchParams, limit), { context }) : await loadCollection(config, handle, limit, undefined, context);
 	} catch {
 		c = null;
 	}
 }
-const href = (h: string) => productHref?.replaceAll("{handle}", encodeURIComponent(h));
+const page = c && "pageInfo" in c ? c : null;
+const id = `redeemid-collection-${handle}`;
 ---
 
-{c && c.products.length > 0 ? (
+{c && (c.products.length > 0 || page) ? (
 	<section class="redeemid-collection" data-redeemid-collection={c.handle}>
 		{showTitle && (
 			<>
@@ -41,15 +53,8 @@ const href = (h: string) => productHref?.replaceAll("{handle}", encodeURICompone
 				{c.description && <p class="redeemid-collection__description">{c.description}</p>}
 			</>
 		)}
-		<ul class="redeemid-collection__grid">
-			{c.products.map((p) => (
-				<li class="redeemid-collection__item" data-redeemid-product={p.handle}>
-					{p.image && <img src={p.image.url} alt={p.image.altText ?? ""} loading="lazy" />}
-					<h3>{href(p.handle) ? <a href={href(p.handle)}>{p.title}</a> : p.title}</h3>
-					<p class="redeemid-collection__price">{p.availableForSale ? (p.price ? text(config, "From {price}", { price: money(p.price) }) : "") : text(config, "Sold out")}</p>
-				</li>
-			))}
-		</ul>
+		{page && <BrowseControls filters={page.filters} pageInfo={page.pageInfo} id={id} />}
+		<ProductGrid products={c.products} productHref={productHref} quickAdd={quickAdd} />
 	</section>
 ) : (
 	<slot />

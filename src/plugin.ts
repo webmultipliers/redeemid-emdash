@@ -43,7 +43,7 @@ import { textProblems } from "./text.js";
 import { record } from "./log.js";
 import { eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, WEBHOOK_TABS, webhooksPage, type MonitorEnv, type WebhookTab } from "./monitor.js";
 import { z } from "astro/zod";
-import { AgentError, explainAccess, getMember, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
+import { AgentError, explainAccess, findProducts, getCollection, getMember, getProduct, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
 
 import {
 	COLLECTION_BLOCK,
@@ -55,9 +55,10 @@ import {
 	PLAN_BLOCK,
 	PREFERENCES_BLOCK,
 	PRODUCT_BLOCK,
+	SEARCH_BLOCK,
 } from "./blocks-names.js";
 
-export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, ITEM_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK };
+export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, ITEM_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK, SEARCH_BLOCK };
 
 /**
  * The editor's level pickers. Declared once when the plugin starts, then kept
@@ -157,6 +158,26 @@ function blocks(config: RedeemIDConfig) {
 				{ type: "text_input" as const, action_id: "handle", label: "Shopify collection handle", placeholder: "shop" },
 				{ type: "text_input" as const, action_id: "limit", label: "How many products (up to 50)", placeholder: "12" },
 				{ type: "text_input" as const, action_id: "link", label: "Product page link, with {handle}", placeholder: "/shop/{handle}/" },
+				{
+					type: "checkbox" as const,
+					action_id: "extras",
+					label: "Extras",
+					options: [
+						{ label: "Filters, sorting and pages (the page must render on demand)", value: "browse" },
+						{ label: "Add to cart on cards that need no choice", value: "quick-add" },
+					],
+				},
+			],
+		},
+		{
+			type: SEARCH_BLOCK,
+			label: "Product search",
+			icon: "search",
+			description: "A search box with Shopify's matching products, filters and sorting",
+			placeholder: "Product search",
+			fields: [
+				{ type: "text_input" as const, action_id: "link", label: "Product page link, with {handle}", placeholder: "/shop/{handle}/" },
+				{ type: "text_input" as const, action_id: "label", label: "Search box label", placeholder: "Search products" },
 			],
 		},
 		{
@@ -369,6 +390,9 @@ function agentRoutes(code: RedeemIDConfig) {
 		"get-member": route(MEMBER, (s, i) => getMember(config, s, i as { customerId?: string; email?: string })),
 		"site-health": route(EMPTY, (s) => siteHealth(config, s)),
 		"level-changes": route(CHANGES, (s, i) => levelChanges(config, s, i as { since: string; level?: string })),
+		"find-products": route(FIND, (_s, i) => findProducts(config, i as { query: string; first?: number })),
+		"get-product": route(HANDLE, (_s, i) => getProduct(config, i as { handle: string })),
+		"get-collection": route(COLLECTION, (_s, i) => getCollection(config, i as { handle: string; first?: number })),
 	};
 	if (!code.agents?.actions) return read;
 	return {
@@ -402,6 +426,9 @@ const EXPLAIN = z.object({
 const MEMBER = z.object({ customerId: z.string().optional(), email: z.string().optional() });
 const CUSTOMER = z.object({ customerId: z.string().min(1).describe("Shopify customer id") });
 const CHANGES = z.object({ since: z.string().describe("A date, e.g. 2026-11-01"), level: z.string().optional().describe("Only this level slug") });
+const FIND = z.object({ query: z.string().min(1).describe("Search words, e.g. tote"), first: z.number().int().min(1).max(25).optional().describe("How many (default 10)") });
+const HANDLE = z.object({ handle: z.string().min(1).describe("Shopify product handle") });
+const COLLECTION = z.object({ handle: z.string().min(1).describe("Shopify collection handle"), first: z.number().int().min(1).max(50).optional().describe("How many products (default 25)") });
 const TAGS = z.object({
 	customerId: z.string().min(1).describe("Shopify customer id"),
 	add: z.array(z.string()).optional().describe("Tags to add in Shopify"),
@@ -417,6 +444,9 @@ function agentTools(config: RedeemIDConfig) {
 		get_member: { route: "get-member", input: MEMBER, description: "One synced member by Shopify customer id or email: status, tags, current levels with start dates, past levels, features and last sync." },
 		site_health: { route: "site-health", input: EMPTY, description: "Whether each setting is in place (never the values), the last webhook, open privacy requests and ignored text replacements." },
 		level_changes: { route: "level-changes", input: CHANGES, description: "Who joined or left a level since a date, from each member's tag dates." },
+		find_products: { route: "find-products", input: FIND, description: "Search the Shopify catalog the site sells: handles, titles, prices and availability. Use the handles in Product, Plan and Collection blocks." },
+		get_product: { route: "get-product", input: HANDLE, description: "One Shopify product by handle: options, variants with prices and stock, selling plans (subscriptions) and image count." },
+		get_collection: { route: "get-collection", input: COLLECTION, description: "One Shopify collection by handle: its products, prices and the filters Shopify offers for it." },
 	};
 	if (config.agents?.actions) {
 		tools.resync_member = { route: "resync-member", input: CUSTOMER, description: "Read one member from Shopify now and update the site. Changes nothing in Shopify." };

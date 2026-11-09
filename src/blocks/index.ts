@@ -8,6 +8,7 @@ import ContributionBlock from "./ContributionBlock.astro";
 import PlanBlock from "./PlanBlock.astro";
 import PreferencesBlock from "./PreferencesBlock.astro";
 import ProductBlock from "./ProductBlock.astro";
+import SearchBlock from "./SearchBlock.astro";
 
 export const blockComponents = {
 	"redeemid-paywall": Marker,
@@ -17,6 +18,7 @@ export const blockComponents = {
 	"redeemid-plan": PlanBlock,
 	"redeemid-product": ProductBlock,
 	"redeemid-collection": CollectionBlock,
+	"redeemid-search": SearchBlock,
 	"redeemid-contribution": ContributionBlock,
 	"redeemid-preferences": PreferencesBlock,
 };

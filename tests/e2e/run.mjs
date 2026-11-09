@@ -387,6 +387,10 @@ try {
 	});
 	const cart = shop.carts.at(-1);
 	check("Buy goes to Shopify checkout", bought.text === "CHECKOUT", bought.url.href);
+	check("a member's checkout opens signed in as their customer", bought.url.searchParams.get("customer") === String(shop.customer.id) && shop.identityUpdates.at(-1)?.ok === true, bought.url.href);
+	const memberState = await member.go("/_emdash/api/auth/redeemid/api/state");
+	const ms = JSON.parse(memberState.text);
+	check("api/state for a member: levels and features, never an email or tags", ms.signedIn && ms.linked && ms.levels.includes("member") && !memberState.text.includes("@") && !memberState.text.includes('"tags"') && memberState.res.headers.get("cache-control") === "private, no-store", memberState.text);
 	check(
 		"cart has the plan's variant, the member's email and the private token",
 		cart?.input.lines[0]?.merchandiseId === "gid://shopify/ProductVariant/42" &&
@@ -426,7 +430,10 @@ try {
 	check("collection lists its products with links and prices", shopPage.text.includes('href="/shop/harbor-tote/"') && shopPage.text.includes("From $20.00") && shopPage.text.includes("Support the newsroom"));
 	check("missing collection shows the fallback", (await shopper.go("/shop/")).text.includes("redeemid-collection") && !(await shopper.go("/shop/no-such/")).text.includes("redeemid-collection"));
 	const tote = await shopper.go("/shop/harbor-tote/");
-	check("product page shows variants and marks sold-out ones", tote.text.includes("Navy ($20.00)") && /<option[^>]*disabled[^>]*>\s*Sand/.test(tote.text) && tote.text.includes("Add to cart"));
+	check("product page offers its options and marks sold-out ones", tote.text.includes('name="option.Color"') && /<option[^>]*disabled[^>]*>\s*Sand/.test(tote.text) && tote.text.includes("$20.00") && tote.text.includes("Add to cart"));
+	check("a product's own page has Product structured data", /"@type":"Product".*"priceCurrency":"USD"/.test(tote.text));
+	check("product page shows Shopify's recommendations", tote.text.includes("You may also like") && tote.text.includes('href="/shop/support/"'));
+	check("the layout loads the browser client and the cart drawer", tote.text.includes('id="redeemid-client-config"') && tote.text.includes("data-redeemid-cart-drawer") && tote.text.includes("data-redeemid-cart-link"));
 	const edit = (fields) =>
 		shopper.go("/_emdash/api/auth/redeemid/cart-edit", {
 			method: "POST",
@@ -439,6 +446,65 @@ try {
 	check("a sold-out variant isn't added", soldOut.url.searchParams.get("redeemid_notice") === "plan_unavailable");
 	const foreign = await edit({ action: "add", product: "harbor-tote", variant: "gid://shopify/ProductVariant/42", return: "/shop/harbor-tote/" });
 	check("a variant from another product isn't added", foreign.url.searchParams.get("redeemid_notice") === "plan_unavailable");
+	const byOption = await edit({ action: "add", product: "harbor-tote", "option.Color": "Navy", quantity: "1", return: "/shop/harbor-tote/" });
+	check("Add to cart picks the variant from the chosen options", byOption.url.searchParams.get("redeemid_notice") === "cart_added" && [...shop.cartsById.values()].at(-1)?.lines.find((l) => l.merchandiseId === "gid://shopify/ProductVariant/501")?.quantity === 3);
+	const noCombo = await edit({ action: "add", product: "harbor-tote", "option.Color": "Plaid", return: "/shop/harbor-tote/" });
+	check("an option value the product doesn't have isn't added", noCombo.url.searchParams.get("redeemid_notice") === "plan_unavailable");
+	const coffee = await shopper.go("/shop/coffee-club/");
+	check("a product with selling plans offers one-time or subscription", coffee.text.includes("Purchase options") && coffee.text.includes("One-time purchase") && coffee.text.includes("Subscribe: Every month"));
+	const badPlanId = await edit({ action: "add", product: "coffee-club", selling_plan: "gid://shopify/SellingPlan/999", return: "/shop/coffee-club/" });
+	check("a selling plan from elsewhere isn't added", badPlanId.url.searchParams.get("redeemid_notice") === "plan_unavailable");
+	await edit({ action: "add", product: "coffee-club", selling_plan: "gid://shopify/SellingPlan/91", return: "/shop/coffee-club/" });
+	const subLine = [...shop.cartsById.values()].at(-1)?.lines.find((l) => l.merchandiseId === "gid://shopify/ProductVariant/801");
+	check("a subscription line carries its selling plan", subLine?.sellingPlanId === "gid://shopify/SellingPlan/91", JSON.stringify(subLine));
+	const subCart = await shopper.go("/cart");
+	check("the cart names the line's selling plan", subCart.text.includes("Every month"));
+	// Put the cart back to two totes for the checks below.
+	const liveLines = [...shop.cartsById.values()].at(-1)?.lines ?? [];
+	await edit({ action: "remove", line: liveLines.find((l) => l.merchandiseId === "gid://shopify/ProductVariant/801")?.id ?? "", return: "/cart" });
+	await edit({ action: "update", line: liveLines.find((l) => l.merchandiseId === "gid://shopify/ProductVariant/501")?.id ?? "", quantity: "2", return: "/cart" });
+
+	// Browsing: filters, sorting and pages from the URL, quick add, search and JSON.
+	const browse = await shopper.go("/shop/");
+	check("a browsable collection offers Shopify's filters, sorting and a next page", browse.text.includes("In stock (") && browse.text.includes('name="sort"') && /rel="next" href="\/shop\/\?after=3"/.test(browse.text), browse.text.match(/rel="next"[^>]*/)?.[0]);
+	check("cards that need no choice get Add to cart", /data-redeemid-product="support"[^]*?name="variant" value="gid:\/\/shopify\/ProductVariant\/601"/.test(browse.text));
+	const page2 = await shopper.go("/shop/?after=3");
+	check("the next page lists the rest and links back", page2.text.includes("Coffee club") && page2.text.includes('rel="prev"'));
+	const found = await shopper.go("/shop/search?q=tote");
+	check("search lists Shopify's matches with filters", found.text.includes("1 result for “tote”") && found.text.includes("Harbor tote") && found.text.includes("Ledger (1)"));
+	const sorted = await shopper.go(`/shop/search?q=*&sort=price-desc&filter=${encodeURIComponent('{"productVendor":"Ledger"}')}`);
+	const lastSearch = shop.searches.at(-1);
+	check("search passes the sort and filter to Shopify", lastSearch?.sortKey === "PRICE" && lastSearch?.reverse === true && lastSearch?.filters?.[0]?.productVendor === "Ledger" && sorted.text.includes("Clear filters"), JSON.stringify(lastSearch));
+	const suggestions = await (await fetch(`${SITE}/_emdash/api/auth/redeemid/api/search?q=sup&suggest=1`)).json();
+	check("api/search suggests products as you type", suggestions.products?.[0]?.handle === "support", JSON.stringify(suggestions));
+	const jsonSearch = await fetch(`${SITE}/_emdash/api/auth/redeemid/api/search?collection=shop&first=2`);
+	check("api/search pages a collection, cacheable", (await jsonSearch.json()).pageInfo?.hasNextPage === true && /public/.test(jsonSearch.headers.get("cache-control") ?? ""));
+	const viaJson = await shopper.go("/_emdash/api/auth/redeemid/api/cart", {
+		method: "POST",
+		headers: { "content-type": "application/json", origin: SITE },
+		body: JSON.stringify({ action: "add", product: "support", quantity: 2 }),
+	});
+	const viaBody = JSON.parse(viaJson.text);
+	check("api/cart adds and answers the whole cart", viaBody.notice === "cart_added" && viaBody.cart?.lines.some((l) => l.productHandle === "support" && l.quantity === 2) && viaBody.added?.product === "support", viaJson.text.slice(0, 300));
+	const crossSiteCart = await shopper.go("/_emdash/api/auth/redeemid/api/cart", {
+		method: "POST",
+		headers: { "content-type": "application/json", origin: "https://evil.example" },
+		body: JSON.stringify({ action: "add", product: "support" }),
+	});
+	check("api/cart refuses another site's request", crossSiteCart.res.status === 403, String(crossSiteCart.res.status));
+	const jsonUnavailable = await shopper.go("/_emdash/api/auth/redeemid/api/cart", {
+		method: "POST",
+		headers: { "content-type": "application/json", origin: SITE },
+		body: JSON.stringify({ action: "add", product: "harbor-tote", options: { Color: "Sand" } }),
+	});
+	check("api/cart answers 422 for a sold-out choice", jsonUnavailable.res.status === 422 && JSON.parse(jsonUnavailable.text).notice === "plan_unavailable");
+	const guestState = JSON.parse((await shopper.go("/_emdash/api/auth/redeemid/api/state")).text);
+	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.0.0", JSON.stringify(guestState));
+	const guestCheckout = JSON.parse(
+		(await shopper.go("/_emdash/api/auth/redeemid/api/cart", { method: "POST", headers: { "content-type": "application/json", origin: SITE }, body: JSON.stringify({ action: "checkout" }) })).text,
+	);
+	check("api/cart checkout gives a guest the cart's own checkout", typeof guestCheckout.checkoutUrl === "string" && !guestCheckout.checkoutUrl.includes("customer="), JSON.stringify(guestCheckout));
+	await edit({ action: "remove", line: viaBody.cart?.lines.find((l) => l.productHandle === "support")?.id ?? "", return: "/cart" });
 	let cartPage = await shopper.go("/cart");
 	check("cart page lists the line, its price and the subtotal", cartPage.text.includes("Harbor tote") && cartPage.text.includes("$20.00 each") && cartPage.text.includes("$40.00") && /private/.test(cartPage.res.headers.get("cache-control") ?? ""));
 	const cartHolder = await shopper.go("/posts/welcome");

@@ -3,13 +3,14 @@
 import Collection from "../components/Collection.astro";
 
 interface Props {
-	node: { handle?: string; limit?: string; link?: string };
+	node: { handle?: string; limit?: string; link?: string; extras?: string[] };
 }
 
 const { node } = Astro.props;
 const handle = (node.handle ?? "").trim();
 const limit = Number.parseInt(node.limit ?? "", 10);
 const link = (node.link ?? "").trim();
+const extras = Array.isArray(node.extras) ? node.extras : [];
 ---
 
 {handle && (
@@ -18,5 +19,7 @@ const link = (node.link ?? "").trim();
 		limit={Number.isFinite(limit) ? limit : 12}
 		productHref={link.startsWith("/") && link.includes("{handle}") ? link : undefined}
 		showTitle
+		browse={extras.includes("browse")}
+		quickAdd={extras.includes("quick-add")}
 	/>
 )}
