@@ -28,7 +28,8 @@
 		"src",
 		"README.md",
 		"LICENSE",
-		"docs"
+		"docs",
+		"bin"
 	],
 	"keywords": [
 		"emdash",
@@ -64,5 +65,8 @@
 	},
 	"bugs": {
 		"url": "https://github.com/webmultipliers/redeemid-emdash/issues"
+	},
+	"bin": {
+		"redeemid-emdash": "./bin/redeemid-emdash.mjs"
 	}
 }

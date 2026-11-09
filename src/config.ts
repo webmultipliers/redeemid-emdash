@@ -125,6 +125,11 @@ export interface RedeemIDConfig {
 	 * Customers). Needs the Admin API app (staff tools) for reading and saving.
 	 */
 	preferences?: PreferenceConfig[];
+	/**
+	 * AI agents (EmDash's MCP server) and the command line. Read-only tools are
+	 * always declared; `actions: true` also offers resync and tag edits.
+	 */
+	agents?: { actions?: boolean };
 	/** Protected files, by media folder. See FileRule. */
 	files?: FileRule[];
 	/**

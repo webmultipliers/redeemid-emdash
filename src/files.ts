@@ -79,7 +79,7 @@ async function entriesUsing(db: unknown, mediaId: string): Promise<Array<{ colle
 }
 
 /** The levels picked on an entry body's breaks and members-only parts: readers must hold one from each. */
-function bodyClauses(body: unknown): string[][] {
+export function bodyClauses(body: unknown): string[][] {
 	const blocks = Array.isArray(body) ? body : [];
 	const out: string[][] = [];
 	const split = splitAtPaywall(blocks);

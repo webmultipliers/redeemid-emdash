@@ -30,13 +30,15 @@ import { definePlugin } from "emdash";
 import { describe, levelsFor, SIGNED_IN } from "./access.js";
 import { env, ENV, storeDomain, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
-import { stores, type MemberRecord } from "./storage.js";
+import { stores, type MemberRecord, type Stores } from "./storage.js";
 import { PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
-import { adminConfigured } from "./admin-api.js";
+import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
 import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
 import { textProblems } from "./text.js";
+import { z } from "astro/zod";
+import { AgentError, explainAccess, getMember, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
 
 import {
 	COLLECTION_BLOCK,
@@ -167,7 +169,9 @@ export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
 			widgets: WIDGETS,
 			portableTextBlocks: blocks(config),
 		},
+		mcp: agentTools(config),
 		routes: {
+			...agentRoutes(config),
 			admin: {
 				handler: async (ctx: RouteContext) => {
 					const i = (ctx.input ?? {}) as { type?: string; page?: string; action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string };
@@ -190,6 +194,85 @@ export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
 }
 
 export default createPlugin;
+
+// ---------------------------------------------------------------- agents and CLI
+
+const STAFF = "users:read" as const;
+
+/** Staff-only JSON routes, also offered as MCP tools. */
+function agentRoutes(config: RedeemIDConfig) {
+	const run = (fn: (s: Stores, input: Record<string, unknown>) => Promise<unknown> | unknown) => async (ctx: RouteContext) => {
+		try {
+			return { ok: true, result: await fn(await memberStores(), (ctx.input ?? {}) as Record<string, unknown>) };
+		} catch (e) {
+			if (e instanceof AgentError || e instanceof AdminError) return { ok: false, error: e.message };
+			throw e;
+		}
+	};
+	const route = (input: z.ZodType, fn: Parameters<typeof run>[0]) => ({ permission: STAFF, input, request: { body: "json" as const }, handler: run(fn) });
+	const read = {
+		"explain-access": route(EXPLAIN, (s, i) => explainAccess(config, s, i as unknown as ExplainInput)),
+		"list-levels": route(EMPTY, () => listLevels(config)),
+		"get-rules": route(EMPTY, () => getRules(config)),
+		"get-member": route(MEMBER, (s, i) => getMember(config, s, i as { customerId?: string; email?: string })),
+		"site-health": route(EMPTY, (s) => siteHealth(config, s)),
+		"level-changes": route(CHANGES, (s, i) => levelChanges(config, s, i as { since: string; level?: string })),
+	};
+	if (!config.agents?.actions) return read;
+	return {
+		...read,
+		"resync-member": route(CUSTOMER, async (s, i) => {
+			const m = await resyncOne(config, s, String(i.customerId), "agent resync");
+			if (!m) throw new AgentError("Shopify no longer has this customer");
+			return getMember(config, s, { customerId: m.customerId });
+		}),
+		"resync-batch": route(EMPTY, (s) => bulkResync(config, s)),
+		"edit-member-tags": route(TAGS, async (s, i) => {
+			const id = String(i.customerId);
+			const add = (i.add as string[] | undefined) ?? [];
+			const remove = (i.remove as string[] | undefined) ?? [];
+			if (add.length) await tagEdit(config, s, id, "add", add);
+			if (remove.length) await tagEdit(config, s, id, "remove", remove);
+			return getMember(config, s, { customerId: id });
+		}),
+	};
+}
+
+const EMPTY = z.object({});
+const EXPLAIN = z.object({
+	collection: z.string().min(1).describe("Collection slug, e.g. posts"),
+	id: z.string().optional().describe("An entry's id or slug; its terms and body are read from the site"),
+	terms: z.record(z.string(), z.array(z.string())).optional().describe('Terms by taxonomy when no id is given, e.g. {"category":["investigations"]}'),
+	tags: z.array(z.string()).optional().describe("The reader's Shopify customer tags"),
+	customerId: z.string().optional().describe("A real member's Shopify customer id, in place of tags"),
+	signedIn: z.boolean().optional().describe("false for a signed-out visitor (default true)"),
+});
+const MEMBER = z.object({ customerId: z.string().optional(), email: z.string().optional() });
+const CUSTOMER = z.object({ customerId: z.string().min(1).describe("Shopify customer id") });
+const CHANGES = z.object({ since: z.string().describe("A date, e.g. 2026-11-01"), level: z.string().optional().describe("Only this level slug") });
+const TAGS = z.object({
+	customerId: z.string().min(1).describe("Shopify customer id"),
+	add: z.array(z.string()).optional().describe("Tags to add in Shopify"),
+	remove: z.array(z.string()).optional().describe("Tags to remove in Shopify"),
+});
+
+/** MCP tools for the routes above. Staff turn them on for RedeemID under Plugins. */
+function agentTools(config: RedeemIDConfig) {
+	const tools: Record<string, { description: string; route: string; input: z.ZodType; destructive?: boolean }> = {
+		explain_access: { route: "explain-access", input: EXPLAIN, description: "Can this reader read this entry, and why? Give the entry by collection and id (or terms), and the reader by Shopify tags, a member's customer id, or signedIn:false. Answers what the entry needs, the reader's levels, the result, the level a locked reader is offered, and each members-only part." },
+		list_levels: { route: "list-levels", input: EMPTY, description: "Every membership level: slug, name, the Shopify tags that grant it (any or all), wall text and join link." },
+		get_rules: { route: "get-rules", input: EMPTY, description: "The paywall rules: how they combine, each rule (collection, term, levels, drip, open), the meter, teasers, features and protected-file rules." },
+		get_member: { route: "get-member", input: MEMBER, description: "One synced member by Shopify customer id or email: status, tags, current levels with start dates, past levels, features and last sync." },
+		site_health: { route: "site-health", input: EMPTY, description: "Whether each setting is in place (never the values), the last webhook, open privacy requests and ignored text replacements." },
+		level_changes: { route: "level-changes", input: CHANGES, description: "Who joined or left a level since a date, from each member's tag dates." },
+	};
+	if (config.agents?.actions) {
+		tools.resync_member = { route: "resync-member", input: CUSTOMER, description: "Read one member from Shopify now and update the site. Changes nothing in Shopify." };
+		tools.resync_batch = { route: "resync-batch", input: EMPTY, description: "Read the 50 members synced longest ago from Shopify. Run again for the next 50." };
+		tools.edit_member_tags = { route: "edit-member-tags", input: TAGS, destructive: true, description: "Add or remove tags on a member's Shopify customer, then read back what Shopify holds. Access follows from Shopify." };
+	}
+	return { tools };
+}
 
 // ---------------------------------------------------------------- actions
 

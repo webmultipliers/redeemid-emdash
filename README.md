@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.11, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.11, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -25,6 +25,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Member preferences.** Members see and change customer fields you define in Shopify, such as topics or a newsletter choice, with `<Preferences>` or its block. Answers are saved on the Shopify customer, ready for Flow, segments and email; the site keeps no copy.
 - **Protected files.** Put uploads in a media folder named in `files`, and every download checks the reader's levels, features or the entries that use the file. Copied links are no use to anyone else.
 - **Privacy requests.** Members download or delete what the site keeps about them with `<YourData>`. Staff export or erase any member, and can ask Shopify to erase the customer too. Shopify's compliance webhooks are handled and logged on a Privacy page.
+- **AI agents and a command line.** Staff questions (can this reader read this entry, who is this member, what changed) as MCP tools for EmDash's MCP server, and as the `redeemid-emdash` command.
 - **Replacement text.** Put any string members and visitors see in your own words, one string at a time, with `text`.
 - **Outbound events.** Signed JSON POSTs to a URL of yours when a member signs in, their levels change, or they use the meter, for a CRM, an email tool or your own code.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
@@ -208,6 +209,38 @@ The Privacy page lists every request with where it came from and the Shopify cus
 Erasing leaves the site's own user account (EmDash's users table) in place; delete it in the admin's Users if the person asks. If they sign in again, they're linked again and get back whatever Shopify still grants.
 
 The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, and `POST` with `confirm=yes` erases. It only acts for the signed-in member and refuses a POST from another origin.
+
+### AI agents and the command line
+
+RedeemID answers the questions staff ask in the admin as data, for AI agents and for scripts. All of them need an administrator. They read what the site has synced. None of them grants access, edits a level or a rule, or returns a secret.
+
+| MCP tool | Command | What it answers |
+| --- | --- | --- |
+| `explain_access` | `access <collection>` | Can this reader read this entry, and why. Give the entry by `id` (its terms and body are read from the site) or by `terms`. Give the reader by Shopify `tags`, a member's `customerId`, or `signedIn: false`. The answer covers what the entry needs, the reader's levels, the result and reason, the level a locked reader is offered, drip days, and each members-only part. |
+| `list_levels` | `levels` | Every level, the tags that grant it, its wall text and join link. |
+| `get_rules` | `rules` | How rules combine, every rule, the meter, teasers, features and protected-file rules. |
+| `get_member` | `member <id or email>` | One synced member: status, tags, levels with start dates, past levels, features, last sync. |
+| `site_health` | `health` | Whether each setting is in place (yes or no, never a value), the last webhook, open privacy requests and ignored text replacements. |
+| `level_changes` | `changes --since <date>` | Who joined or left a level since a date. |
+
+With `agents: { actions: true }` in the config, three actions are offered too:
+
+| MCP tool | Command | What it does |
+| --- | --- | --- |
+| `resync_member` | `resync <customer id>` | Reads one member from Shopify and updates the site. Changes nothing in Shopify. |
+| `resync_batch` | `resync-batch` | Reads the 50 members synced longest ago. |
+| `edit_member_tags` | `tags <customer id> --add a,b --remove c` | Adds or removes tags on the Shopify customer, then reads back what Shopify holds. It's marked destructive for agents. |
+
+**Agents.** EmDash's MCP server is at `/_emdash/api/mcp`, on EmDash versions with plugin MCP tools. RedeemID's tools stay off until an administrator turns them on for RedeemID under **Plugins**. Turning them on approves the list as it stands, and a release that changes the list needs approving again. The agent uses an EmDash API token with the `mcp:tools` or `mcp:tools:redeemid` scope, made by an administrator. Tool names carry the plugin's prefix, for example `redeemid__explain_access`.
+
+**Command line.**
+
+```sh
+npx -p @redeemid/emdash redeemid-emdash access posts --id my-story --tags gold-member --url https://example.com
+npx -p @redeemid/emdash redeemid-emdash member jane@example.com
+```
+
+It signs in the way EmDash's own CLI does: `--token`, or `EMDASH_TOKEN`, or the token `emdash login` saved for the site. The site comes from `--url` or `EMDASH_URL`. Output is JSON. Each command calls a staff-only route at `/_emdash/api/plugins/redeemid/<name>`, so scripts can call the same routes directly with a POST and a JSON body.
 
 ### Replacement text
 

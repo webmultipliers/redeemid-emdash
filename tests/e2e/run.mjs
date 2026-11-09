@@ -2,7 +2,7 @@
  * End-to-end check of RedeemID on a real EmDash site (the playground) against
  * a fake Shopify store. Run with `pnpm e2e`.
  */
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -507,6 +507,67 @@ try {
 	check("Privacy page lists the member's erase and Shopify's open data request", privacy.text.includes("Member, on the site") && privacy.text.includes("request 9001") && privacy.text.includes("privacy_done") && !privacy.text.includes("x@example.com"), privacy.text.slice(0, 300));
 	const back = await reader.go("/_emdash/api/auth/redeemid/login?return=/posts/members-only");
 	check("signing in again links the member again", back.text.includes("MEMBER-BODY"), back.url.href);
+
+	// AI agents and the CLI: staff-only JSON routes, offered as MCP tools once staff turn them on.
+	const made = await admin.go("/_emdash/api/admin/api-tokens", {
+		method: "POST",
+		headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+		body: JSON.stringify({ name: "e2e", scopes: ["admin", "mcp:tools", "mcp:tools:redeemid"] }),
+	});
+	const apiToken = JSON.parse(made.text)?.data?.token;
+	check("staff can make an API token", typeof apiToken === "string", made.text.slice(0, 200));
+	const cli = (...args) =>
+		new Promise((done) =>
+			execFile("node", [fileURLToPath(new URL("../../bin/redeemid-emdash.mjs", import.meta.url)), ...args, "--url", SITE], { env: { ...process.env, EMDASH_TOKEN: apiToken } }, (err, stdout, stderr) =>
+				done({ code: err ? (err.code ?? 1) : 0, stdout, stderr }),
+			),
+		);
+	const levelsOut = await cli("levels");
+	check("CLI lists the levels", levelsOut.code === 0 && JSON.parse(levelsOut.stdout).some((l) => l.slug === "pro"), levelsOut.stderr || levelsOut.stdout.slice(0, 200));
+	const accessOut = await cli("access", "posts", "--terms", "category:pro", "--tags", "member");
+	const access = accessOut.code === 0 ? JSON.parse(accessOut.stdout) : {};
+	check("CLI explains access like the Access test", access.canRead === false && access.reason === "upgrade" && access.needs === "Pro", accessOut.stderr || accessOut.stdout.slice(0, 300));
+	const visitorOut = await cli("access", "posts", "--terms", "category:pro", "--signed-out");
+	check("CLI explains a visitor is asked to sign in", visitorOut.code === 0 && JSON.parse(visitorOut.stdout).reason === "sign_in", visitorOut.stderr);
+	const memberOut = await cli("member", original.email);
+	check("CLI reads a member by email", memberOut.code === 0 && JSON.parse(memberOut.stdout).customerId === String(original.id), memberOut.stderr || memberOut.stdout.slice(0, 200));
+	const healthOut = await cli("health");
+	check("CLI health shows yes or no, never a secret", healthOut.code === 0 && JSON.parse(healthOut.stdout).webhookSecret === true && !healthOut.stdout.includes(WEBHOOK_SECRET), healthOut.stderr);
+	const tagsOut = await cli("tags", String(original.id), "--add", "cli-added");
+	check("CLI action edits tags in Shopify and reads them back", tagsOut.code === 0 && JSON.parse(tagsOut.stdout).tags.includes("cli-added"), tagsOut.stderr || tagsOut.stdout.slice(0, 200));
+	const noToken = await new Promise((done) => execFile("node", [fileURLToPath(new URL("../../bin/redeemid-emdash.mjs", import.meta.url)), "levels", "--url", SITE, "--token", "nope"], (err, _o, stderr) => done({ code: err?.code ?? 0, stderr })));
+	check("CLI with a bad token is refused", noToken.code !== 0, noToken.stderr);
+	const memberCall = await reader.go("/_emdash/api/plugins/redeemid/list-levels", { method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE }, body: "{}" });
+	check("members can't call the staff routes", memberCall.res.status === 401 || memberCall.res.status === 403, String(memberCall.res.status));
+
+	const mcp = async (method, params) => {
+		const res = await fetch(`${SITE}/_emdash/api/mcp`, {
+			method: "POST",
+			headers: { authorization: `Bearer ${apiToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+		});
+		const text = await res.text();
+		const line = text.split("\n").find((l) => l.startsWith("data: "));
+		try {
+			return JSON.parse(line ? line.slice(6) : text);
+		} catch {
+			return { raw: `${res.status} ${text.slice(0, 300)}` };
+		}
+	};
+	const toolsBefore = await mcp("tools/list", {});
+	check("MCP offers no RedeemID tools until staff turn them on", Array.isArray(toolsBefore.result?.tools) && !toolsBefore.result.tools.some((t) => t.name.startsWith("redeemid__")), JSON.stringify(toolsBefore).slice(0, 300));
+	const mcpOn = await admin.go("/_emdash/api/admin/plugins/redeemid/mcp", {
+		method: "PUT",
+		headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+		body: JSON.stringify({ enabled: true }),
+	});
+	check("staff turn on RedeemID's MCP tools", mcpOn.res.status === 200 && mcpOn.text.includes("explain_access") && mcpOn.text.includes("edit_member_tags"), mcpOn.text.slice(0, 300));
+	const listed = await mcp("tools/list", {});
+	const names = (listed.result?.tools ?? []).map((t) => t.name);
+	check("MCP lists RedeemID's tools, the tag edit marked destructive", names.includes("redeemid__explain_access") && names.includes("redeemid__get_member") && listed.result.tools.find((t) => t.name === "redeemid__edit_member_tags")?.annotations?.destructiveHint === true, names.join(", "));
+	const called = await mcp("tools/call", { name: "redeemid__explain_access", arguments: { collection: "posts", terms: { category: ["pro"] }, tags: ["pro"] } });
+	const callText = called.result?.content?.[0]?.text ?? "";
+	check("an agent's explain_access answers like the CLI", callText.includes('"canRead": true'), JSON.stringify(called).slice(0, 400));
 } catch (e) {
 	failures++;
 	console.error(e);
