@@ -28,6 +28,8 @@ const config = {
 	],
 	features: [{ slug: "supporter", name: "Supporter", tags: ["supporter"] }],
 	// Members change topics and the newsletter, and only see their reader level. membership.since is never offered.
+	// Files in this media folder reach Pro members and staff only.
+	files: [{ folder: "Pro downloads", levels: ["pro"] }, { folder: "Story files", entries: true }],
 	preferences: [{ key: "preferences.topics" }, { key: "preferences.newsletter" }, { key: "preferences.level", access: "view" }, { key: "membership.since" }],
 	// Signed member events go to the fake store in the e2e test.
 	events: { url: `${shop.startsWith("http://127.0.0.1") ? shop : "https://example.invalid"}/events` },

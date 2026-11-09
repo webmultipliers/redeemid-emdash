@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.10, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.10, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -23,6 +23,7 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **Features.** Name perks members hold through levels or tags (ad-free, a supporter thank-you) and show them with `<Feature>` or `hasFeature()`.
 - **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels; open a member to resync them or add and remove tags, which are written to Shopify), a bulk resync you start yourself, a Status page (secrets, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules), an Access test and a dashboard widget.
 - **Member preferences.** Members see and change customer fields you define in Shopify, such as topics or a newsletter choice, with `<Preferences>` or its block. Answers are saved on the Shopify customer, ready for Flow, segments and email; the site keeps no copy.
+- **Protected files.** Put uploads in a media folder named in `files`, and every download checks the reader's levels, features or the entries that use the file. Copied links are no use to anyone else.
 - **Outbound events.** Signed JSON POSTs to a URL of yours when a member signs in, their levels change, or they use the meter, for a CRM, an email tool or your own code.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
@@ -162,6 +163,31 @@ Define each field in Shopify (**Settings → Custom data → Customers**). The d
 Every value is checked against the definition before it goes to Shopify; one refusal saves nothing, and an empty value clears the field. Scripts can use `/_emdash/api/auth/redeemid/preferences` too: `GET` returns `{ fields }` with values, `POST` with JSON `{ values: { "namespace.key": value } }` saves. A refused save answers `400` with `fields` mapping each key to `unknown_field`, `read_only`, `invalid_type`, `invalid_choice`, `invalid_length` or `invalid_range`. Saves are limited to 10 a minute per member (`429`). From your own code, `readPreferences()` and `savePreferences()` in `@redeemid/emdash/preferences` do the same.
 
 A save sends the `preferences.saved` event with the field names changed, never the answers.
+
+### Protected files
+
+```ts
+files: [
+	{ folder: "Gold downloads", levels: ["gold"] },
+	{ folder: "Member downloads", levels: [] },             // any signed-in member
+	{ folder: "Supporter extras", features: ["supporter"] },
+	{ folder: "Story files", entries: true },               // whoever can read an entry that uses it
+],
+```
+
+Upload files into a folder in the EmDash media library. Folder names match without regard to case. Every request for a file in a protected folder at `/_emdash/api/media/file/…` is checked before EmDash serves it:
+
+- **Allowed:** the file, sent with `Cache-Control: private, no-store`.
+- **Signed out:** a 401 page with a sign-in link that comes back to the file.
+- **Signed in without access:** a 403 page.
+
+A rule lets in members who hold any of its `levels` (an empty list means any signed-in member) or `features`. With `entries: true`, it also lets in whoever can read a published entry that uses the file: its rule, its drip, and the levels picked on its Paywall break or Members only parts. Staff can always download. Disabled members can't. If a file can't be checked, it isn't served.
+
+Limits:
+
+- Only EmDash's file route is checked. Don't give the storage bucket a public URL of its own.
+- Image services that fetch the file without the reader's cookies, such as a CDN image resizer, get refused, so keep protected images out of resized `<Image>` output.
+- Moving a file out of the folder makes it public again.
 
 ### Events
 

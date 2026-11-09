@@ -10,6 +10,8 @@
 
 import { defineMiddleware } from "astro:middleware";
 
+import { signInUrl } from "./access.js";
+import { keysFromPath, pathAccess, refusal } from "./files.js";
 import { siteConfig } from "./site-config.js";
 
 const SUBSCRIBER = 10;
@@ -28,11 +30,50 @@ export function memberMayUse(path: string, extra: string[] = []): boolean {
 	return [...MEMBER_PATHS, ...extra].some((p) => path === p.replace(/\/$/, "") || path.startsWith(p));
 }
 
-export const onRequest = defineMiddleware(async ({ locals, url }, next) => {
+/**
+ * EmDash skips the session on its public file route, so resolve the signed-in
+ * user here: the access check needs it.
+ */
+async function withUser(context: { locals: unknown; session?: { get(k: string): Promise<unknown> } }) {
+	const locals = context.locals as { user?: { id: string; role?: number } | null; emdash?: { db?: unknown } | null };
+	if (locals.user || !locals.emdash?.db) return context;
+	const sessionUser = (await context.session?.get("user")) as { id?: string } | undefined;
+	if (!sessionUser?.id) return context;
+	const { createKyselyAdapter } = await import("@emdash-cms/auth/adapters/kysely");
+	const user = await createKyselyAdapter(locals.emdash.db as never).getUserById(sessionUser.id);
+	if (!user || user.disabled) return context;
+	return { ...context, locals: { ...locals, user: { id: user.id, role: user.role, disabled: user.disabled } } };
+}
+
+export const onRequest = defineMiddleware(async (context, next) => {
+	const { locals, url } = context;
 	const user = (locals as { user?: { role?: number } | null }).user;
+	const config = siteConfig((locals as { emdash?: { config?: unknown } }).emdash?.config);
+
+	// Protected files: checked for everyone, on every download.
+	const keys = config?.files?.length ? keysFromPath(url.pathname) : null;
+	if (keys) {
+		let verdict;
+		try {
+			verdict = await pathAccess(await withUser(context), config, keys);
+		} catch (e) {
+			// Fail closed: a file we can't check isn't served.
+			console.error("[redeemid] file check failed:", (e as Error).message);
+			return refusal("denied", signInUrl(url.pathname));
+		}
+		if (verdict.protected) {
+			if (!verdict.allowed) return refusal(verdict.reason, signInUrl(url.pathname));
+			const res = await next();
+			const out = new Response(res.body, res);
+			out.headers.set("cache-control", "private, no-store");
+			out.headers.set("vary", "Cookie");
+			out.headers.set("x-robots-tag", "noindex");
+			return out;
+		}
+	}
+
 	if (!user || user.role !== SUBSCRIBER) return next();
 
-	const config = siteConfig((locals as { emdash?: { config?: unknown } }).emdash?.config);
 	if (memberMayUse(url.pathname, config?.memberPaths)) return next();
 
 	if (url.pathname.startsWith("/_emdash/admin")) {

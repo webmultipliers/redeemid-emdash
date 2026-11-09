@@ -72,6 +72,18 @@ export interface FeatureConfig {
 }
 
 /** Where to send signed member events (see events.ts). The signing secret is REDEEMID_EVENTS_SECRET. */
+/** A media folder whose files only some readers may download. Any of the given ways in is enough. */
+export interface FileRule {
+	/** The media folder's name in the EmDash media library. */
+	folder: string;
+	/** Members holding any of these levels. An empty list means any signed-in member. */
+	levels?: string[];
+	/** Members holding any of these features. */
+	features?: string[];
+	/** Whoever can read a published entry that uses the file (its rule, drip and the levels picked in its body). */
+	entries?: boolean;
+}
+
 export interface PreferenceConfig {
 	/** "namespace.key" of a customer metafield definition. */
 	key: string;
@@ -113,6 +125,8 @@ export interface RedeemIDConfig {
 	 * Customers). Needs the Admin API app (staff tools) for reading and saving.
 	 */
 	preferences?: PreferenceConfig[];
+	/** Protected files, by media folder. See FileRule. */
+	files?: FileRule[];
 	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
 	join?: { href: string; label?: string };
 	/**

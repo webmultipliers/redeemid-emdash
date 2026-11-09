@@ -263,6 +263,65 @@ try {
 	const visitorPrefs = await visitor.go("/_emdash/api/auth/redeemid/preferences");
 	check("visitors can't read preferences", visitorPrefs.res.status === 401, String(visitorPrefs.res.status));
 
+	// Protected files: a file in the "Pro downloads" folder only reaches Pro members and staff.
+	const staffHeaders = { "x-emdash-request": "1", origin: SITE };
+	const folder = await admin.go("/_emdash/api/media/folders", { method: "POST", headers: { ...staffHeaders, "content-type": "application/json" }, body: JSON.stringify({ name: "Pro downloads" }) });
+	const folderId = JSON.parse(folder.text)?.data?.id ?? JSON.parse(folder.text)?.data?.item?.id ?? JSON.parse(folder.text)?.data?.folder?.id;
+	const upload = async (name, inFolder) => {
+		const form = new FormData();
+		form.append("file", new Blob([`%PDF-1.4\n% PROTECTED-${name}\n%%EOF\n`], { type: "application/pdf" }), name);
+		if (inFolder) form.append("folderId", folderId);
+		const r = await admin.go("/_emdash/api/media", { method: "POST", headers: staffHeaders, body: form });
+		const item = JSON.parse(r.text)?.data?.item ?? JSON.parse(r.text)?.data;
+		return { status: r.res.status, key: item?.storageKey, text: r.text };
+	};
+	const proFile = await upload("pro-guide.pdf", true);
+	const openUp = await upload("open-guide.pdf", false);
+	check("staff can file uploads in a media folder", Boolean(folderId) && Boolean(proFile.key) && Boolean(openUp.key), `${folder.text.slice(0, 200)} ${proFile.text.slice(0, 200)}`);
+	const fileUrl = (k) => `/_emdash/api/media/file/${encodeURIComponent(k)}`;
+	const asVisitor = await visitor.go(fileUrl(proFile.key));
+	check("a visitor is asked to sign in for a protected file", asVisitor.res.status === 401 && !asVisitor.text.includes("PROTECTED-") && asVisitor.res.headers.get("cache-control") === "private, no-store", `${asVisitor.res.status}`);
+	const doubled = await visitor.go(`/_emdash/api/media/file/${encodeURIComponent(encodeURIComponent(proFile.key))}`);
+	check("an encoded key doesn't get past the check", !doubled.text.includes("PROTECTED-"), `${doubled.res.status}`);
+	shop.customer.tags = ["member"];
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
+	const asMember = await member.go(fileUrl(proFile.key));
+	check("a member without the level is refused the file", asMember.res.status === 403 && !asMember.text.includes("PROTECTED-"), `${asMember.res.status}`);
+	shop.customer.tags = ["member", "pro"];
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
+	const asPro = await member.go(fileUrl(proFile.key));
+	check("a Pro member downloads it, never cached", asPro.res.status === 200 && asPro.text.includes("PROTECTED-pro-guide.pdf") && asPro.res.headers.get("cache-control") === "private, no-store", `${asPro.res.status} ${asPro.res.headers.get("cache-control")}`);
+	const asStaff = await admin.go(fileUrl(proFile.key));
+	check("staff can always download it", asStaff.res.status === 200 && asStaff.text.includes("PROTECTED-"));
+	// "entries": a file used in a Pro post reaches whoever can read that post.
+	const storyFolder = await admin.go("/_emdash/api/media/folders", { method: "POST", headers: { ...staffHeaders, "content-type": "application/json" }, body: JSON.stringify({ name: "Story files" }) });
+	const storyFolderId = JSON.parse(storyFolder.text)?.data?.item?.id;
+	const storyForm = new FormData();
+	storyForm.append("file", new Blob(["%PDF-1.4\n% PROTECTED-story.pdf\n%%EOF\n"], { type: "application/pdf" }), "story.pdf");
+	storyForm.append("folderId", storyFolderId);
+	const storyUp = JSON.parse((await admin.go("/_emdash/api/media", { method: "POST", headers: staffHeaders, body: storyForm })).text)?.data?.item;
+	const created = await admin.go("/_emdash/api/content/posts", {
+		method: "POST",
+		headers: { ...staffHeaders, "content-type": "application/json" },
+		body: JSON.stringify({ data: { title: "Pro files", content: [{ _type: "block", _key: "a", style: "normal", markDefs: [], children: [{ _type: "span", _key: "b", text: "Attached." }] }, { _type: "image", _key: "c", asset: { _ref: storyUp?.id } }] }, taxonomies: { category: ["pro"] } }),
+	});
+	const postId = JSON.parse(created.text)?.data?.item?.id;
+	const published = await admin.go(`/_emdash/api/content/posts/${postId}/publish`, { method: "POST", headers: staffHeaders });
+	check("a Pro post using a Story file is published", Boolean(storyUp?.storageKey) && published.res.status === 200, `${created.text.slice(0, 200)} ${published.text.slice(0, 200)}`);
+	let storyAsPro;
+	for (let i = 0; i < 20; i++) {
+		storyAsPro = await member.go(fileUrl(storyUp.storageKey));
+		if (storyAsPro.res.status === 200) break;
+		await new Promise((r) => setTimeout(r, 250));
+	}
+	check("a reader of the post downloads the file it uses", storyAsPro.res.status === 200 && storyAsPro.text.includes("PROTECTED-story.pdf"), String(storyAsPro.res.status));
+	shop.customer.tags = ["member"];
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
+	const storyAsMember = await member.go(fileUrl(storyUp.storageKey));
+	check("a member who can't read the post is refused its file", storyAsMember.res.status === 403, String(storyAsMember.res.status));
+	const openFile = await visitor.go(fileUrl(openUp.key));
+	check("files outside protected folders stay public", openFile.res.status === 200 && openFile.text.includes("PROTECTED-open-guide.pdf"));
+
 	// Put the store's customer back as the rest of the run expects.
 	shop.customer.tags = ["member"];
 	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
