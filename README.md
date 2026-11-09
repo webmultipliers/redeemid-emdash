@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.15, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, paywall markup, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
+**Status: 0.0.16, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, paywall markup, badges, the page gate, the Shopify cart and checkout, the staff tools, preferences, protected files, privacy requests, AI agent tools, the command line, replacement text and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -367,6 +367,16 @@ import Plan from "@redeemid/emdash/components/Plan.astro";
 `redeemidGuard()` keeps every site page private for a signed-in visitor or a visitor with a cart: `Cache-Control: private, no-store`, and out of Astro's route cache (it calls `cache.set(false)` after the page has set its own cache hint). Visitors with neither get the same page, so their pages stay cacheable.
 
 A route cache keys pages by URL alone and serves a stored page without running any code. So if the site turns on Astro's route cache, don't cache the pages that render `<Content>` or `<Gate>` for locked entries: a member would get the visitor's stored copy, wall included. Call `Astro.cache.set(hint)` only on pages whose entries no rule covers.
+
+### Rate limits
+
+On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one visitor can start Sign in, Buy or a cart change, the routes that make calls to Shopify. Add a [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) named `REDEEMID_RATE_LIMIT` to your wrangler config; the limit and period are set there:
+
+```jsonc
+"ratelimits": [{ "name": "REDEEMID_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }]
+```
+
+Each action counts separately per visitor (by `CF-Connecting-IP`). A visitor over the limit goes back to the page they came from with the `too_many_requests` notice. If the binding is missing or fails, nothing is limited. Off by default; leave it off on Node.
 
 ### Shop
 
