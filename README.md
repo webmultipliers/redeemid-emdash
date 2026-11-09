@@ -2,7 +2,7 @@
 
 Shopify customer accounts, member levels and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites. Shopify runs the store and the customer account; EmDash runs the content.
 
-**Status: 0.0.8, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout are covered by an end-to-end test against a fake store.
+**Status: 0.0.9, early.** Runs on Node and Cloudflare Workers. Sign-in, the member mirror, webhooks, levels, rules, the meter and drip, teasers, badges, the page gate, the Shopify cart and checkout, the staff tools and outbound events are covered by an end-to-end test against a fake store.
 
 ## What it does
 
@@ -20,7 +20,9 @@ Shopify customer accounts, member levels and paywalls for [EmDash](https://githu
 - **The wall.** Readers kept out see why and what to do next: sign in, or join, with each level's own wall text. `<Notices>` shows the messages sign-in, Buy, Cart and Account send readers back with.
 - **Plan block.** Editors add a Shopify product to any page with the "Plan" block: title, price and a buy button.
 - **Shop.** `<Product>`, `<Collection>` and `<CartView>` (with the Product and Collection blocks) give the site product pages, collection grids and a cart page with quantities and discount codes. `<Contribution>` (and its block) takes pay-what-you-want amounts. Carts note the page each sale started on.
-- **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels), a Status page (secrets, store discovery, the URLs to give Shopify, levels and rules) and a dashboard widget.
+- **Features.** Name perks members hold through levels or tags (ad-free, a supporter thank-you) and show them with `<Feature>` or `hasFeature()`.
+- **In the admin.** RedeemID shows under Plugins with a Members page (Shopify customers, tags, levels; open a member to resync them or add and remove tags, which are written to Shopify), a bulk resync you start yourself, a Status page (secrets, store discovery, webhook subscriptions with a Register button, recent deliveries, levels and rules), an Access test and a dashboard widget.
+- **Outbound events.** Signed JSON POSTs to a URL of yours when a member signs in, their levels change, or they use the meter, for a CRM, an email tool or your own code.
 - **Keeps members out of EmDash's own APIs**, so the gate is the only way to read locked content.
 
 ## Install
@@ -76,6 +78,8 @@ Set these secrets in the environment (`.env` locally, `wrangler secret put` on W
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID` | Customer Account API | Client ID of the Headless storefront's Customer Account API client |
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET` | Customer Account API | Its client secret. Confidential clients only; leave unset for a public client. |
 | `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET` | Webhooks (Admin API app) | Client secret of the Shopify app that sends the webhooks. Shopify signs each webhook with it. |
+| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` | Admin API (staff tools) | Client ID of that same app. Optional; with it, staff can resync members, edit tags in Shopify and register webhooks. |
+| `REDEEMID_EVENTS_SECRET` | None | Optional. Signs outbound events; set it with `events.url`. |
 | `REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN` | Storefront API | Private access token, for the plan cards and checkout (server-side). |
 | `REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN` | Storefront API | Public access token. Only used when the private token isn't set. |
 
@@ -110,6 +114,55 @@ Term rules beat the collection's rule, which beats the site default. When severa
 The meter lets a signed-in reader who can't read an entry open it anyway, `limit` entries per `period` (`"month"`, the default, or `"week"`, in UTC). Each entry counts once per period, when its own page renders through `<Content>` with an `id`; lists, feeds, search and the content API never count. Visitors get the wall and a nudge to sign in. While it runs, `<Content>` says how many free reads are left; when it runs out, the wall says so. Rules with `meter: false` are never metered, and the meter never opens an entry a member is waiting on by drip.
 
 Drip holds a rule's entries back from members who pass it until they've held their level for `drip` days. A level starts when the customer first had its tag (for a `match: "all"` level, the last of its tags); with several levels the earliest counts, and with none known, the first sign-in. RedeemID notes when each tag first arrives from sign-in and webhooks, and forgets a tag when Shopify removes it. The wall shows the date the entry opens.
+
+### Features
+
+```ts
+features: [
+	{ slug: "ad-free", name: "Ad-free", levels: ["gold", "premium"] },
+	{ slug: "supporter", name: "Supporter", tags: ["supporter"] },
+],
+```
+
+A member holds a feature through any of its levels or tags; like levels, features come only from the mirrored tags. `<MemberCard>` lists them under the member's levels.
+
+```astro
+---
+import Feature from "@redeemid/emdash/components/Feature.astro";
+import { hasFeature } from "@redeemid/emdash/features";
+---
+<Feature slug="supporter"><p>Thanks for your support.</p><p slot="else">Become a supporter.</p></Feature>
+{!(await hasFeature(Astro, "ad-free")) && <aside class="ad">…</aside>}
+```
+
+### Events
+
+```ts
+events: { url: "https://hooks.example.com/redeemid", only: ["member.signed_in", "member.levels_changed"] },
+```
+
+With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to the URL. Headers: `X-RedeemID-Event`, `X-RedeemID-Delivery` (the `id`) and `X-RedeemID-Signature: sha256=<hex HMAC-SHA256 of the raw body with the secret>`. Check the signature before you trust a body. Sending waits at most 3 seconds and never breaks the page; a failed send is logged and dropped, not retried.
+
+| Event | `data` |
+| --- | --- |
+| `member.signed_in` | `customerId`, `levels`, `first` (first sign-in), `refresh` |
+| `member.levels_changed` | `customerId`, `levels`, `added`, `removed`, `source` (`sign-in`, the webhook topic, or a staff resync or tag edit) |
+| `meter.used` | `userId` (EmDash), `entry` (`collection:id`), `used`, `limit`, `period` (`2026-11`, or `2026-W45` by week) |
+| `meter.exhausted` | the same, sent with the last free read |
+
+No event carries an email address or a name: match people by the Shopify `customerId`. `only` limits which events are sent; leave it out for all of them.
+
+### Staff tools
+
+With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API token for the webhook app with the client credentials grant (the app must belong to the same Shopify organization as the store, as Dev Dashboard apps do) and needs the `read_customers` and `write_customers` scopes. Then, in the admin:
+
+- **Member detail.** Open a member from the Members page to see their levels, tags and features, resync them from Shopify, or add and remove tags. Tag edits are made in Shopify, then read back; nothing is granted on the EmDash side.
+- **Bulk resync.** Reads the 50 members synced longest ago from Shopify in one request. Run it again for the next 50. It never runs on its own.
+- **Webhooks.** The Status page lists the store's subscriptions to this site and registers any that are missing (`customers/redact` stays in the app's own settings).
+- **Recent deliveries.** The last webhooks the site took, with their topics and times.
+- **Access test.** Enter a collection, terms and a reader's tags to see what the entry needs and whether that reader gets in.
+
+Resync updates email, name and tags. Status stays with the enable and disable webhooks.
 
 ## Use it in templates
 

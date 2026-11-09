@@ -469,7 +469,13 @@ export async function readEntry(
 		const used = consume(record.items, `${entry.collection}:${entry.id}`, meter.limit);
 		const info = { limit: meter.limit, period };
 		if (!used.allowed) return { ...verdict, meterLeft: 0, meter: info };
-		if (used.items !== record.items) await s.meter.put(key, { ...record, items: used.items });
+		if (used.items !== record.items) {
+			await s.meter.put(key, { ...record, items: used.items });
+			const { emit } = await import("./events.js");
+			const data = { userId: user.id, entry: `${entry.collection}:${entry.id}`, used: used.items.length, limit: meter.limit, period: record.period };
+			await emit(config, "meter.used", data);
+			if (used.left === 0) await emit(config, "meter.exhausted", data);
+		}
 		return { ...verdict, allowed: true, reason: "metered", meterLeft: used.left, meter: info };
 	} catch {
 		return verdict;

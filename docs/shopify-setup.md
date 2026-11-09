@@ -29,6 +29,8 @@ RedeemID keeps tags and status current from webhooks. Point these topics at `htt
 
 Subscribe them from a Shopify app on the store (for example a Dev Dashboard app). If the app already sends webhooks to another site, add this URL as extra subscriptions. `customers/merge` needs the `read_customer_merge` scope. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
 
+For the staff tools (member resync, tag edits written to Shopify, the Register webhooks button), give the same app the `read_customers` and `write_customers` Admin API scopes and set its **client ID** as well. RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization.
+
 ## 3. The site
 
 Add the package and config as in the [README](../README.md#install), with `shop` set to the store's domain. A custom customer-account domain works as well as `*.myshopify.com`.
@@ -40,6 +42,8 @@ npx wrangler secret put REDEEMID_SHOPIFY_STORE_DOMAIN                   # e.g. m
 npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID     # Customer Account API client ID
 npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET # confidential clients only
 npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET        # the webhook app's client secret
+npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID            # optional; the webhook app's client ID, for the staff tools
+npx wrangler secret put REDEEMID_EVENTS_SECRET                          # optional; signs outbound events (events.url)
 npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN       # Headless storefront's Storefront API private token (plans, checkout)
 npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN        # optional; used only without the private token
 ```

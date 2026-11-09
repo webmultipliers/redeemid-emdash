@@ -63,6 +63,21 @@ export interface RuleConfig {
  * free each month (or week). Guests get the wall; an entry counts once per
  * period, when its own page renders through <Content> with an `id`.
  */
+/** A perk members hold through any of its levels or Shopify tags. */
+export interface FeatureConfig {
+	slug: string;
+	name: string;
+	levels?: string[];
+	tags?: string[];
+}
+
+/** Where to send signed member events (see events.ts). The signing secret is REDEEMID_EVENTS_SECRET. */
+export interface EventsConfig {
+	url: string;
+	/** Send only these events. All of them when left out. */
+	only?: Array<"member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted">;
+}
+
 export interface MeterConfig {
 	/** Free entries per period. */
 	limit: number;
@@ -83,6 +98,8 @@ export interface RedeemIDConfig {
 	levels?: LevelConfig[];
 	rules?: RuleConfig[];
 	meter?: MeterConfig;
+	features?: FeatureConfig[];
+	events?: EventsConfig;
 	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
 	join?: { href: string; label?: string };
 	/**
@@ -123,6 +140,10 @@ export const ENV = {
 	clientSecret: "REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET",
 	/** Client secret of the Shopify (Admin API) app whose webhooks the site receives. Shopify signs webhooks with it. */
 	webhookSecret: "REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET",
+	/** Client ID of that Shopify (Admin API) app. With the secret it lets staff tools call the Admin API (client credentials). */
+	adminClientId: "REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID",
+	/** Secret for signing the outbound events RedeemID sends to `events.url`. */
+	eventsSecret: "REDEEMID_EVENTS_SECRET",
 	/** Storefront API private token, for server-side plan and checkout calls. */
 	storefrontPrivateToken: "REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN",
 	/** Storefront API public token, used only when the private token isn't set. */

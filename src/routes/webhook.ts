@@ -8,7 +8,8 @@
 
 import type { APIRoute } from "astro";
 
-import { env, ENV } from "../config.js";
+import { env, ENV, readConfig } from "../config.js";
+import { levelChange } from "../events.js";
 import { stores } from "../storage.js";
 import { apply, kindOf, verifyHmac } from "../webhooks.js";
 
@@ -17,7 +18,7 @@ export const prerender = false;
 const MAX_BYTES = 1024 * 1024;
 
 export const POST: APIRoute = async ({ request, locals }) => {
-	const emdash = (locals as { emdash?: { db?: unknown } }).emdash;
+	const emdash = (locals as { emdash?: { db?: unknown; config?: unknown } }).emdash;
 	const secret = env(ENV.webhookSecret);
 	if (!emdash?.db || !secret) return new Response("Not configured", { status: 503 });
 
@@ -48,7 +49,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	try {
-		const outcome = await apply(s, topic, payload);
+		const config = readConfig(emdash.config);
+		const outcome = await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic));
 		return new Response(outcome, { status: 200 });
 	} catch (e) {
 		console.error("[redeemid] webhook failed:", topic, (e as Error).message);

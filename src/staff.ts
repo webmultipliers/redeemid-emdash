@@ -1,0 +1,220 @@
+/**
+ * Staff tools in the admin (Block Kit): member detail with Resync and tag
+ * edits written to Shopify, a paced manual bulk resync, webhook
+ * registration and health, recent deliveries and the access test.
+ */
+
+import { adminConfigured, adminScopes, editTags, registerWebhooks, resync, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
+import { describe, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
+import type { RedeemIDConfig } from "./config.js";
+import { levelChange } from "./events.js";
+import { featuresFor } from "./features.js";
+import { cleanTags, numericId, type MemberRecord, type Stores } from "./storage.js";
+
+/** Members resynced per click; well inside Shopify's query cost limits. */
+export const BULK_BATCH = 50;
+
+type Blocks = { blocks: unknown[]; toast?: { message: string; type: "success" | "error" | "info" } };
+
+const date = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "—");
+
+export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Blocks["toast"]): Blocks {
+	const levels = config.levels ?? [];
+	const { current, past } = membership(m, levels);
+	const features = featuresFor(m, config.features, levels);
+	const featureNames = (config.features ?? []).filter((f) => features.includes(f.slug)).map((f) => f.name);
+	const name = [m.firstName, m.lastName].filter(Boolean).join(" ") || m.email || `Customer ${m.customerId}`;
+	return {
+		toast,
+		blocks: [
+			{ type: "actions", elements: [{ type: "button", action_id: "members_back", label: "← All members", style: "secondary" }] },
+			{ type: "header", text: name },
+			{
+				type: "fields",
+				fields: [
+					{ label: "Email", value: m.email ?? "—" },
+					{ label: "Shopify customer", value: m.customerId },
+					{ label: "Account", value: m.status === "enabled" ? "On" : "Turned off in Shopify" },
+					{ label: "Signed in here", value: m.userId ? `Yes, first on ${date(m.linkedAt)}` : "Not yet" },
+					{ label: "Levels", value: current.map((l) => `${l.name} (since ${date(l.since)})`).join(", ") || "—" },
+					{ label: "Levels before", value: past.map((l) => `${l.name} (${date(l.from)} to ${date(l.to)})`).join(", ") || "—" },
+					{ label: "Features", value: featureNames.join(", ") || "—" },
+					{ label: "Last synced", value: `${m.syncedAt} (${m.source || "unknown"})` },
+				],
+			},
+			{ type: "header", text: "Shopify tags" },
+			m.tags.length
+				? {
+						type: "table",
+						page_action_id: "member_tags",
+						columns: [
+							{ key: "tag", label: "Tag" },
+							{ key: "since", label: "Since" },
+							{ key: "remove", label: "", format: "element" },
+						],
+						rows: m.tags.map((t) => ({
+							tag: t,
+							since: date(m.tagsSince?.[t.toLowerCase()]),
+							remove: adminConfigured()
+								? {
+										type: "button",
+										action_id: "member_tag_remove",
+										label: "Remove in Shopify",
+										style: "danger",
+										value: { customerId: m.customerId, tag: t },
+										confirm: { title: "Remove this tag in Shopify?", text: `Removes "${t}" from the customer in Shopify. Access follows.`, confirm: "Remove", deny: "Cancel", style: "danger" },
+									}
+								: null,
+						})),
+					}
+				: { type: "context", text: "No tags." },
+			adminConfigured()
+				? {
+						type: "form",
+						block_id: `tags:${m.customerId}`,
+						fields: [{ type: "text_input", action_id: "tags", label: "Add tags in Shopify (comma separated)", placeholder: "gold-member" }],
+						submit: { label: "Add in Shopify", action_id: "member_tag_add" },
+					}
+				: { type: "context", text: "Set the Admin API app's client ID to edit tags and resync from here." },
+			adminConfigured()
+				? { type: "actions", elements: [{ type: "button", action_id: "member_resync", label: "Resync from Shopify", style: "primary", value: m.customerId }] }
+				: { type: "divider" },
+			{ type: "context", text: "Tags are written to Shopify, then read back. Shopify stays the only source of access." },
+		],
+	};
+}
+
+/** Resync the members synced longest ago, one batch per click. */
+export async function bulkResync(config: RedeemIDConfig, s: Stores): Promise<{ done: number; missing: number; changed: number }> {
+	const page = await s.members.query({ orderBy: { syncedAt: "asc" }, limit: BULK_BATCH });
+	const ids = page.items.map((r) => r.data.customerId);
+	const before = new Map(page.items.map((r) => [r.data.customerId, [...r.data.tags]]));
+	const { updated, missing } = await resync(config, s, ids, "bulk resync");
+	let changed = 0;
+	for (const m of updated) {
+		const was = before.get(m.customerId) ?? [];
+		if (was.join("\n") !== m.tags.join("\n")) changed++;
+		await levelChange(config, was, m, "bulk resync");
+	}
+	return { done: updated.length, missing: missing.length, changed };
+}
+
+export async function resyncOne(config: RedeemIDConfig, s: Stores, customerId: string, source: string): Promise<MemberRecord | null> {
+	const before = await s.members.get(customerId);
+	const { updated } = await resync(config, s, [customerId], source);
+	const m = updated[0] ?? null;
+	if (m) await levelChange(config, before?.tags ?? null, m, source);
+	return m;
+}
+
+export async function tagEdit(config: RedeemIDConfig, s: Stores, customerId: string, change: "add" | "remove", raw: unknown): Promise<MemberRecord | null> {
+	const id = numericId(customerId);
+	if (!id) return null;
+	await editTags(config, id, change, cleanTags(raw));
+	return resyncOne(config, s, id, change === "add" ? "staff added tags" : "staff removed tags");
+}
+
+/** Webhooks: what Shopify sends to this site, and what's missing. */
+export async function webhooksSection(config: RedeemIDConfig, uri: string): Promise<unknown[]> {
+	if (!adminConfigured()) {
+		return [{ type: "context", text: "Set the Admin API app's client ID to check and register webhooks from here. Until then, add them in the app's settings." }];
+	}
+	try {
+		const [subs, scope] = await Promise.all([webhookSubscriptions(config), adminScopes(config)]);
+		const rows = WEBHOOK_TOPICS.map((t) => {
+			const here = subs.find((s) => s.topic === t && s.uri === uri);
+			const elsewhere = subs.find((s) => s.topic === t && s.uri !== uri);
+			return { topic: t.toLowerCase().replace("_", "/").replace("customer/tags", "customer.tags"), state: here ? "Registered" : elsewhere ? `Goes to ${elsewhere.uri}` : "Missing" };
+		});
+		const missing = rows.filter((r) => r.state !== "Registered").length;
+		return [
+			{ type: "fields", fields: [{ label: "Admin API", value: `Connected (${scope || "no scopes reported"})` }, { label: "Webhook address", value: uri }] },
+			{ type: "table", page_action_id: "webhooks", columns: [{ key: "topic", label: "Topic" }, { key: "state", label: "Sends here", format: "badge" }], rows },
+			missing
+				? { type: "actions", elements: [{ type: "button", action_id: "webhooks_register", label: `Register ${missing} missing`, style: "primary", value: uri }] }
+				: { type: "context", text: "Every topic RedeemID needs is sent here. customers/redact is set in the app's compliance settings." },
+		];
+	} catch (e) {
+		return [{ type: "banner", variant: "alert", title: "Couldn't read webhooks from Shopify", description: (e as Error).message }];
+	}
+}
+
+export async function deliveriesSection(s: Stores): Promise<unknown[]> {
+	const { items } = await s.deliveries.query({ orderBy: { receivedAt: "desc" }, limit: 20 });
+	return items.length
+		? [
+				{
+					type: "table",
+					page_action_id: "deliveries",
+					columns: [
+						{ key: "topic", label: "Topic", format: "code" },
+						{ key: "at", label: "Received", format: "relative_time" },
+						{ key: "id", label: "Delivery" },
+					],
+					rows: items.map((r) => ({ topic: r.data.topic, at: r.data.receivedAt, id: r.id })),
+				},
+			]
+		: [{ type: "context", text: "No webhooks received yet." }];
+}
+
+export { registerWebhooks };
+
+/** "category:pro, tag:weekend" → { category: ["pro"], tag: ["weekend"] } */
+export function parseTerms(raw: string): Terms {
+	const terms: Record<string, string[]> = {};
+	for (const part of raw.split(",")) {
+		const [tax, term] = part.split(":").map((x) => x.trim());
+		if (tax && term) (terms[tax] ??= []).push(term);
+	}
+	return terms;
+}
+
+/** The access test: what an entry needs, and whether a reader with these tags passes. */
+export async function accessTest(config: RedeemIDConfig, values: Record<string, unknown> = {}): Promise<Blocks> {
+	const collection = String(values.collection ?? "").trim();
+	const termsRaw = String(values.terms ?? "").trim();
+	const tags = cleanTags(String(values.tags ?? ""));
+	const signedIn = values.signed_in !== false;
+	const levels = config.levels ?? [];
+	const form = {
+		type: "form",
+		block_id: "access_test",
+		fields: [
+			{ type: "text_input", action_id: "collection", label: "Collection", placeholder: "posts", initial_value: collection },
+			{ type: "text_input", action_id: "terms", label: "Terms (taxonomy:slug, comma separated)", placeholder: "category:investigations, tag:free-to-read", initial_value: termsRaw },
+			{ type: "text_input", action_id: "tags", label: "Reader's Shopify tags (comma separated)", placeholder: "gold-member", initial_value: tags.join(", ") },
+			{ type: "toggle", action_id: "signed_in", label: "Signed in", initial_value: signedIn },
+		],
+		submit: { label: "Test", action_id: "access_test" },
+	};
+	const out: unknown[] = [
+		{ type: "header", text: "Access test" },
+		{ type: "context", text: "Check what an entry needs under the rules, and whether a reader with some Shopify tags may read it. Nothing is saved." },
+		form,
+	];
+	if (collection) {
+		const terms = parseTerms(termsRaw);
+		const tree = await termTree(config.rules, collection, terms);
+		const required = requirement(config.rules, collection, terms, { combine: config.combine, tree });
+		const held = levelsFor(tags, levels);
+		const ok = required === null || (signedIn && passes(held, required));
+		out.push(
+			{ type: "divider" },
+			{
+				type: "fields",
+				fields: [
+					{ label: "Needs", value: describe(required, levels) },
+					{ label: "Reader's levels", value: levels.filter((l) => held.includes(l.slug)).map((l) => l.name).join(", ") || "None" },
+					{ label: "Result", value: ok ? "Can read" : signedIn ? "Locked: asked to upgrade" : "Locked: asked to sign in" },
+				],
+			},
+			{
+				type: "banner",
+				variant: ok ? "default" : "alert",
+				title: ok ? "This reader can read it" : "This reader is kept out",
+				description: "A Paywall break with levels picked, a Members only part, drip and the meter can still change what a page shows.",
+			},
+		);
+	}
+	return { blocks: out };
+}

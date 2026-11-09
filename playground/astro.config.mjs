@@ -26,6 +26,9 @@ const config = {
 		// Updates open to members 30 days after they join.
 		{ collection: "posts", taxonomy: "category", term: "updates", levels: ["member", "pro"], drip: 30 },
 	],
+	features: [{ slug: "supporter", name: "Supporter", tags: ["supporter"] }],
+	// Signed member events go to the fake store in the e2e test.
+	events: { url: `${shop.startsWith("http://127.0.0.1") ? shop : "https://example.invalid"}/events` },
 	// Signed-in readers may open one locked post a month.
 	meter: { limit: 1, collections: ["posts"] },
 	// Locked posts with no paywall break show the paragraphs within their first 5 words.

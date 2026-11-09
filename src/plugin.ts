@@ -33,6 +33,8 @@ import { discover } from "./shopify.js";
 import { stores, type MemberRecord } from "./storage.js";
 import { PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
+import { adminConfigured } from "./admin-api.js";
+import { accessTest, bulkResync, BULK_BATCH, deliveriesSection, memberDetail, registerWebhooks, resyncOne, tagEdit, webhooksSection } from "./staff.js";
 
 import {
 	COLLECTION_BLOCK,
@@ -154,11 +156,13 @@ export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
 		routes: {
 			admin: {
 				handler: async (ctx: RouteContext) => {
-					const i = (ctx.input ?? {}) as { type?: string; page?: string };
-					if (i.type !== "page_load") return { blocks: [] };
+					const i = (ctx.input ?? {}) as { type?: string; page?: string; action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string };
 					try {
+						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx.request, i);
+						if (i.type !== "page_load") return { blocks: [] };
 						if (i.page === "/") return await membersPage(config);
 						if (i.page === "/status") return await statusPage(config, ctx.request);
+						if (i.page === "/test") return await accessTest(config);
 						if (i.page === "widget:status") return await statusWidget(config);
 					} catch (e) {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load this page", description: (e as Error).message }] };
@@ -171,6 +175,75 @@ export function createPlugin(config: RedeemIDConfig = {}): ResolvedPlugin {
 }
 
 export default createPlugin;
+
+// ---------------------------------------------------------------- actions
+
+const webhookUri = (request: Request) => `${new URL(request.url).origin}/_emdash/api/auth/redeemid/webhook`;
+
+async function action(
+	config: RedeemIDConfig,
+	request: Request,
+	i: { action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string },
+) {
+	const s = await memberStores();
+	const fail = (e: unknown) => ({ type: "error" as const, message: (e as Error).message });
+	switch (i.action_id) {
+		case "members_back":
+			return membersPage(config);
+		case "member_open": {
+			const m = await s.members.get(String(i.value ?? ""));
+			return m ? memberDetail(config, m) : { ...(await membersPage(config)), toast: { type: "error", message: "That member is gone." } };
+		}
+		case "member_resync": {
+			const id = String(i.value ?? "");
+			try {
+				const m = await resyncOne(config, s, id, "staff resync");
+				const now = m ?? (await s.members.get(id));
+				if (!now) return membersPage(config);
+				return memberDetail(config, now, m ? { type: "success", message: "Read again from Shopify." } : { type: "error", message: "Shopify no longer has this customer." });
+			} catch (e) {
+				const m = await s.members.get(id);
+				return m ? memberDetail(config, m, fail(e)) : membersPage(config);
+			}
+		}
+		case "member_tag_add":
+		case "member_tag_remove": {
+			const add = i.action_id === "member_tag_add";
+			const v = (i.value ?? {}) as { customerId?: string; tag?: string };
+			const id = add ? String(i.block_id ?? "").replace(/^tags:/, "") : String(v.customerId ?? "");
+			try {
+				const m = await tagEdit(config, s, id, add ? "add" : "remove", add ? i.values?.tags : [v.tag]);
+				const now = m ?? (await s.members.get(id));
+				return now ? memberDetail(config, now, { type: "success", message: add ? "Tags added in Shopify." : "Tag removed in Shopify." }) : membersPage(config);
+			} catch (e) {
+				const m = await s.members.get(id);
+				return m ? memberDetail(config, m, fail(e)) : membersPage(config);
+			}
+		}
+		case "members_resync": {
+			try {
+				const r = await bulkResync(config, s);
+				return {
+					...(await membersPage(config)),
+					toast: { type: "success", message: `Read ${r.done} members again (${r.changed} changed${r.missing ? `, ${r.missing} no longer in Shopify` : ""}).` },
+				};
+			} catch (e) {
+				return { ...(await membersPage(config)), toast: fail(e) };
+			}
+		}
+		case "webhooks_register": {
+			try {
+				const added = await registerWebhooks(config, webhookUri(request));
+				return { ...(await statusPage(config, request)), toast: { type: "success", message: added.length ? `Registered ${added.length} webhooks.` : "Nothing was missing." } };
+			} catch (e) {
+				return { ...(await statusPage(config, request)), toast: fail(e) };
+			}
+		}
+		case "access_test":
+			return accessTest(config, i.values);
+	}
+	return { blocks: [] };
+}
 
 // ---------------------------------------------------------------- pages
 
@@ -210,6 +283,25 @@ async function membersPage(config: RedeemIDConfig) {
 				type: "context",
 				text: "Shopify customers who have signed in or that Shopify has sent. Levels come only from their Shopify tags; change tags in Shopify (or with Flow) and access follows.",
 			},
+			adminConfigured()
+				? {
+						type: "actions",
+						elements: [
+							{
+								type: "button",
+								action_id: "members_resync",
+								label: `Resync ${BULK_BATCH} from Shopify`,
+								style: "secondary",
+								confirm: {
+									title: "Read members again from Shopify?",
+									text: `Reads the ${BULK_BATCH} members synced longest ago from Shopify and updates their tags. Click again for the next ${BULK_BATCH}.`,
+									confirm: "Resync",
+									deny: "Cancel",
+								},
+							},
+						],
+					}
+				: { type: "context", text: "Set the Admin API app's client ID (REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID) to resync members and edit their tags from here." },
 			{
 				type: "stats",
 				items: [
@@ -230,6 +322,7 @@ async function membersPage(config: RedeemIDConfig) {
 							{ key: "tags", label: "Shopify tags" },
 							{ key: "status", label: "Account" },
 							{ key: "synced", label: "Last synced", format: "relative_time" },
+							{ key: "open", label: "", format: "element" },
 						],
 						rows: members
 							.sort((a, b) => b.syncedAt.localeCompare(a.syncedAt))
@@ -240,6 +333,7 @@ async function membersPage(config: RedeemIDConfig) {
 								tags: m.tags.join(", ") || "—",
 								status: m.status === "enabled" ? "On" : "Off",
 								synced: m.syncedAt,
+								open: { type: "button", action_id: "member_open", label: "Open", value: m.customerId },
 							})),
 					},
 		],
@@ -277,6 +371,10 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 	const levels = config.levels ?? [];
 	const rules = config.rules ?? [];
 	const delivery = await lastDelivery().catch(() => null);
+	const webhooks = await webhooksSection(config, webhookUri(request));
+	const deliveries = await memberStores()
+		.then((s) => deliveriesSection(s))
+		.catch(() => [{ type: "context", text: "Couldn't read deliveries." }]);
 	return {
 		blocks: [
 			{ type: "header", text: "Status" },
@@ -290,10 +388,17 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 					{ label: "Store discovery", value: c.discovery },
 					{ label: "Customer Account API client ID", value: yes(c.clientId) },
 					{ label: "Webhook signing secret", value: yes(c.webhookSecret) },
+					{ label: "Admin API app client ID (staff tools)", value: yes(Boolean(env(ENV.adminClientId))) },
+					{ label: "Events", value: config.events?.url ? `${config.events.url}${env(ENV.eventsSecret) ? "" : " (REDEEMID_EVENTS_SECRET missing)"}` : "Off" },
 					{ label: "Storefront API access", value: c.storefront },
 					{ label: "Last webhook", value: delivery ?? "None received yet" },
 				],
 			},
+			{ type: "divider" },
+			{ type: "header", text: "Webhooks" },
+			...webhooks,
+			{ type: "header", text: "Recent deliveries" },
+			...deliveries,
 			{ type: "divider" },
 			{ type: "header", text: "Shopify settings" },
 			{

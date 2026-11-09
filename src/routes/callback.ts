@@ -16,6 +16,8 @@ import { OptionsRepository } from "emdash/api/route-utils";
 import type { Kysely } from "kysely";
 
 import { env, ENV, PROVIDER_ID, readConfig, storeDomain } from "../config.js";
+import { emit, levelChange } from "../events.js";
+import { levelsFor } from "../access.js";
 import { discover, exchangeCode, identity, ShopifyError, verifyIdToken } from "../shopify.js";
 import { emptyMember, stampTags, stores } from "../storage.js";
 import { callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_ID_TOKEN, type Flow } from "./shared.js";
@@ -86,7 +88,8 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 		if (user.role > Role.SUBSCRIBER) return fail(redirect, returnTo, "staff_account");
 
 		const s = stores(emdash.db);
-		const member = (await s.members.get(who.customerId)) ?? emptyMember(who.customerId);
+		const found = await s.members.get(who.customerId);
+		const member = found ?? emptyMember(who.customerId);
 		const now = new Date().toISOString();
 		await s.members.put(
 			who.customerId,
@@ -105,6 +108,10 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 				now,
 			),
 		);
+
+		const levels = levelsFor(who.tags, config.levels);
+		await emit(config, "member.signed_in", { customerId: who.customerId, levels, first: !member.linkedAt, refresh: Boolean(flow.refresh) });
+		await levelChange(config, found ? found.tags : null, { customerId: who.customerId, tags: who.tags, status: member.status }, "sign-in");
 
 		session.regenerate?.();
 		session.set("user", { id: user.id });

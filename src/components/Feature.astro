@@ -1,0 +1,20 @@
+---
+/**
+ * Shows its default slot only to members who hold the feature (see config
+ * `features`), and the "else" slot to everyone else.
+ *
+ *   <Feature slug="supporter">
+ *     <p>Thanks for supporting us.</p>
+ *     <a slot="else" href="/support/">Support us</a>
+ *   </Feature>
+ */
+import { hasFeature } from "../features.js";
+
+interface Props {
+	slug: string;
+}
+
+const held = await hasFeature(Astro, Astro.props.slug);
+---
+
+{held ? <slot /> : <slot name="else" />}
