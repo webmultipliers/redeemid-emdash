@@ -1,0 +1,45 @@
+---
+/**
+ * The browser client, window.redeemid. Put it once in the site layout
+ * (before </body>). See docs/developer-api.md for what it offers.
+ *
+ *   <RedeemIDClient />
+ */
+import { API_VERSION } from "../api-version.js";
+import { NOTICES } from "../notices.js";
+import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
+import { VERSION } from "../version.js";
+
+const config = await siteConfig(Astro.locals);
+const boot = {
+	version: VERSION,
+	apiVersion: API_VERSION,
+	base: "/_emdash/api/auth/redeemid",
+	locale: "en-US",
+	notices: Object.fromEntries(Object.entries(NOTICES).map(([code, message]) => [code, text(config, message)])),
+	strings: {
+		"Your cart is empty.": text(config, "Your cart is empty."),
+		"Loading your cart…": text(config, "Loading your cart…"),
+		"{price} each · {total}": text(config, "{price} each · {total}"),
+		Quantity: text(config, "Quantity"),
+		Update: text(config, "Update"),
+		Remove: text(config, "Remove"),
+		"Discount code": text(config, "Discount code"),
+		Apply: text(config, "Apply"),
+		"{code} doesn't apply to this cart.": text(config, "{code} doesn't apply to this cart."),
+		Subtotal: text(config, "Subtotal"),
+		Total: text(config, "Total"),
+		"Taxes and shipping are worked out at checkout.": text(config, "Taxes and shipping are worked out at checkout."),
+		Checkout: text(config, "Checkout"),
+		"Sold out.": text(config, "Sold out."),
+		"Not available in this combination.": text(config, "Not available in this combination."),
+		"{count} suggestions": text(config, "{count} suggestions"),
+	},
+};
+---
+
+<script type="application/json" id="redeemid-client-config" set:html={JSON.stringify(boot).replace(/</g, "\\u003c")} />
+<script>
+	import "../client/redeemid.ts";
+</script>

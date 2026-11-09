@@ -1,0 +1,52 @@
+---
+/**
+ * Product cards in a grid: image, title, lowest price (with the sale price
+ * when there is one). Used by <Collection>, <ProductSearch> and
+ * <Recommendations>; use it for your own lists of Storefront products.
+ *
+ * `quickAdd` puts Add to cart on cards whose product has one variant and
+ * needs no choice.
+ */
+import { siteConfig } from "../site-config.js";
+import { money, type ProductCard } from "../storefront.js";
+import { text } from "../text.js";
+
+interface Props {
+	products: ProductCard[];
+	/** Link for each product; `{handle}` is replaced. */
+	productHref?: string;
+	/** Heading level of each card's title. */
+	heading?: "h2" | "h3" | "h4";
+	quickAdd?: boolean;
+}
+
+const { products, productHref, heading = "h3", quickAdd = false } = Astro.props;
+const config = await siteConfig(Astro.locals);
+const href = (h: string) => productHref?.replaceAll("{handle}", encodeURIComponent(h));
+const here = Astro.url.pathname + Astro.url.search;
+const Heading = heading;
+---
+
+<ul class="redeemid-collection__grid">
+	{products.map((p) => (
+		<li class="redeemid-collection__item" data-redeemid-product={p.handle}>
+			{p.image && <img src={p.image.url} alt={p.image.altText ?? ""} loading="lazy" />}
+			<Heading>{href(p.handle) ? <a href={href(p.handle)}>{p.title}</a> : p.title}</Heading>
+			<p class="redeemid-collection__price">
+				{p.availableForSale ? (p.price ? text(config, "From {price}", { price: money(p.price) }) : "") : text(config, "Sold out")}
+				{p.availableForSale && p.compareAtPrice && <s class="redeemid-collection__compare-at">{money(p.compareAtPrice)}</s>}
+			</p>
+			{quickAdd && p.quickAddVariantId && (
+				<form method="post" action="/_emdash/api/auth/redeemid/cart-edit">
+					<input type="hidden" name="action" value="add" />
+					<input type="hidden" name="product" value={p.handle} />
+					<input type="hidden" name="variant" value={p.quickAddVariantId} />
+					<input type="hidden" name="return" value={here} />
+					<button type="submit" name="then" value="back">
+						{text(config, "Add to cart")}<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap"> {p.title}</span>
+					</button>
+				</form>
+			)}
+		</li>
+	))}
+</ul>

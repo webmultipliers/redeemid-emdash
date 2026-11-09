@@ -1,0 +1,14 @@
+---
+/** The "Product search" block: a search box with Shopify's results, filters, sorting and paging. */
+import ProductSearch from "../components/ProductSearch.astro";
+
+interface Props {
+	node: { link?: string; label?: string };
+}
+
+const { node } = Astro.props;
+const link = (node.link ?? "").trim();
+const label = (node.label ?? "").trim();
+---
+
+<ProductSearch productHref={link.startsWith("/") && link.includes("{handle}") ? link : undefined} label={label || undefined} />

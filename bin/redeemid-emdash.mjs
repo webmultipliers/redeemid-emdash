@@ -27,6 +27,9 @@ Commands:
   member <id or email>    One synced member
   health                  What's set up (never the values)
   changes --since <date>  Who joined or left a level [--level <slug>]
+  products <words>        Search the Shopify catalog for handles and prices
+  product <handle>        One product: options, variants, selling plans
+  collection <handle>     One collection: its products and filters
   resync <customer id>    Read one member from Shopify again *
   resync-batch            Read the 25 members synced longest ago *
   tags <customer id>      Edit tags in Shopify: --add a,b --remove c *
@@ -82,6 +85,15 @@ function request() {
 		case "changes":
 			if (!o.since) throw new Error("changes needs --since <date>");
 			return ["level-changes", { since: o.since, level: o.level }];
+		case "products":
+			if (!arg) throw new Error("products needs search words");
+			return ["find-products", { query: positionals.slice(1).join(" ") }];
+		case "product":
+			if (!arg) throw new Error("product needs a handle");
+			return ["get-product", { handle: arg }];
+		case "collection":
+			if (!arg) throw new Error("collection needs a handle");
+			return ["get-collection", { handle: arg }];
 		case "resync":
 			if (!arg) throw new Error("resync needs a customer id");
 			return ["resync-member", { customerId: arg }];
@@ -131,7 +143,7 @@ async function main() {
 	} catch {
 		throw new Error(`${res.status} from the site: ${text.slice(0, 200)}`);
 	}
-	if (res.status === 404) throw new Error(`The site has no "${route}" route. Actions need agents: { actions: true }, and every command needs @redeemid/emdash 0.0.11 or later.`);
+	if (res.status === 404) throw new Error(`The site has no "${route}" route. Actions need agents: { actions: true }, and every command needs @redeemid/emdash 0.0.11 or later (products, product and collection need 0.0.18).`);
 	if (!res.ok) throw new Error(json?.error?.message ?? `${res.status} from the site`);
 	const out = json?.data ?? json;
 	if (out && out.ok === false) throw new Error(out.error);

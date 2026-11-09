@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.17, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
+**Status: 0.0.18, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
 
 ## Contents
 
@@ -41,7 +41,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 - Download or delete what the site keeps about them.
 
 **For editors**
-- Paywall break, Members only, Sold on its own, Plan, Product, Collection, Contribution and Preferences blocks in the EmDash editor.
+- Paywall break, Members only, Sold on its own, Plan, Product, Collection, Product search, Contribution and Preferences blocks in the EmDash editor.
 - An Access panel on every entry: follow the site rules, free to everyone, only some levels, or the site rules plus a level, with drip, meter and date windows.
 - Rules by content type, term (with child terms) or site default, plus terms that open entries to everyone.
 - Teasers, a monthly or weekly meter, drip by days of membership, and badges that show what an entry needs.
@@ -58,8 +58,9 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 **For developers**
 - Astro components for every piece, plus `canRead()`, `readEntry()` and `hasFeature()` for your own code.
-- Product pages, collection grids, a cart page and pay-what-you-want from the Storefront API.
-- Signed outbound events for a CRM or email tool, MCP tools for AI agents, and a `redeemid-emdash` command.
+- A storefront from the Storefront API: product pages with options, subscriptions and galleries, collection grids with Shopify's filters, sorting and pages, product search, recommendations, a cart page and a cart drawer, pay-what-you-want, local prices, and a checkout that opens signed in for members.
+- A browser client, `window.redeemid`, with `subscribe()` events for any analytics or CRM tool, cart methods and search, plus JSON routes for state, the cart and the catalog. See [docs/developer-api.md](docs/developer-api.md).
+- Signed outbound events for a CRM or email tool, MCP tools for AI agents (members, access and the catalog), and a `redeemid-emdash` command.
 - Replacement text for every string readers see, Google's paywalled-content markup, cache safety and optional rate limits.
 
 ## Requirements
@@ -297,26 +298,42 @@ import { hasFeature } from "@redeemid/emdash/features";
 
 ### Shop
 
-Products, collections and the cart come from the Storefront API. Shopify works out prices, discounts, taxes and stock.
+Products, collections, search and the cart come from the Storefront API. Shopify works out prices, discounts, taxes and stock, and runs checkout. EmDash has no Shopify plugin underneath, so these components are the storefront.
 
 ```astro
-<!-- /shop/ -->
-<Collection handle="shop" productHref="/shop/{handle}/" showTitle />
+<!-- layout, once -->
+<Cart drawer />
+<CartDrawer />
+<RedeemIDClient />
+<!-- /shop/ (rendered on demand for filters and pages) -->
+<Collection handle="shop" productHref="/shop/{handle}/" showTitle browse quickAdd />
 <!-- /shop/[handle]/ -->
 <Product handle={Astro.params.handle} heading="h1"><p>No such product.</p></Product>
+<Recommendations handle={Astro.params.handle} productHref="/shop/{handle}/" />
+<!-- /search/ -->
+<ProductSearch productHref="/shop/{handle}/" />
 <!-- /cart/ -->
 <CartView productHref="/shop/{handle}/" />
 <!-- anywhere -->
 <Contribution handle="support" amounts={[5, 10, 25]} />
 ```
 
-- `<Product>`: image, title, price, description, variants (sold-out ones shown but not choosable), quantity, Add to cart and Buy now.
-- `<Collection>`: up to 50 products as cards linking to `productHref`.
+- `<Product>`: images (with thumbnails), title, price and sale price, description (`html` for Shopify's formatted one), a picker per option (Size, Color…), one-time or subscription when the product has selling plans, quantity, Add to cart and Buy now. On a product's own page (`heading="h1"`) it prints Product structured data.
+- `<Collection>`: up to 50 products as cards linking to `productHref`. `browse` adds Shopify's filters (set up in the Search & Discovery app), sort orders and pages, read from the page URL. `quickAdd` adds Add to cart on cards that need no choice.
+- `<ProductSearch>`: a search box with Shopify's matches, filters, sorting and pages. `boxOnly` gives just the box, for a header, sending searches to `action`.
+- `<Recommendations>`: Shopify's "You may also like" (`intent="related"`) or "Pair it with" (`intent="complementary"`) for a product.
 - `<CartView>`: each line with a quantity to change (0 removes it) and Remove, a discount code field, the totals and Checkout.
+- `<CartDrawer>`: the same cart in a modal dialog that slides in. With `<RedeemIDClient />` on the page, Add to cart opens it in place and `<Cart drawer />` opens it instead of going to checkout.
 - `<Contribution>`: pay what you want. Price a product at 1.00, and the amount the reader picks becomes the quantity.
-- `<Cart>`: the item count, linking to checkout.
+- `<Cart>`: the item count, linking to checkout, or to `href` (a cart page), or opening the drawer with `drawer`.
 
-The forms post to `/_emdash/api/auth/redeemid/cart-edit`, which reads every product and variant from Shopify again and only changes the visitor's own cart. A new cart carries the `_redeemid_page` attribute (the page the first item was added on), which shows on the order in Shopify admin. Editors get the same with the Product, Collection and Contribution blocks.
+Everything works without JavaScript: the forms post to `/_emdash/api/auth/redeemid/cart-edit`, which reads every product, variant, option and selling plan from Shopify again and only changes the visitor's own cart. `<RedeemIDClient />` adds the drawer, option pickers that follow the choice, and search suggestions. A new cart carries the `_redeemid_page` attribute (the page the first item was added on), which shows on the order in Shopify admin. Editors get the same with the Product, Collection, Product search and Contribution blocks.
+
+**Signed-in checkout.** When a signed-in member checks out, RedeemID puts their store sign-in (the Customer Account API access token, kept only in the server-side session and renewed when it's about to expire) on the cart, so Shopify's checkout opens signed in and the order lands on their customer record, where your Flow or apps tag it. If that can't be done, they check out as a guest with their email filled in. Set `checkout: { signIn: false }` to always use a guest checkout.
+
+**Local prices.** Set `market: { country: "visitor" }` to show each visitor prices in their own market (from Cloudflare's `CF-IPCountry`), or a fixed `country` and `language`. Markets are set up in Shopify.
+
+**Shoppers' agents.** Shopify runs a Storefront MCP server for every store at `https://<store domain>/api/mcp`, for AI agents that browse, build a cart and check out. Point shopping agents there; RedeemID's own tools are for staff.
 
 ### Preferences
 
@@ -413,6 +430,9 @@ Staff questions as data, for AI agents and scripts. Every one needs an administr
 | `get_member` | `member <id or email>` | One member: status, tags, levels with start dates, past levels, features, last sync |
 | `site_health` | `health` | Each setting (set or not, never a value), the last webhook, open privacy requests, ignored text replacements |
 | `level_changes` | `changes --since <date>` | Who joined or left a level since a date |
+| `find_products` | `products <words>` | Search the Shopify catalog: handles, titles, prices, stock |
+| `get_product` | `product <handle>` | One product: options, variants, prices, selling plans |
+| `get_collection` | `collection <handle>` | One collection: its products and the filters Shopify offers |
 
 With `agents: { actions: true }`, three actions are offered too: `resync_member` (`resync <customer id>`), `resync_batch` (`resync-batch`, 25 members) and `edit_member_tags` (`tags <customer id> --add a,b --remove c`, marked destructive for agents).
 
@@ -498,6 +518,8 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 | `text` | `{ [original]: replacement }` | Replacement text, one string at a time. |
 | `events` | `{ url, only? }` | Signed outbound events. |
 | `agents` | `{ actions?: boolean }` | Also offer resync and tag edits to agents and the command line. |
+| `market` | `{ country?, language? }` | Local prices: a fixed two-letter `country`, or `"visitor"` for each visitor's own. |
+| `checkout` | `{ signIn?: false }` | `signIn: false` stops passing a member's store sign-in to checkout. |
 | `schema` | `false` | Turn off the paywalled-content JSON-LD. |
 | `memberPaths` | `string[]` | Extra `/_emdash` path prefixes signed-in members may use. Everything else there is refused to them. |
 | `entries` | `{ ["collection:id"]: EntryRule }` | Entries' own rules. Usually set in the editor's Access panel. |
@@ -537,10 +559,15 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `Feature` | `slug`; slot `else` | Shows its content to members holding the feature |
 | `Notices` | `messages` | The message for `?redeemid_notice=` |
 | `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel` | A product with a buy button |
-| `Product` | `handle`, `heading`, `compact`, `addLabel`, `buyLabel` | A product page |
-| `Collection` | `handle`, `limit`, `productHref`, `showTitle` | A grid of products |
-| `Cart` | `label` | The cart count, linking to checkout |
+| `Product` | `handle`, `heading`, `compact`, `html`, `schema`, `addLabel`, `buyLabel` | A product page |
+| `Collection` | `handle`, `limit`, `productHref`, `showTitle`, `browse`, `quickAdd` | A grid of products, with filters and pages |
+| `ProductSearch` | `productHref`, `limit`, `boxOnly`, `action`, `label`, `quickAdd` | Product search |
+| `Recommendations` | `handle`, `intent`, `limit`, `productHref`, `title`, `quickAdd` | Shopify's recommendations |
+| `ProductGrid` | `products`, `productHref`, `heading`, `quickAdd` | Product cards, for your own lists |
+| `Cart` | `label`, `href`, `drawer` | The cart count, linking to checkout or opening the drawer |
 | `CartView` | `productHref`, `empty` | A cart page |
+| `CartDrawer` | `title` | The cart in a slide-in dialog |
+| `RedeemIDClient` | | The browser client, `window.redeemid` |
 | `Contribution` | `handle`, `amounts`, `initial`, `label`, `title` | Pay what you want |
 
 ### Editor blocks
@@ -554,7 +581,8 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | Sold on its own | `redeemid-item` | Sells the entry by itself to holders of a tag |
 | Plan | `redeemid-plan` | A product with a buy button |
 | Product | `redeemid-product` | A product with variants and Add to cart |
-| Collection | `redeemid-collection` | A grid of products |
+| Collection | `redeemid-collection` | A grid of products, optionally with filters, pages and Add to cart |
+| Product search | `redeemid-search` | A search box with Shopify's results |
 | Contribution | `redeemid-contribution` | Pay what you want |
 | Preferences | `redeemid-preferences` | The member's preference form |
 
@@ -563,16 +591,20 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | Import | Gives |
 | --- | --- |
 | `@redeemid/emdash` | `redeemid()`, `redeemidPlugin()`, `redeemidGuard()`, config types |
-| `@redeemid/emdash/access` | `canRead()`, `readEntry()`, `entryRequirement()`, and links: `signInUrl()`, `signOutUrl()`, `accountUrl()`, `cartUrl()`, `refreshUrl()` |
+| `@redeemid/emdash/access` | `canRead()`, `readEntry()`, `entryRequirement()`, `viewer()`, and links: `signInUrl()`, `signOutUrl()`, `accountUrl()`, `cartUrl()`, `refreshUrl()` |
 | `@redeemid/emdash/features` | `hasFeature()`, `viewerFeatures()` |
 | `@redeemid/emdash/preferences` | `readPreferences()`, `savePreferences()` |
-| `@redeemid/emdash/storefront` | `product()`, `collection()`, `plan()`, `money()` and the cart calls the shop components use |
+| `@redeemid/emdash/storefront` | `product()`, `collection()`, `plan()`, `money()` and the cart calls |
+| `@redeemid/emdash/catalog` | `searchProducts()`, `collectionPage()`, `suggest()`, `recommendations()` |
 | `@redeemid/emdash/events` | `signBody(body, secret)`, the signature a receiver checks against `X-RedeemID-Signature` |
 | `@redeemid/emdash/text` | `STRINGS`, the list of every replaceable string |
+| `@redeemid/emdash/contract` | The stable API as a list, and `API_VERSION` |
+
+The full developer API (stable exports, JSON routes, the browser client and its events, MCP tools) is in [docs/developer-api.md](docs/developer-api.md).
 
 ### Routes
 
-Under `/_emdash/api/auth/redeemid/`: `login`, `callback`, `logout`, `webhook`, `buy`, `cart`, `cart-edit`, `account`, `preferences` and `privacy`. Staff-only routes for the admin, agents and the command line are under `/_emdash/api/plugins/redeemid/`.
+Under `/_emdash/api/auth/redeemid/`: `login`, `callback`, `logout`, `webhook`, `buy`, `cart`, `cart-edit`, `account`, `preferences` and `privacy`, and the JSON routes `api/state`, `api/cart` and `api/search`. Staff-only routes for the admin, agents and the command line are under `/_emdash/api/plugins/redeemid/`.
 
 In the Customer Account API client, set the callback URI to `https://<site>/_emdash/api/auth/redeemid/callback`, the logout URI to `https://<site>/`, and (public clients) the JavaScript origin to `https://<site>`. Point webhooks at `https://<site>/_emdash/api/auth/redeemid/webhook`: `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed` and `customers/redact`.
 

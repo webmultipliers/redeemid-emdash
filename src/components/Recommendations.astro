@@ -1,0 +1,45 @@
+---
+/**
+ * Shopify's product recommendations under a product: "related" (You may also
+ * like) or "complementary" (Pair it with, set in the Search & Discovery
+ * app). Renders nothing when Shopify has none.
+ *
+ *   <Recommendations handle="harbor-tote" productHref="/shop/{handle}/" />
+ */
+import { recommendations } from "../catalog.js";
+import { siteConfig } from "../site-config.js";
+import { product, storeContext, type ProductCard } from "../storefront.js";
+import { text } from "../text.js";
+import ProductGrid from "./ProductGrid.astro";
+
+interface Props {
+	handle: string;
+	intent?: "related" | "complementary";
+	/** Up to 10. */
+	limit?: number;
+	productHref?: string;
+	title?: string;
+	quickAdd?: boolean;
+}
+
+const config = await siteConfig(Astro.locals);
+const { handle, intent = "related", limit = 4, productHref, quickAdd = false } = Astro.props;
+const title = Astro.props.title ?? text(config, intent === "complementary" ? "Pair it with" : "You may also like");
+let cards: ProductCard[] = [];
+if (config) {
+	try {
+		const context = storeContext(config, Astro.request);
+		const p = await product(config, handle, undefined, context);
+		if (p?.id) cards = (await recommendations(config, p.id, intent, { context })).slice(0, Math.max(1, Math.min(10, limit)));
+	} catch {
+		cards = [];
+	}
+}
+---
+
+{cards.length > 0 && (
+	<section class="redeemid-recommendations" aria-labelledby={`redeemid-recs-${handle}`}>
+		<h2 id={`redeemid-recs-${handle}`}>{title}</h2>
+		<ProductGrid products={cards} productHref={productHref} quickAdd={quickAdd} />
+	</section>
+)}

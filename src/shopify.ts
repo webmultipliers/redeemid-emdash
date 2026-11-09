@@ -127,6 +127,42 @@ export function authorizeUrl(
 export interface Tokens {
 	accessToken: string;
 	idToken: string;
+	/** Present when Shopify issued one; used to renew the access token for a signed-in checkout. */
+	refreshToken?: string | null;
+	/** When the access token expires (ms since epoch), when Shopify said. */
+	expiresAt?: number | null;
+}
+
+function tokenTimes(data: Record<string, unknown>): { refreshToken: string | null; expiresAt: number | null } {
+	const ttl = typeof data.expires_in === "number" ? data.expires_in : Number(data.expires_in);
+	return {
+		refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : null,
+		expiresAt: Number.isFinite(ttl) && ttl > 0 ? Date.now() + ttl * 1000 : null,
+	};
+}
+
+/**
+ * Renew a Customer Account API access token with its refresh token. Throws
+ * when Shopify refuses (the member's store session ended).
+ */
+export async function refreshTokens(
+	d: Discovery,
+	args: { clientId: string; clientSecret: string; origin?: string; refreshToken: string },
+	fetcher: typeof fetch = fetch,
+): Promise<{ accessToken: string; refreshToken: string | null; expiresAt: number | null }> {
+	const body = new URLSearchParams({ grant_type: "refresh_token", client_id: args.clientId, refresh_token: args.refreshToken });
+	const headers: Record<string, string> = {
+		"Content-Type": "application/x-www-form-urlencoded",
+		Accept: "application/json",
+		"User-Agent": USER_AGENT,
+	};
+	if (args.origin) headers.Origin = args.origin;
+	if (args.clientSecret) headers.Authorization = `Basic ${btoa(`${args.clientId}:${args.clientSecret}`)}`;
+	const res = await fetcher(d.tokenEndpoint, { method: "POST", headers, body });
+	const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+	if (!res.ok || typeof data.access_token !== "string") throw new ShopifyError("token_failed", `Token refresh failed (${res.status}).`);
+	const t = tokenTimes(data);
+	return { accessToken: data.access_token, refreshToken: t.refreshToken ?? args.refreshToken, expiresAt: t.expiresAt };
 }
 
 export async function exchangeCode(
@@ -155,7 +191,7 @@ export async function exchangeCode(
 	if (!res.ok || typeof data.access_token !== "string" || typeof data.id_token !== "string") {
 		throw new ShopifyError("token_failed", `Token exchange failed (${res.status}).`);
 	}
-	return { accessToken: data.access_token, idToken: data.id_token };
+	return { accessToken: data.access_token, idToken: data.id_token, ...tokenTimes(data) };
 }
 
 /** Verify the ID token's signature, issuer, audience, expiry and nonce. */

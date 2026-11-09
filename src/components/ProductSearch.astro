@@ -1,0 +1,83 @@
+---
+/**
+ * Product search for a search page: a search box, Shopify's matching
+ * products with its filters, sort orders and paging, all from the page URL
+ * (?q=…), so the page must be rendered on demand. With <RedeemIDClient />
+ * the box also suggests products as the visitor types.
+ *
+ *   <ProductSearch productHref="/shop/{handle}/" />
+ *
+ * `boxOnly` renders just the search box (for a header), sending searches to
+ * `action`, the search page's path.
+ */
+import { browseFromUrl, searchProducts, type ProductPage } from "../catalog.js";
+import { siteConfig } from "../site-config.js";
+import { storeContext } from "../storefront.js";
+import { text } from "../text.js";
+import BrowseControls from "./BrowseControls.astro";
+import ProductGrid from "./ProductGrid.astro";
+
+interface Props {
+	productHref?: string;
+	/** Products per page, 1 to 50. */
+	limit?: number;
+	/** Only the search box. */
+	boxOnly?: boolean;
+	/** Where searches go. Defaults to this page. */
+	action?: string;
+	label?: string;
+	quickAdd?: boolean;
+}
+
+const config = await siteConfig(Astro.locals);
+const { productHref, limit = 24, boxOnly = false, action = Astro.url.pathname, label = text(config, "Search products"), quickAdd = false } = Astro.props;
+const browse = browseFromUrl(Astro.url.searchParams, limit);
+let page: ProductPage | null = null;
+let failed = false;
+if (!boxOnly && config && browse.query) {
+	try {
+		page = await searchProducts(config, browse.query, browse, { context: storeContext(config, Astro.request) });
+	} catch {
+		failed = true;
+	}
+}
+const id = boxOnly ? "redeemid-search-box" : "redeemid-search";
+---
+
+<section class="redeemid-search" role="search">
+	<form method="get" action={action} class="redeemid-search__form">
+		<label for={`${id}-q`}>{label}</label>
+		<input
+			id={`${id}-q`}
+			name="q"
+			type="search"
+			value={boxOnly ? "" : browse.query}
+			autocomplete="off"
+			maxlength="200"
+			data-redeemid-suggest
+			data-redeemid-product-href={productHref}
+			aria-controls={`${id}-suggestions`}
+			aria-expanded="false"
+		/>
+		<button type="submit">{text(config, "Search")}</button>
+		<ul id={`${id}-suggestions`} class="redeemid-search__suggestions" hidden></ul>
+		<p style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap" role="status" data-redeemid-suggest-status></p>
+	</form>
+	{!boxOnly && browse.query && (
+		failed ? (
+			<p>{text(config, "Search isn't available right now. Try again in a few minutes.")}</p>
+		) : page && (
+			<>
+				<p class="redeemid-search__count" role="status">
+					{page.products.length === 0
+						? text(config, "No products match “{query}”.", { query: browse.query })
+						: (page.total ?? page.products.length) === 1
+							? text(config, "1 result for “{query}”", { query: browse.query })
+							: text(config, "{count} results for “{query}”", { count: page.total ?? page.products.length, query: browse.query })}
+				</p>
+				{(page.products.length > 0 || page.filters.length > 0) && <BrowseControls filters={page.filters} pageInfo={page.pageInfo} search query={browse.query} id={id} />}
+				<ProductGrid products={page.products} productHref={productHref} heading="h2" quickAdd={quickAdd} />
+			</>
+		)
+	)}
+</section>

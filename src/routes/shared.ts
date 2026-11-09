@@ -2,6 +2,17 @@ import { getPublicOrigin } from "emdash/api/route-utils";
 
 export const SESSION_FLOW = "redeemid:flow";
 export const SESSION_ID_TOKEN = "redeemid:id_token";
+/**
+ * The member's Customer Account API tokens, kept only in the server-side
+ * session, to open Shopify's checkout signed in. Never sent to the browser.
+ */
+export const SESSION_CUSTOMER_TOKEN = "redeemid:customer_token";
+
+export interface CustomerToken {
+	accessToken: string;
+	refreshToken: string | null;
+	expiresAt: number | null;
+}
 /** A sign-in started more than this long ago is refused. */
 export const FLOW_TTL_MS = 10 * 60 * 1000;
 

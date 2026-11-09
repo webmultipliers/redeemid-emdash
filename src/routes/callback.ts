@@ -23,7 +23,7 @@ import { discover, exchangeCode, identity, logoutUrl, ShopifyError, verifyIdToke
 import { emptyMember, stampTags, stores } from "../storage.js";
 import { getPublicOrigin, OptionsRepository } from "emdash/api/route-utils";
 
-import { afterLogoutCookie, callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_ID_TOKEN, type Flow } from "./shared.js";
+import { afterLogoutCookie, callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_CUSTOMER_TOKEN, SESSION_ID_TOKEN, type CustomerToken, type Flow } from "./shared.js";
 
 export const prerender = false;
 
@@ -131,6 +131,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 		session.regenerate?.();
 		session.set("user", { id: user.id });
 		session.set(SESSION_ID_TOKEN, tokens.idToken);
+		session.set(SESSION_CUSTOMER_TOKEN, { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken ?? null, expiresAt: tokens.expiresAt ?? null } satisfies CustomerToken);
 		return flow.refresh ? fail(redirect, returnTo, "refreshed") : redirect(returnTo);
 	} catch (e) {
 		const code = e instanceof ShopifyError ? e.code : e instanceof OAuthError ? "signup_not_allowed" : "sign_in_failed";

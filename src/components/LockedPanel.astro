@@ -27,9 +27,11 @@ interface Props {
 	meterPeriod?: "month" | "week";
 	/** The entry's "Sold on its own" block: offers "Buy just this". */
 	item?: SoldItem | null;
+	/** The entry's id or slug, for the browser client's wall_shown event. */
+	entry?: string;
 }
 
-const { reason, required = [], held = [], opensAt, meterLeft, meterPeriod, item } = Astro.props;
+const { reason, required = [], held = [], opensAt, meterLeft, meterPeriod, item, entry } = Astro.props;
 const opens = opensAt
 	? new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" }).format(opensAt)
 	: null;
@@ -54,7 +56,7 @@ if (item?.product && config && (reason === "sign_in" || reason === "upgrade" || 
 const here = Astro.url.pathname + Astro.url.search;
 ---
 
-<div class="redeemid-locked" data-redeemid-reason={reason} data-redeemid-level={level?.slug}>
+<div class="redeemid-locked" data-redeemid-reason={reason} data-redeemid-level={level?.slug} data-redeemid-entry={entry}>
 	<slot />
 	{level?.wall && (reason === "sign_in" || reason === "upgrade") && <p class="redeemid-locked__wall">{level.wall}</p>}
 	{reason === "sign_in" && (

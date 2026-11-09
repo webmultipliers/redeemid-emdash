@@ -1,72 +1,163 @@
 ---
 /**
- * A Shopify product: image, title, price, description, a variant choice
- * when it has several, a quantity, and "Add to cart" and "Buy now".
- * Everything comes from the Storefront API; the default slot shows if the
- * product can't be loaded.
+ * A Shopify product: images, title, price (with the sale price when there
+ * is one), description, a picker per option (Size, Color…), a choice of
+ * one-time or subscription when the product has selling plans, a quantity,
+ * and "Add to cart" and "Buy now". Everything comes from the Storefront
+ * API; the default slot shows if the product can't be loaded.
  *
- *   <Product handle="harbor-tote" />
+ *   <Product handle="harbor-tote" heading="h1" />
+ *
+ * The form works without JavaScript (the server picks the variant from the
+ * options). With <RedeemIDClient /> on the page the price, image and stock
+ * follow the choice as it changes, and with <CartDrawer /> Add to cart opens
+ * the drawer in place.
+ *
+ * On a product's own page (heading "h1") it prints Product structured data
+ * for search engines; `schema={false}` turns that off.
  */
 import { siteConfig } from "../site-config.js";
-import { money, product as loadProduct, type Product } from "../storefront.js";
+import { money, product as loadProduct, realOptions, storeContext, type Product } from "../storefront.js";
 import { text } from "../text.js";
 
 interface Props {
 	handle: string;
 	/** Heading level for the title. */
 	heading?: "h1" | "h2" | "h3";
-	/** Leave out the description (for cards). */
+	/** Leave out the description and gallery (for cards). */
 	compact?: boolean;
 	addLabel?: string;
 	buyLabel?: string;
+	/** Show Shopify's HTML description (as the merchant wrote it) instead of the plain text. */
+	html?: boolean;
+	/** Product structured data. Defaults to on for heading "h1". */
+	schema?: boolean;
 }
 
 const config = await siteConfig(Astro.locals);
-const { handle, heading = "h2", compact = false, addLabel = text(config, "Add to cart"), buyLabel = text(config, "Buy now") } = Astro.props;
+const { handle, heading = "h2", compact = false, html = false, addLabel = text(config, "Add to cart"), buyLabel = text(config, "Buy now") } = Astro.props;
+const context = storeContext(config, Astro.request);
 let p: Product | null = null;
 if (config) {
 	try {
-		p = await loadProduct(config, handle);
+		p = await loadProduct(config, handle, undefined, context);
 	} catch {
 		p = null;
 	}
 }
+if (context.country && config?.market?.country === "visitor") Astro.response.headers.set("Vary", "CF-IPCountry");
+const options = p ? realOptions(p) : [];
 const available = p?.variants.filter((v) => v.availableForSale) ?? [];
 const first = available[0] ?? p?.variants[0];
+const chosen = Object.fromEntries((first?.selectedOptions ?? []).map((o) => [o.name, o.value]));
+const plans = p?.sellingPlans ?? [];
+const sale = first?.compareAtPrice && Number(first.compareAtPrice.amount) > Number(first.price.amount) ? first.compareAtPrice : null;
+const image = first?.image ?? p?.image ?? null;
+const images = p?.images ?? (p?.image ? [p.image] : []);
 const here = Astro.url.pathname + Astro.url.search;
 const Heading = heading;
 const id = `redeemid-product-${handle}`;
+const variants = (p?.variants ?? []).map((v) => ({
+	id: v.id,
+	available: v.availableForSale,
+	price: money(v.price) ?? "",
+	compareAt: v.compareAtPrice && Number(v.compareAtPrice.amount) > Number(v.price.amount) ? (money(v.compareAtPrice) ?? "") : "",
+	image: v.image?.url ?? null,
+	imageAlt: v.image?.altText ?? "",
+	options: Object.fromEntries((v.selectedOptions ?? []).map((o) => [o.name, o.value])),
+}));
+const json = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
+const showSchema = (Astro.props.schema ?? heading === "h1") && config?.schema !== false && p;
+const schema =
+	showSchema && p
+		? json({
+				"@context": "https://schema.org",
+				"@type": "Product",
+				name: p.title,
+				description: p.description || undefined,
+				image: images.map((i) => i.url),
+				brand: p.vendor ? { "@type": "Brand", name: p.vendor } : undefined,
+				url: new URL(Astro.url.pathname, Astro.url).href,
+				offers: p.variants.map((v) => ({
+					"@type": "Offer",
+					price: v.price.amount,
+					priceCurrency: v.price.currencyCode,
+					availability: v.availableForSale ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+					sku: v.sku || undefined,
+					name: v.title !== "Default Title" ? v.title : undefined,
+				})),
+			})
+		: null;
 ---
 
 {p ? (
 	<div class="redeemid-product" data-redeemid-product={p.handle}>
-		{p.image && <img class="redeemid-product__image" src={p.image.url} alt={p.image.altText ?? ""} loading="lazy" />}
+		{schema && <script type="application/ld+json" set:html={schema} />}
+		{image && <img class="redeemid-product__image" src={image.url} alt={image.altText ?? ""} loading={heading === "h1" ? "eager" : "lazy"} data-redeemid-product-image />}
+		{!compact && images.length > 1 && (
+			<ul class="redeemid-product__thumbs">
+				{images.map((img, i) => (
+					<li>
+						<button type="button" data-redeemid-thumb={img.url} data-redeemid-alt={img.altText ?? ""} aria-pressed={String(i === 0)}>
+							<img src={img.url} alt={img.altText || text(config, "Image {number} of {count}", { number: i + 1, count: images.length })} loading="lazy" />
+						</button>
+					</li>
+				))}
+			</ul>
+		)}
 		<Heading class="redeemid-product__title">{p.title}</Heading>
-		{first && <p class="redeemid-product__price">{money(first.price)}</p>}
-		{!compact && p.description && <p class="redeemid-product__description">{p.description}</p>}
+		<p class="redeemid-product__price">
+			<span data-redeemid-price>{first && money(first.price)}</span>
+			<s class="redeemid-product__compare-at" data-redeemid-compare-at hidden={!sale}>{sale && money(sale)}</s>
+		</p>
+		{!compact && (html && p.descriptionHtml ? <div class="redeemid-product__description" set:html={p.descriptionHtml} /> : p.description && <p class="redeemid-product__description">{p.description}</p>)}
 		{available.length > 0 ? (
-			<form method="post" action="/_emdash/api/auth/redeemid/cart-edit">
+			<form method="post" action="/_emdash/api/auth/redeemid/cart-edit" data-redeemid-product-form>
 				<input type="hidden" name="action" value="add" />
 				<input type="hidden" name="product" value={p.handle} />
 				<input type="hidden" name="return" value={here} />
-				{p.variants.length > 1 ? (
-					<p>
-						<label for={`${id}-variant`}>{text(config, "Option")}</label>
-						<select id={`${id}-variant`} name="variant">
-							{p.variants.map((v) => (
-								<option value={v.id} disabled={!v.availableForSale}>
-									{text(config, v.availableForSale ? "{option} ({price})" : "{option} ({price}) sold out", { option: v.title, price: money(v.price) })}
-								</option>
-							))}
-						</select>
-					</p>
+				{options.length > 0 ? (
+					<>
+						<script type="application/json" data-redeemid-variants set:html={json(variants)} />
+						{options.map((o, i) => (
+							<p class="redeemid-product__option">
+								<label for={`${id}-option-${i}`}>{o.name}</label>
+								<select id={`${id}-option-${i}`} name={`option.${o.name}`}>
+									{o.values.map((value) => (
+										<option value={value} selected={chosen[o.name] === value} disabled={options.length === 1 && !p.variants.some((v) => v.availableForSale && v.selectedOptions?.some((x) => x.name === o.name && x.value === value))}>
+											{value}
+										</option>
+									))}
+								</select>
+							</p>
+						))}
+					</>
 				) : (
 					<input type="hidden" name="variant" value={first?.id} />
+				)}
+				{plans.length > 0 && (
+					<fieldset class="redeemid-product__plans">
+						<legend>{text(config, "Purchase options")}</legend>
+						{!p.requiresSellingPlan && (
+							<p>
+								<input type="radio" id={`${id}-plan-none`} name="selling_plan" value="" checked />
+								<label for={`${id}-plan-none`}>{text(config, "One-time purchase")}</label>
+							</p>
+						)}
+						{plans.map((sp, i) => (
+							<p>
+								<input type="radio" id={`${id}-plan-${i}`} name="selling_plan" value={sp.id} checked={p.requiresSellingPlan && i === 0} />
+								<label for={`${id}-plan-${i}`}>{sp.group && sp.group !== sp.name ? text(config, "{group}: {plan}", { group: sp.group, plan: sp.name }) : sp.name}</label>
+							</p>
+						))}
+					</fieldset>
 				)}
 				<p>
 					<label for={`${id}-quantity`}>{text(config, "Quantity")}</label>
 					<input id={`${id}-quantity`} name="quantity" type="number" min="1" max="1000" value="1" inputmode="numeric" />
 				</p>
+				<p class="redeemid-product__availability" role="status" data-redeemid-availability></p>
+				<p class="redeemid-product__form-status" role="status" data-redeemid-form-status></p>
 				<button type="submit" name="then" value="back">{addLabel}</button>
 				<button type="submit" name="then" value="checkout">{buyLabel}</button>
 			</form>

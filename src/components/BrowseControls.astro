@@ -1,0 +1,87 @@
+---
+/**
+ * Sort, filter and paging controls for a page of products (<Collection
+ * browse> and <ProductSearch>). A plain GET form: the choice lives in the
+ * page URL, so it can be shared, bookmarked and cached, and works without
+ * JavaScript. Filters are the ones Shopify offers for these products.
+ */
+import { browseHref, SEARCH_SORTS, SORTS, type Filter, type PageInfo, type Sort } from "../catalog.js";
+import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
+
+interface Props {
+	filters: Filter[];
+	pageInfo: PageInfo;
+	/** Search pages offer fewer sort orders. */
+	search?: boolean;
+	/** The search words, kept in the form. */
+	query?: string;
+	id: string;
+}
+
+const { filters, pageInfo, search = false, query, id } = Astro.props;
+const config = await siteConfig(Astro.locals);
+const url = Astro.url;
+const active = new Set(url.searchParams.getAll("filter"));
+const sort = url.searchParams.get("sort") ?? "";
+const labels: Record<Sort, string> = {
+	relevance: text(config, "Relevance"),
+	"best-selling": text(config, "Best selling"),
+	newest: text(config, "Newest"),
+	"price-asc": text(config, "Price, low to high"),
+	"price-desc": text(config, "Price, high to low"),
+	"title-asc": text(config, "Title, A to Z"),
+	"title-desc": text(config, "Title, Z to A"),
+};
+const sorts = search ? SEARCH_SORTS : SORTS.filter((s) => s !== "relevance");
+const lists = filters.filter((f) => f.type !== "PRICE_RANGE" && f.values.length > 0);
+const price = filters.find((f) => f.type === "PRICE_RANGE");
+const filtered = active.size > 0 || url.searchParams.has("price_min") || url.searchParams.has("price_max");
+const clearHref = browseHref(url, { filter: null, price_min: null, price_max: null });
+---
+
+<form method="get" action={url.pathname} class="redeemid-browse" aria-labelledby={`${id}-heading`}>
+	<h2 id={`${id}-heading`} style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">{text(config, "Sort and filter")}</h2>
+	{query !== undefined && <input type="hidden" name="q" value={query} />}
+	<p class="redeemid-browse__sort">
+		<label for={`${id}-sort`}>{text(config, "Sort by")}</label>
+		<select id={`${id}-sort`} name="sort">
+			<option value="">{text(config, search ? "Relevance" : "Featured")}</option>
+			{sorts.filter((s) => !(search && s === "relevance")).map((s) => (
+				<option value={s} selected={sort === s}>{labels[s]}</option>
+			))}
+		</select>
+	</p>
+	{lists.map((f, i) => (
+		<fieldset class="redeemid-browse__filter">
+			<legend>{f.label}</legend>
+			{f.values.map((v, j) => (
+				<p>
+					<input type="checkbox" id={`${id}-f${i}-${j}`} name="filter" value={v.input} checked={active.has(v.input)} />
+					<label for={`${id}-f${i}-${j}`}>{text(config, "{label} ({count})", { label: v.label, count: v.count })}</label>
+				</p>
+			))}
+		</fieldset>
+	))}
+	{price && (
+		<fieldset class="redeemid-browse__filter">
+			<legend>{price.label || text(config, "Price")}</legend>
+			<p>
+				<label for={`${id}-min`}>{text(config, "From")}</label>
+				<input id={`${id}-min`} name="price_min" type="number" min="0" step="any" inputmode="decimal" value={url.searchParams.get("price_min") ?? ""} />
+				<label for={`${id}-max`}>{text(config, "To")}</label>
+				<input id={`${id}-max`} name="price_max" type="number" min="0" step="any" inputmode="decimal" value={url.searchParams.get("price_max") ?? ""} />
+			</p>
+		</fieldset>
+	)}
+	<p class="redeemid-browse__actions">
+		<button type="submit">{text(config, "Apply")}</button>
+		{filtered && <a href={clearHref}>{text(config, "Clear filters")}</a>}
+	</p>
+</form>
+{(pageInfo.hasPreviousPage || pageInfo.hasNextPage) && (
+	<nav class="redeemid-browse__pages" aria-label={text(config, "Pages")}>
+		{pageInfo.hasPreviousPage && pageInfo.startCursor && <a rel="prev" href={browseHref(url, { before: pageInfo.startCursor, after: null })}>{text(config, "Previous page")}</a>}
+		{pageInfo.hasNextPage && pageInfo.endCursor && <a rel="next" href={browseHref(url, { after: pageInfo.endCursor, before: null })}>{text(config, "Next page")}</a>}
+	</nav>
+)}

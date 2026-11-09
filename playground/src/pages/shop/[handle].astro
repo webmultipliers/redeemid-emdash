@@ -1,5 +1,6 @@
 ---
 import Product from "@redeemid/emdash/components/Product.astro";
+import Recommendations from "@redeemid/emdash/components/Recommendations.astro";
 import Base from "../../layouts/Base.astro";
 
 const { handle = "" } = Astro.params;
@@ -7,4 +8,5 @@ const { handle = "" } = Astro.params;
 
 <Base title="Product">
 	<Product handle={handle} heading="h1"><p>PRODUCT-FALLBACK</p></Product>
+	<Recommendations handle={handle} productHref="/shop/{handle}/" />
 </Base>

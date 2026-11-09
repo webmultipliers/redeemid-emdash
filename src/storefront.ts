@@ -30,12 +30,61 @@ export function resetStorefrontCache(): void {
 	shopCache.clear();
 }
 
+/**
+ * Where the buyer is, for local prices and currency (Shopify Markets). Both
+ * are optional; Shopify uses the store's defaults without them.
+ */
+export interface StoreContext {
+	/** ISO 3166 two-letter country code, e.g. "CA". */
+	country?: string | null;
+	/** Shopify language code, e.g. "FR" or "PT_BR". */
+	language?: string | null;
+}
+
+/** A clean country code, or null. */
+export function countryCode(raw: unknown): string | null {
+	const c = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+	return /^[A-Z]{2}$/.test(c) && c !== "XX" && c !== "T1" ? c : null;
+}
+
+function languageCode(raw: unknown): string | null {
+	const l = typeof raw === "string" ? raw.trim().toUpperCase().replace("-", "_") : "";
+	return /^[A-Z]{2}(_[A-Z]{2})?$/.test(l) ? l : null;
+}
+
+/**
+ * The buyer's context from config `market`: a fixed country, or "visitor"
+ * for the country Cloudflare reports for the request (CF-IPCountry).
+ */
+export function storeContext(config: RedeemIDConfig | null | undefined, request?: Request | null): StoreContext {
+	const m = config?.market;
+	if (!m) return {};
+	const country = m.country === "visitor" ? countryCode(request?.headers.get("cf-ipcountry")) : countryCode(m.country);
+	return { country, language: languageCode(m.language) };
+}
+
+function contextKey(ctx: StoreContext | undefined): string {
+	return `${ctx?.country ?? ""}|${ctx?.language ?? ""}`;
+}
+
+/** Add Shopify's @inContext directive to an operation, when there is a context. */
+export function withContext(query: string, ctx: StoreContext | undefined): string {
+	const parts: string[] = [];
+	const country = countryCode(ctx?.country);
+	const language = languageCode(ctx?.language);
+	if (country) parts.push(`country: ${country}`);
+	if (language) parts.push(`language: ${language}`);
+	if (!parts.length) return query;
+	return query.replace(/^(\s*(?:query|mutation)\s+\w+(?:\([^)]*\))?)/, `$1 @inContext(${parts.join(", ")})`);
+}
+
 export async function storefront<T>(
 	config: RedeemIDConfig,
 	query: string,
 	variables: Record<string, unknown> = {},
-	opts: { buyerIp?: string | null; fetcher?: typeof fetch } = {},
+	opts: { buyerIp?: string | null; fetcher?: typeof fetch; context?: StoreContext } = {},
 ): Promise<T> {
+	query = withContext(query, opts.context);
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
 		Accept: "application/json",
@@ -177,6 +226,8 @@ export async function addToCart(
 		attributes?: Record<string, string>;
 		buyerIp?: string | null;
 		fetcher?: typeof fetch;
+		/** A new cart's country, for local prices. */
+		context?: StoreContext;
 	} = {},
 ): Promise<Cart> {
 	const quantity = Math.max(1, Math.floor(line.quantity ?? 1));
@@ -186,7 +237,11 @@ export async function addToCart(
 		if (data?.cartLinesAdd.cart) return data.cartLinesAdd.cart;
 	}
 	const input: Record<string, unknown> = { lines };
-	if (opts.email) input.buyerIdentity = { email: opts.email };
+	const identity: Record<string, string> = {};
+	if (opts.email) identity.email = opts.email;
+	const country = countryCode(opts.context?.country);
+	if (country) identity.countryCode = country;
+	if (Object.keys(identity).length) input.buyerIdentity = identity;
 	const attributes = Object.entries(opts.attributes ?? {}).filter(([, v]) => v);
 	if (attributes.length) input.attributes = attributes.map(([key, value]) => ({ key, value }));
 	const data = await storefront<{ cartCreate: CartResult }>(config, CART_NEW, { input }, opts);
@@ -212,17 +267,57 @@ export interface Variant {
 	title: string;
 	availableForSale: boolean;
 	price: Money;
+	/** The price before a sale, when Shopify has one above `price`. */
+	compareAtPrice?: Money | null;
+	sku?: string | null;
+	image?: Image | null;
+	/** Option name and value pairs, e.g. [{ name: "Size", value: "M" }]. */
+	selectedOptions?: Array<{ name: string; value: string }>;
+}
+
+export interface SellingPlan {
+	id: string;
+	name: string;
+	/** The group's name, e.g. "Subscribe and save". */
+	group: string;
 }
 
 export interface Product {
+	/** Shopify's product id (gid). */
+	id?: string;
 	handle: string;
 	title: string;
 	description: string;
+	/** Shopify's HTML description, as the merchant wrote it. */
+	descriptionHtml?: string;
+	vendor?: string;
+	productType?: string;
 	availableForSale: boolean;
 	image: Image | null;
+	/** Every image, featured first (up to 20). */
+	images?: Image[];
+	/** The product's options and their values, e.g. Size: S, M, L. Absent or one "Title" option means none. */
+	options?: Array<{ name: string; values: string[] }>;
 	variants: Variant[];
 	/** The first selling plan, for subscription-only products. */
 	sellingPlanId: string | null;
+	/** True when the product can only be bought on a selling plan. */
+	requiresSellingPlan?: boolean;
+	/** Every selling plan offered (subscriptions, pre-orders), in Shopify's order. */
+	sellingPlans?: SellingPlan[];
+	seo?: { title: string | null; description: string | null };
+}
+
+/** Real options to choose from: none for a product with only Shopify's "Default Title". */
+export function realOptions(p: Product): Array<{ name: string; values: string[] }> {
+	const opts = p.options ?? [];
+	if (opts.length === 1 && opts[0]?.values.length === 1 && opts[0].values[0] === "Default Title") return [];
+	return opts.filter((o) => o.values.length > 0);
+}
+
+/** The variant matching the chosen option values, or undefined. */
+export function variantFor(p: Product, chosen: Record<string, string>): Variant | undefined {
+	return p.variants.find((v) => (v.selectedOptions ?? []).every((o) => chosen[o.name] === o.value));
 }
 
 export interface ProductCard {
@@ -232,6 +327,10 @@ export interface ProductCard {
 	image: Image | null;
 	/** The lowest variant price. */
 	price: Money | null;
+	/** The lowest compare-at price, when the product is on sale. */
+	compareAtPrice?: Money | null;
+	/** The variant to add straight from a card: set only when the product has exactly one and needs no selling plan. */
+	quickAddVariantId?: string | null;
 }
 
 export interface Collection {
@@ -243,18 +342,53 @@ export interface Collection {
 
 const PRODUCT_QUERY = `query Product($handle: String!) {
   product(handle: $handle) {
-    handle title description availableForSale requiresSellingPlan
+    id handle title description descriptionHtml vendor productType availableForSale requiresSellingPlan
     featuredImage { url altText }
-    variants(first: 50) { nodes { id title availableForSale price { amount currencyCode } } }
-    sellingPlanGroups(first: 1) { nodes { sellingPlans(first: 1) { nodes { id } } } }
+    images(first: 20) { nodes { url altText } }
+    options { name optionValues { name } }
+    variants(first: 100) { nodes { id title availableForSale sku price { amount currencyCode } compareAtPrice { amount currencyCode } image { url altText } selectedOptions { name value } } }
+    sellingPlanGroups(first: 5) { nodes { name sellingPlans(first: 10) { nodes { id name } } } }
+    seo { title description }
   }
 }`;
+
+/** The fields a product card needs. */
+export const CARD_FIELDS = `handle title availableForSale requiresSellingPlan featuredImage { url altText }
+      priceRange { minVariantPrice { amount currencyCode } }
+      compareAtPriceRange { minVariantPrice { amount currencyCode } }
+      variants(first: 2) { nodes { id availableForSale } }`;
+
+export type RawCard = {
+	handle: string;
+	title: string;
+	availableForSale: boolean;
+	requiresSellingPlan?: boolean;
+	featuredImage: Image | null;
+	priceRange?: { minVariantPrice: Money } | null;
+	compareAtPriceRange?: { minVariantPrice: Money } | null;
+	variants?: { nodes: Array<{ id: string; availableForSale: boolean }> };
+};
+
+export function toCard(p: RawCard): ProductCard {
+	const price = p.priceRange?.minVariantPrice ?? null;
+	const compare = p.compareAtPriceRange?.minVariantPrice ?? null;
+	const only = p.variants?.nodes.length === 1 ? p.variants.nodes[0] : null;
+	return {
+		handle: p.handle,
+		title: p.title,
+		availableForSale: p.availableForSale,
+		image: p.featuredImage ?? null,
+		price,
+		compareAtPrice: compare && price && Number(compare.amount) > Number(price.amount) ? compare : null,
+		quickAddVariantId: only?.availableForSale && !p.requiresSellingPlan ? only.id : null,
+	};
+}
 
 const COLLECTION_QUERY = `query Collection($handle: String!, $first: Int!) {
   collection(handle: $handle) {
     handle title description
     products(first: $first) {
-      nodes { handle title availableForSale featuredImage { url altText } priceRange { minVariantPrice { amount currencyCode } } }
+      nodes { ${CARD_FIELDS} }
     }
   }
 }`;
@@ -269,65 +403,73 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
 	return value;
 }
 
-/** A product with its variants, cached for five minutes. Null when Shopify has no such product. */
-export async function product(config: RedeemIDConfig, handle: string, fetcher?: typeof fetch): Promise<Product | null> {
-	return cached(`${shopOrigin(config)}|product|${handle}`, async () => {
-		type Data = {
-			product: {
-				handle: string;
-				title: string;
-				description: string;
-				availableForSale: boolean;
-				requiresSellingPlan: boolean;
-				featuredImage: Image | null;
-				variants: { nodes: Variant[] };
-				sellingPlanGroups: { nodes: Array<{ sellingPlans: { nodes: Array<{ id: string }> } }> };
-			} | null;
-		};
-		const { product: p } = await storefront<Data>(config, PRODUCT_QUERY, { handle }, { fetcher });
-		if (!p) return null;
-		return {
-			handle: p.handle,
-			title: p.title,
-			description: p.description,
-			availableForSale: p.availableForSale,
-			image: p.featuredImage ?? null,
-			variants: p.variants.nodes,
-			sellingPlanId: p.requiresSellingPlan ? (p.sellingPlanGroups.nodes[0]?.sellingPlans.nodes[0]?.id ?? null) : null,
-		};
+type RawProduct = {
+	id: string;
+	handle: string;
+	title: string;
+	description: string;
+	descriptionHtml?: string;
+	vendor?: string;
+	productType?: string;
+	availableForSale: boolean;
+	requiresSellingPlan: boolean;
+	featuredImage: Image | null;
+	images?: { nodes: Image[] };
+	options?: Array<{ name: string; optionValues?: Array<{ name: string }> }>;
+	variants: { nodes: Variant[] };
+	sellingPlanGroups: { nodes: Array<{ name?: string; sellingPlans: { nodes: Array<{ id: string; name?: string }> } }> };
+	seo?: { title: string | null; description: string | null } | null;
+};
+
+function toProduct(p: RawProduct): Product {
+	const plans: SellingPlan[] = p.sellingPlanGroups.nodes.flatMap((g) => g.sellingPlans.nodes.map((sp) => ({ id: sp.id, name: sp.name ?? "", group: g.name ?? "" })));
+	const images = p.images?.nodes ?? [];
+	const featured = p.featuredImage ?? null;
+	return {
+		id: p.id,
+		handle: p.handle,
+		title: p.title,
+		description: p.description,
+		descriptionHtml: p.descriptionHtml ?? "",
+		vendor: p.vendor ?? "",
+		productType: p.productType ?? "",
+		availableForSale: p.availableForSale,
+		image: featured,
+		images: featured ? [featured, ...images.filter((i) => i.url !== featured.url)] : images,
+		options: (p.options ?? []).map((o) => ({ name: o.name, values: (o.optionValues ?? []).map((v) => v.name) })),
+		variants: p.variants.nodes,
+		sellingPlanId: p.requiresSellingPlan ? (plans[0]?.id ?? null) : null,
+		requiresSellingPlan: p.requiresSellingPlan,
+		sellingPlans: plans,
+		seo: p.seo ?? { title: null, description: null },
+	};
+}
+
+/** A product with its variants, options, images and selling plans, cached for five minutes. Null when Shopify has no such product. */
+export async function product(config: RedeemIDConfig, handle: string, fetcher?: typeof fetch, context?: StoreContext): Promise<Product | null> {
+	return cached(`${shopOrigin(config)}|product|${handle}|${contextKey(context)}`, async () => {
+		const { product: p } = await storefront<{ product: RawProduct | null }>(config, PRODUCT_QUERY, { handle }, { fetcher, context });
+		return p ? toProduct(p) : null;
 	});
 }
 
 /** A collection's first `first` products, cached for five minutes. Null when Shopify has no such collection. */
-export async function collection(config: RedeemIDConfig, handle: string, first = 12, fetcher?: typeof fetch): Promise<Collection | null> {
+export async function collection(config: RedeemIDConfig, handle: string, first = 12, fetcher?: typeof fetch, context?: StoreContext): Promise<Collection | null> {
 	const n = Math.max(1, Math.min(50, Math.floor(first)));
-	return cached(`${shopOrigin(config)}|collection|${handle}|${n}`, async () => {
-		type Data = {
-			collection: {
-				handle: string;
-				title: string;
-				description: string;
-				products: {
-					nodes: Array<{ handle: string; title: string; availableForSale: boolean; featuredImage: Image | null; priceRange: { minVariantPrice: Money } }>;
-				};
-			} | null;
-		};
-		const { collection: c } = await storefront<Data>(config, COLLECTION_QUERY, { handle, first: n }, { fetcher });
+	return cached(`${shopOrigin(config)}|collection|${handle}|${n}|${contextKey(context)}`, async () => {
+		type Data = { collection: { handle: string; title: string; description: string; products: { nodes: RawCard[] } } | null };
+		const { collection: c } = await storefront<Data>(config, COLLECTION_QUERY, { handle, first: n }, { fetcher, context });
 		if (!c) return null;
-		return {
-			handle: c.handle,
-			title: c.title,
-			description: c.description,
-			products: c.products.nodes.map((p) => ({
-				handle: p.handle,
-				title: p.title,
-				availableForSale: p.availableForSale,
-				image: p.featuredImage ?? null,
-				price: p.priceRange?.minVariantPrice ?? null,
-			})),
-		};
+		return { handle: c.handle, title: c.title, description: c.description, products: c.products.nodes.map(toCard) };
 	});
 }
+
+/** Cache a Storefront read for five minutes, by key. Used by the catalog module. */
+export function cachedRead<T>(key: string, load: () => Promise<T>): Promise<T> {
+	return cached(key, load);
+}
+
+export { contextKey };
 
 /** Format Shopify money for display. */
 export function money(m: Money | null | undefined, locale = "en-US"): string | null {
@@ -349,6 +491,10 @@ export interface CartLine {
 	image: Image | null;
 	price: Money | null;
 	total: Money | null;
+	/** The selling plan the line is bought on (a subscription), by name. */
+	sellingPlan?: string | null;
+	/** The line's price per item before a sale, when there is one. */
+	compareAtPrice?: Money | null;
 }
 
 export interface CartDetails extends Cart {
@@ -363,7 +509,8 @@ const CART_DETAIL_FIELDS = `${CART_FIELDS}
   discountCodes { code applicable }
   lines(first: 100) { nodes {
     id quantity
-    cost { totalAmount { amount currencyCode } }
+    cost { totalAmount { amount currencyCode } compareAtAmountPerQuantity { amount currencyCode } }
+    sellingPlanAllocation { sellingPlan { name } }
     merchandise { ... on ProductVariant { id title price { amount currencyCode } image { url altText } product { title handle featuredImage { url altText } } } }
   } }`;
 
@@ -374,7 +521,8 @@ type RawCart = Cart & {
 		nodes: Array<{
 			id: string;
 			quantity: number;
-			cost?: { totalAmount?: Money | null } | null;
+			cost?: { totalAmount?: Money | null; compareAtAmountPerQuantity?: Money | null } | null;
+			sellingPlanAllocation?: { sellingPlan?: { name?: string } | null } | null;
 			merchandise: {
 				id: string;
 				title: string;
@@ -404,6 +552,8 @@ function details(c: RawCart): CartDetails {
 			image: l.merchandise.image ?? l.merchandise.product.featuredImage ?? null,
 			price: l.merchandise.price ?? null,
 			total: l.cost?.totalAmount ?? null,
+			sellingPlan: l.sellingPlanAllocation?.sellingPlan?.name ?? null,
+			compareAtPrice: l.cost?.compareAtAmountPerQuantity ?? null,
 		})),
 	};
 }
@@ -470,4 +620,26 @@ export async function setDiscountCodes(
 		opts,
 	);
 	return result(data.cartDiscountCodesUpdate);
+}
+
+/**
+ * Sign the cart in as the member, with their Customer Account API access
+ * token, so Shopify's checkout opens signed in and the order lands on their
+ * customer. Returns the cart's fresh checkout URL, or null when Shopify
+ * refused (the visitor then checks out as a guest).
+ */
+export async function signInCart(
+	config: RedeemIDConfig,
+	cartId: string,
+	customerAccessToken: string,
+	opts: { buyerIp?: string | null; fetcher?: typeof fetch } = {},
+): Promise<string | null> {
+	const data = await storefront<{ cartBuyerIdentityUpdate: { cart: { checkoutUrl: string } | null; userErrors: Array<{ message: string }> } }>(
+		config,
+		`mutation CartIdentity($id: ID!, $identity: CartBuyerIdentityInput!) { cartBuyerIdentityUpdate(cartId: $id, buyerIdentity: $identity) { cart { checkoutUrl } userErrors { message } } }`,
+		{ id: cartId, identity: { customerAccessToken } },
+		opts,
+	).catch(() => null);
+	const cart = data?.cartBuyerIdentityUpdate.cart;
+	return cart && !data?.cartBuyerIdentityUpdate.userErrors.length ? cart.checkoutUrl : null;
 }

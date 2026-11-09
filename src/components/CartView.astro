@@ -57,6 +57,7 @@ const code = cart?.discountCodes[0];
 							<p class="redeemid-cartview__name">
 								{href(l.productHandle) ? <a href={href(l.productHandle)}>{l.productTitle}</a> : l.productTitle}
 								{l.variantTitle && l.variantTitle !== "Default Title" && <span> · {l.variantTitle}</span>}
+								{l.sellingPlan && <span> · {l.sellingPlan}</span>}
 							</p>
 							<p class="redeemid-cartview__price">{text(config, "{price} each · {total}", { price: money(l.price), total: money(l.total) })}</p>
 							<form method="post" action={action} class="redeemid-cartview__quantity">

@@ -7,16 +7,49 @@ import { createServer } from "node:http";
 
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 
-function product(handle, title, variants) {
+function product(handle, title, variants, extra = {}) {
+	const real = variants.length > 1;
 	return {
+		id: `gid://shopify/Product/${handle.length * 100 + variants.length}`,
 		handle,
 		title,
 		description: "",
+		descriptionHtml: "",
+		vendor: "Ledger",
+		productType: "",
 		availableForSale: variants.some((v) => v[3]),
 		requiresSellingPlan: false,
 		featuredImage: null,
-		variants: { nodes: variants.map(([id, t, price, ok]) => ({ id, title: t, availableForSale: ok, price: { amount: price.toFixed(1), currencyCode: "USD" } })) },
+		images: { nodes: [] },
+		options: real ? [{ name: "Color", optionValues: variants.map((v) => ({ name: v[1] })) }] : [{ name: "Title", optionValues: [{ name: "Default Title" }] }],
+		variants: {
+			nodes: variants.map(([id, t, price, ok]) => ({
+				id,
+				title: t,
+				availableForSale: ok,
+				sku: null,
+				price: { amount: price.toFixed(1), currencyCode: "USD" },
+				compareAtPrice: null,
+				image: null,
+				selectedOptions: [{ name: real ? "Color" : "Title", value: t }],
+			})),
+		},
 		sellingPlanGroups: { nodes: [] },
+		seo: { title: null, description: null },
+		...extra,
+	};
+}
+
+function card(p) {
+	return {
+		handle: p.handle,
+		title: p.title,
+		availableForSale: p.availableForSale,
+		requiresSellingPlan: p.requiresSellingPlan,
+		featuredImage: null,
+		priceRange: { minVariantPrice: p.variants.nodes[0].price },
+		compareAtPriceRange: { minVariantPrice: p.variants.nodes[0].compareAtPrice ?? p.variants.nodes[0].price },
+		variants: { nodes: p.variants.nodes.slice(0, 2).map((v) => ({ id: v.id, availableForSale: v.availableForSale })) },
 	};
 }
 
@@ -26,11 +59,14 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 	const jwk = { ...(await exportJWK(publicKey)), kid: "k1", alg: "RS256", use: "sig" };
 	const codes = new Map();
 	const tokens = new Map();
+	const refreshes = new Map();
 	const shop = {
 		origin,
 		/** The customer the next sign-in returns. */
 		customer: { id: 1001, email: "member@example.com", firstName: "Mia", lastName: "Member", tags: ["member"] },
 		tokenRequests: [],
+		identityUpdates: [],
+		searches: [],
 		carts: [],
 		/** Live carts by id; a completed checkout removes its cart, as Shopify does. */
 		cartsById: new Map(),
@@ -44,6 +80,9 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 			]),
 			support: product("support", "Support the newsroom", [["gid://shopify/ProductVariant/601", "Default Title", 1, true]]),
 			"single-story": product("single-story", "Single story", [["gid://shopify/ProductVariant/701", "Default Title", 3, true]]),
+			"coffee-club": product("coffee-club", "Coffee club", [["gid://shopify/ProductVariant/801", "Default Title", 15, true]], {
+				sellingPlanGroups: { nodes: [{ name: "Subscribe", sellingPlans: { nodes: [{ id: "gid://shopify/SellingPlan/91", name: "Every month" }] } }] },
+			}),
 		},
 		/** Admin API: token requests, webhook subscriptions, tag edits, and events RedeemID sent. */
 		adminTokens: 0,
@@ -116,6 +155,13 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 			case "/token": {
 				const form = new URLSearchParams(body);
 				shop.tokenRequests.push({ auth: req.headers.authorization, origin: req.headers.origin, form: Object.fromEntries(form) });
+				if (form.get("grant_type") === "refresh_token") {
+					const known = refreshes.get(form.get("refresh_token"));
+					if (!known) return json(400, { error: "invalid_grant" });
+					const access = `at-${Math.random().toString(36).slice(2)}`;
+					tokens.set(access, known);
+					return json(200, { access_token: access, refresh_token: form.get("refresh_token"), expires_in: 3600 });
+				}
 				const grant = codes.get(form.get("code"));
 				codes.delete(form.get("code"));
 				const basic = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
@@ -127,6 +173,8 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				const c = shop.customer;
 				const access = `at-${Math.random().toString(36).slice(2)}`;
 				tokens.set(access, { ...c });
+				const refresh = `rt-${Math.random().toString(36).slice(2)}`;
+				refreshes.set(refresh, { ...c });
 				const idToken = await new SignJWT({ email: c.email, email_verified: true, nonce: grant.nonce })
 					.setProtectedHeader({ alg: "RS256", kid: "k1" })
 					.setIssuer(`${origin}/authentication/1`)
@@ -135,7 +183,7 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 					.setIssuedAt()
 					.setExpirationTime("1h")
 					.sign(privateKey);
-				return json(200, { access_token: access, id_token: idToken, token_type: "Bearer", expires_in: 3600 });
+				return json(200, { access_token: access, id_token: idToken, refresh_token: refresh, token_type: "Bearer", expires_in: shop.tokenSeconds ?? 3600 });
 			}
 			case "/account/customer/api/2026-10/graphql": {
 				const c = tokens.get(req.headers.authorization);
@@ -171,7 +219,8 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 						return {
 							id: l.id,
 							quantity: l.quantity,
-							cost: { totalAmount: money(price * l.quantity) },
+							cost: { totalAmount: money(price * l.quantity), compareAtAmountPerQuantity: null },
+							sellingPlanAllocation: l.sellingPlanId ? { sellingPlan: { name: "Every month" } } : null,
 							merchandise: {
 								id: l.merchandiseId,
 								title: found?.v.title ?? "Default Title",
@@ -186,7 +235,7 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 					const off = applicable.some((d) => d.applicable) ? subtotal * 0.1 : 0;
 					return {
 						id,
-						checkoutUrl: `${origin}/checkout?cart=${encodeURIComponent(id)}`,
+						checkoutUrl: `${origin}/checkout?cart=${encodeURIComponent(id)}${c.customer ? `&customer=${c.customer}` : ""}`,
 						totalQuantity: c.lines.reduce((t, l) => t + l.quantity, 0),
 						cost: { subtotalAmount: money(subtotal), totalAmount: money(subtotal - off) },
 						discountCodes: applicable,
@@ -227,20 +276,54 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 					if (c) c.codes = variables.codes ?? [];
 					return json(200, { data: { cartDiscountCodesUpdate: { cart: view(variables.id), userErrors: errs } } });
 				}
+				if (query.includes("cartBuyerIdentityUpdate")) {
+					const who = tokens.get(variables.identity?.customerAccessToken);
+					if (c && who) c.customer = who.id;
+					const bad = c && !who ? [{ message: "Invalid customer access token." }] : errs;
+					shop.identityUpdates.push({ cart: variables.id, ok: Boolean(c && who) });
+					return json(200, { data: { cartBuyerIdentityUpdate: { cart: view(variables.id), userErrors: bad } } });
+				}
 				if (query.includes("cart(id")) return json(200, { data: { cart: view(variables.id) } });
+				const listed = () => Object.values(shop.products).filter((p) => p.handle !== "pro-plan");
+				if (query.includes("predictiveSearch(")) {
+					const q = String(variables.query).toLowerCase();
+					const hits = listed().filter((p) => p.title.toLowerCase().includes(q));
+					return json(200, { data: { predictiveSearch: { queries: hits.length ? [{ text: q }] : [], products: hits.slice(0, variables.limit).map(card), collections: [] } } });
+				}
+				if (query.includes("search(")) {
+					shop.searches.push(variables);
+					const q = String(variables.query).toLowerCase();
+					let hits = listed().filter((p) => p.title.toLowerCase().includes(q) || q === "*");
+					const vendor = (variables.filters ?? []).find((f) => f.productVendor);
+					if (vendor) hits = hits.filter((p) => p.vendor === vendor.productVendor);
+					if (variables.sortKey === "PRICE") hits.sort((a, b) => Number(a.variants.nodes[0].price.amount) - Number(b.variants.nodes[0].price.amount) * 1);
+					if (variables.reverse) hits.reverse();
+					return json(200, {
+						data: {
+							search: {
+								totalCount: hits.length,
+								productFilters: [{ id: "filter.p.vendor", label: "Vendor", type: "LIST", values: [{ id: "v.ledger", label: "Ledger", count: hits.length, input: '{"productVendor":"Ledger"}' }] }],
+								pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null },
+								nodes: hits.slice(0, variables.first ?? variables.last ?? 24).map(card),
+							},
+						},
+					});
+				}
+				if (query.includes("productRecommendations(")) {
+					return json(200, { data: { productRecommendations: listed().filter((p) => p.id !== variables.id).slice(0, 2).map(card) } });
+				}
 				if (query.includes("collection(handle")) {
 					if (variables.handle !== "shop") return json(200, { data: { collection: null } });
-					const nodes = Object.values(shop.products)
-						.filter((p) => p.handle !== "pro-plan")
-						.slice(0, variables.first)
-						.map((p) => ({
-							handle: p.handle,
-							title: p.title,
-							availableForSale: p.availableForSale,
-							featuredImage: null,
-							priceRange: { minVariantPrice: p.variants.nodes[0].price },
-						}));
-					return json(200, { data: { collection: { handle: "shop", title: "Shop", description: "Ledger goods.", products: { nodes } } } });
+					const all = listed();
+					const first = variables.first ?? variables.last ?? 12;
+					const start = variables.after ? Number(variables.after) : 0;
+					const nodes = all.slice(start, start + first).map(card);
+					const products = {
+						filters: [{ id: "filter.v.availability", label: "Availability", type: "LIST", values: [{ id: "a1", label: "In stock", count: all.length, input: '{"available":true}' }] }],
+						pageInfo: { hasNextPage: start + first < all.length, hasPreviousPage: start > 0, startCursor: String(start), endCursor: String(start + first) },
+						nodes,
+					};
+					return json(200, { data: { collection: { handle: "shop", title: "Shop", description: "Ledger goods.", products } } });
 				}
 				return json(200, { data: { product: shop.products[variables.handle] ?? null } });
 			}

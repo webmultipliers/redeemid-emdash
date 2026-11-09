@@ -1,0 +1,59 @@
+---
+/**
+ * A cart that slides in over the page. Put it once in the site layout,
+ * with <RedeemIDClient />. Add to cart then opens it in place, and
+ * <Cart drawer /> opens it instead of going to checkout. It is a native
+ * modal dialog: focus stays inside while it's open, Escape closes it, and
+ * focus goes back to what opened it.
+ *
+ * Without JavaScript it never shows, and the cart forms and links work as
+ * they do on their own.
+ */
+import { siteConfig } from "../site-config.js";
+import { text } from "../text.js";
+
+interface Props {
+	title?: string;
+}
+
+const config = await siteConfig(Astro.locals);
+const { title = text(config, "Your cart") } = Astro.props;
+---
+
+<dialog class="redeemid-drawer" data-redeemid-cart-drawer aria-labelledby="redeemid-drawer-title">
+	<div class="redeemid-drawer__head">
+		<h2 id="redeemid-drawer-title">{title}</h2>
+		<button type="button" class="redeemid-drawer__close" data-redeemid-drawer-close>{text(config, "Close")}</button>
+	</div>
+	<p class="redeemid-drawer__status" role="status" data-redeemid-drawer-status></p>
+	<div class="redeemid-cartview redeemid-drawer__body" data-redeemid-drawer-body></div>
+</dialog>
+
+<style is:global>
+	/* Low-specificity defaults; a site's own styles win. */
+	:where(dialog.redeemid-drawer) {
+		box-sizing: border-box;
+		inset: 0 0 0 auto;
+		margin: 0;
+		height: 100dvh;
+		max-height: 100dvh;
+		width: min(28rem, 100vw);
+		max-width: 100vw;
+		padding: 1rem;
+		border: 0;
+		overflow-y: auto;
+	}
+	:where(dialog.redeemid-drawer)::backdrop {
+		background: rgb(0 0 0 / 0.4);
+	}
+	:where(.redeemid-drawer img) {
+		max-width: 5rem;
+		height: auto;
+	}
+	:where(.redeemid-drawer__head) {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+	}
+</style>

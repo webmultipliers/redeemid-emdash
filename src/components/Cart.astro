@@ -1,7 +1,9 @@
 ---
 /**
- * Cart link with the item count from the visitor's Shopify cart. It goes
- * to that cart's Shopify checkout.
+ * Cart link with the item count from the visitor's Shopify cart. It goes to
+ * that cart's Shopify checkout, or to `href` (a cart page with <CartView>).
+ * With `drawer`, and <CartDrawer /> and <RedeemIDClient /> on the page, it
+ * opens the drawer instead; the link still works without JavaScript.
  */
 import { cartUrl } from "../access.js";
 import { readCart } from "../cart.js";
@@ -10,15 +12,19 @@ import { text } from "../text.js";
 
 interface Props {
 	label?: string;
+	/** A cart page to link to instead of checkout. */
+	href?: string;
+	/** Open the cart drawer. */
+	drawer?: boolean;
 }
 
 const config = await siteConfig(Astro.locals);
-const { label = text(config, "Cart") } = Astro.props;
+const { label = text(config, "Cart"), href, drawer = false } = Astro.props;
 const ref = await readCart(Astro.session);
 const count = ref?.count ?? 0;
 const here = Astro.url.pathname + Astro.url.search;
 ---
 
-<a class="redeemid-cart" href={cartUrl(here)} data-redeemid-cart-count={count}>
-	{label}{count > 0 && <span class="redeemid-cart__count"> ({count})</span>}
+<a class="redeemid-cart" href={href ?? cartUrl(here)} data-redeemid-cart-count={count} data-redeemid-cart-link={drawer ? "" : undefined}>
+	{label}<span class="redeemid-cart__count" hidden={count === 0}>{count > 0 ? ` (${count})` : ""}</span>
 </a>
