@@ -247,6 +247,22 @@ try {
 	const test = await adminAct({ type: "form_submit", action_id: "access_test", values: { collection: "posts", terms: "category:members, category:pro", tags: "member", signed_in: true }, page: "/test" });
 	check("access test shows what an entry needs and the verdict", test.text.includes("Member or Pro + Pro") || test.text.includes("Pro"), test.text.slice(0, 400));
 	check("access test says a Member is kept out of a Members + Pro post", test.text.includes("This reader is kept out"));
+	// Member preferences: read from and saved to the member's own Shopify customer.
+	const prefsPage = await member.go("/account");
+	check("Preferences shows the member's fields, not the membership namespace", prefsPage.text.includes("Topics") && prefsPage.text.includes("Weekly newsletter") && prefsPage.text.includes("Reader level:") && !prefsPage.text.includes("Member since"), prefsPage.text.slice(0, 300));
+	const prefBody = new URLSearchParams([["return", "/account"], ["present:preferences.topics", "1"], ["pref:preferences.topics", "Food"], ["pref:preferences.topics", "Travel"], ["present:preferences.newsletter", "1"], ["pref:preferences.newsletter", "true"]]);
+	const savedPrefs = await member.go("/_emdash/api/auth/redeemid/preferences", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: prefBody.toString() });
+	check("saving the form writes the answers to the Shopify customer", shop.metafields["preferences.topics"] === '["Food","Travel"]' && shop.metafields["preferences.newsletter"] === "true" && savedPrefs.text.includes("Your preferences are saved."), JSON.stringify(shop.metafields));
+	const prefEvent = shop.events.find((e) => e.headers["x-redeemid-event"] === "preferences.saved");
+	check("preferences.saved names the fields, never the answers", Boolean(prefEvent) && !prefEvent.body.includes("Travel") && JSON.parse(prefEvent.body).data.fields.includes("preferences.topics"));
+	const writes = shop.metafieldWrites.length;
+	const prefRefused = await member.go("/_emdash/api/auth/redeemid/preferences", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: { "preferences.topics": ["Sport"], "preferences.level": 5, "membership.since": "2020-01-01" } }) });
+	check("bad answers are refused and nothing is saved", prefRefused.res.status === 400 && prefRefused.text.includes("invalid_choice") && prefRefused.text.includes("read_only") && prefRefused.text.includes("unknown_field") && shop.metafieldWrites.length === writes, prefRefused.text.slice(0, 200));
+	const prefCleared = await member.go("/_emdash/api/auth/redeemid/preferences", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: { "preferences.topics": [] } }) });
+	check("an empty answer clears the field", prefCleared.res.status === 200 && !("preferences.topics" in shop.metafields) && shop.metafieldWrites.at(-1)?.m === "metafieldsDelete");
+	const visitorPrefs = await visitor.go("/_emdash/api/auth/redeemid/preferences");
+	check("visitors can't read preferences", visitorPrefs.res.status === 401, String(visitorPrefs.res.status));
+
 	// Put the store's customer back as the rest of the run expects.
 	shop.customer.tags = ["member"];
 	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });

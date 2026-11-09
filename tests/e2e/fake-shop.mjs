@@ -48,6 +48,15 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 		adminTokens: 0,
 		subscriptions: [],
 		tagEdits: [],
+		// Customer metafield definitions and the customer's values, by "namespace.key".
+		definitions: [
+			{ namespace: "preferences", key: "topics", name: "Topics", description: "What you want to hear about", type: { name: "list.single_line_text_field" }, validations: [{ name: "choices", value: '["Politics","Food","Travel"]' }] },
+			{ namespace: "preferences", key: "newsletter", name: "Weekly newsletter", description: null, type: { name: "boolean" }, validations: [] },
+			{ namespace: "preferences", key: "level", name: "Reader level", description: null, type: { name: "number_integer" }, validations: [{ name: "min", value: "1" }, { name: "max", value: "5" }] },
+			{ namespace: "membership", key: "since", name: "Member since", description: null, type: { name: "date" }, validations: [] },
+		],
+		metafields: { "preferences.level": "3" },
+		metafieldWrites: [],
 		events: [],
 		/** Is the customer signed in at the store? `prompt=none` fails when not. */
 		storeSession: true,
@@ -263,6 +272,24 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 						}
 						return json(200, { data: { [m]: { userErrors: [] } } });
 					}
+				}
+				if (query.includes("metafieldDefinitions(")) return json(200, { data: { metafieldDefinitions: { nodes: shop.definitions } } });
+				if (query.includes("customer(id")) {
+					if (variables.id !== `gid://shopify/Customer/${c.id}`) return json(200, { data: { customer: null } });
+					const nodes = Object.entries(shop.metafields)
+						.filter(([k]) => !variables.keys || variables.keys.includes(k))
+						.map(([k, value]) => ({ namespace: k.split(".")[0], key: k.split(".")[1], value }));
+					return json(200, { data: { customer: { metafields: { nodes } } } });
+				}
+				if (query.includes("metafieldsSet(") || query.includes("metafieldsDelete(")) {
+					const m = query.includes("metafieldsSet(") ? "metafieldsSet" : "metafieldsDelete";
+					for (const f of variables.metafields) {
+						shop.metafieldWrites.push({ m, ...f });
+						if (f.ownerId !== `gid://shopify/Customer/${c.id}`) continue;
+						if (m === "metafieldsSet") shop.metafields[`${f.namespace}.${f.key}`] = f.value;
+						else delete shop.metafields[`${f.namespace}.${f.key}`];
+					}
+					return json(200, { data: { [m]: { userErrors: [] } } });
 				}
 				if (query.includes("webhookSubscriptionCreate")) {
 					shop.subscriptions.push({ id: `gid://shopify/WebhookSubscription/${shop.subscriptions.length + 1}`, topic: variables.topic, uri: variables.uri });

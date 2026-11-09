@@ -6,7 +6,8 @@
  *
  * Headers: X-RedeemID-Event (the name), X-RedeemID-Delivery (a fresh id) and
  * X-RedeemID-Signature: sha256=<hex HMAC of the raw body>. Events:
- * member.signed_in, member.levels_changed, meter.used, meter.exhausted.
+ * member.signed_in, member.levels_changed, meter.used, meter.exhausted,
+ * preferences.saved.
  * Sending never blocks or breaks the page: failures are logged and dropped.
  * No event carries an email address or a name; match people by `customerId`.
  */
@@ -14,7 +15,7 @@
 import { env, ENV, type RedeemIDConfig } from "./config.js";
 import { USER_AGENT } from "./shopify.js";
 
-export type EventName = "member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted";
+export type EventName = "member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved";
 
 const TIMEOUT_MS = 3000;
 

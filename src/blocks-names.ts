@@ -4,6 +4,7 @@ export const PLAN_BLOCK = "redeemid-plan";
 export const PRODUCT_BLOCK = "redeemid-product";
 export const COLLECTION_BLOCK = "redeemid-collection";
 export const CONTRIBUTION_BLOCK = "redeemid-contribution";
+export const PREFERENCES_BLOCK = "redeemid-preferences";
 /** Starts a members-only part of the body; it runs to the next end block. */
 export const MEMBERS_BLOCK = "redeemid-members";
 export const MEMBERS_END_BLOCK = "redeemid-members-end";

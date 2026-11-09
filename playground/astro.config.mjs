@@ -27,6 +27,8 @@ const config = {
 		{ collection: "posts", taxonomy: "category", term: "updates", levels: ["member", "pro"], drip: 30 },
 	],
 	features: [{ slug: "supporter", name: "Supporter", tags: ["supporter"] }],
+	// Members change topics and the newsletter, and only see their reader level. membership.since is never offered.
+	preferences: [{ key: "preferences.topics" }, { key: "preferences.newsletter" }, { key: "preferences.level", access: "view" }, { key: "membership.since" }],
 	// Signed member events go to the fake store in the e2e test.
 	events: { url: `${shop.startsWith("http://127.0.0.1") ? shop : "https://example.invalid"}/events` },
 	// Signed-in readers may open one locked post a month.

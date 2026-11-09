@@ -43,10 +43,11 @@ import {
 	MEMBERS_END_BLOCK,
 	PAYWALL_BLOCK,
 	PLAN_BLOCK,
+	PREFERENCES_BLOCK,
 	PRODUCT_BLOCK,
 } from "./blocks-names.js";
 
-export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PRODUCT_BLOCK };
+export { COLLECTION_BLOCK, CONTRIBUTION_BLOCK, MEMBERS_BLOCK, MEMBERS_END_BLOCK, PAYWALL_BLOCK, PLAN_BLOCK, PREFERENCES_BLOCK, PRODUCT_BLOCK };
 
 function blocks(config: RedeemIDConfig) {
 	const levelOptions = [
@@ -138,6 +139,17 @@ function blocks(config: RedeemIDConfig) {
 				{ type: "text_input" as const, action_id: "title", label: "Title (optional, Shopify's title otherwise)" },
 				{ type: "text_input" as const, action_id: "amounts", label: "Suggested amounts, comma separated", placeholder: "5, 10, 25" },
 				{ type: "text_input" as const, action_id: "label", label: "Button label", placeholder: "Give" },
+			],
+		},
+		{
+			type: PREFERENCES_BLOCK,
+			label: "Preferences",
+			icon: "users",
+			description: "The signed-in member's preferences, saved on their Shopify customer",
+			placeholder: "Member preferences",
+			fields: [
+				{ type: "text_input" as const, action_id: "title", label: "Title", placeholder: "Your preferences" },
+				{ type: "text_input" as const, action_id: "label", label: "Button label", placeholder: "Save preferences" },
 			],
 		},
 	];

@@ -72,10 +72,17 @@ export interface FeatureConfig {
 }
 
 /** Where to send signed member events (see events.ts). The signing secret is REDEEMID_EVENTS_SECRET. */
+export interface PreferenceConfig {
+	/** "namespace.key" of a customer metafield definition. */
+	key: string;
+	/** "edit" (default): members can change it. "view": members only see it. */
+	access?: "view" | "edit";
+}
+
 export interface EventsConfig {
 	url: string;
 	/** Send only these events. All of them when left out. */
-	only?: Array<"member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted">;
+	only?: Array<"member.signed_in" | "member.levels_changed" | "meter.used" | "meter.exhausted" | "preferences.saved">;
 }
 
 export interface MeterConfig {
@@ -100,6 +107,12 @@ export interface RedeemIDConfig {
 	meter?: MeterConfig;
 	features?: FeatureConfig[];
 	events?: EventsConfig;
+	/**
+	 * Customer metafields members may see or change, in this order, by
+	 * "namespace.key". Define them in Shopify (Settings → Custom data →
+	 * Customers). Needs the Admin API app (staff tools) for reading and saving.
+	 */
+	preferences?: PreferenceConfig[];
 	/** The wall's join link: where readers become members, e.g. { href: "/join/", label: "Become a member" }. */
 	join?: { href: string; label?: string };
 	/**

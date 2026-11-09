@@ -37,6 +37,8 @@ export interface MemberRecord {
 	linkedAt?: string | null;
 	/** Tags Shopify has removed, with when each was held (newest last, at most 50). */
 	pastTags?: PastTag[];
+	/** When the member last saved preferences (ms), newest last, at most 10: the rate limit. */
+	prefSaves?: number[];
 }
 
 /** A tag the customer held from `from` (when known) until `to`. */

@@ -1,0 +1,12 @@
+---
+/** The "Preferences" block: the signed-in member's preferences form. */
+import Preferences from "../components/Preferences.astro";
+
+interface Props {
+	node: { title?: string; label?: string };
+}
+
+const { node } = Astro.props;
+---
+
+<Preferences title={node.title?.trim() || undefined} label={node.label?.trim() || undefined} />
