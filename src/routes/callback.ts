@@ -21,6 +21,8 @@ import { record } from "../log.js";
 import { levelsFor } from "../access.js";
 import { discover, exchangeCode, identity, logoutUrl, ShopifyError, verifyIdToken, type Discovery } from "../shopify.js";
 import { emptyMember, stampTags, stores } from "../storage.js";
+import { adminConfigured, resync } from "../admin-api.js";
+import { seal } from "../token-vault.js";
 import { getPublicOrigin, OptionsRepository } from "emdash/api/route-utils";
 
 import { afterLogoutCookie, callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_CUSTOMER_TOKEN, SESSION_ID_TOKEN, type CustomerToken, type Flow } from "./shared.js";
@@ -119,10 +121,18 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 					syncedAt: now,
 					source: "sign-in",
 					linkedAt: member.linkedAt ?? now,
+					emailVerified,
 				},
 				now,
 			),
 		);
+		// With the Admin API app, signing in is a full sync: the membership
+		// dates and marketing consent too. A failure never blocks sign-in.
+		if (adminConfigured()) {
+			await resync(config, s, [who.customerId], "sign-in").catch(async (e: Error) => {
+				await record({ event: "staff.resync", label: "sign-in", status: "error", level: "warn", origin: "member", customerId: who.customerId, note: String(e.message).slice(0, 200) });
+			});
+		}
 
 		const levels = levelsFor(who.tags, config.levels);
 		await record({ event: "member.signed_in", label: flow.refresh ? "refresh" : member.linkedAt ? "sign-in" : "first sign-in", status: "ok", origin: "member", customerId: who.customerId });
@@ -132,7 +142,12 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 		session.regenerate?.();
 		session.set("user", { id: user.id });
 		session.set(SESSION_ID_TOKEN, tokens.idToken);
-		session.set(SESSION_CUSTOMER_TOKEN, { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken ?? null, expiresAt: tokens.expiresAt ?? null } satisfies CustomerToken);
+		// Kept only for signed-in checkout, and sealed (see token-vault.ts).
+		if (config.checkout?.signIn !== false) {
+			const sealed = await seal({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken ?? null, expiresAt: tokens.expiresAt ?? null } satisfies CustomerToken, emdash.db).catch(() => null);
+			if (sealed) session.set(SESSION_CUSTOMER_TOKEN, sealed);
+			else session.delete?.(SESSION_CUSTOMER_TOKEN);
+		} else session.delete?.(SESSION_CUSTOMER_TOKEN);
 		return flow.refresh ? fail(redirect, returnTo, "refreshed") : redirect(returnTo);
 	} catch (e) {
 		const code = e instanceof ShopifyError ? e.code : e instanceof OAuthError ? "signup_not_allowed" : "sign_in_failed";

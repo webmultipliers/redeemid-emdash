@@ -36,7 +36,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 **For members**
 - Sign in, Account (orders, profile and addresses on the store) and Sign out, which ends the store session too. Members never see the word "Shopify".
-- A member card with their levels and when each started, past levels, the meter, and Refresh membership to read their tags again after a purchase.
+- A member card with their levels and when each started, when the membership renews or ends and any gift membership (from Shopify), past levels, the meter, and Refresh membership to read their tags again after a purchase.
 - Preferences they can change, such as topics or a newsletter choice, saved on the Shopify customer.
 - Download or delete what the site keeps about them.
 
@@ -188,9 +188,9 @@ Pass `id` on the entry's own page. It lets the meter count the read, and a locke
 
 **`<Notices />`** goes near the top of the layout. It shows the message for a `?redeemid_notice=` code (see [notices](#notices)) and nothing otherwise.
 
-**`<MemberCard />`** is for an account page: levels with start dates, past levels, the meter, and links to the store account, Refresh membership and Sign out. Refresh membership sends a member to the store with no sign-in form; one still signed in there comes straight back with their tags read again. Add `<Preferences />` and `<YourData />` beside it.
+**`<MemberCard />`** is for an account page: levels with start dates, the renewal or end date and any gift membership that Shopify keeps (see [membership dates](#membership-dates)), past levels, the meter, and links to the store account, Refresh membership and Sign out. Refresh membership sends a member to the store with no sign-in form; one still signed in there comes straight back with their tags read again. Add `<Preferences />` and `<YourData />` beside it.
 
-**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). With `levels`, members who already hold one see "You're on this plan." in place of the button.
+**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). With `levels`, members who already hold one see "You're on this plan." in place of the button, and a member who held one before (Shopify has since removed its tag) gets **Renew** (`renewLabel`) instead of `label`. The wall does the same: a lapsed member reads "Your Pro membership has ended." with **Renew Pro** and **Already renewed? Refresh**, not the newcomer's join link.
 
 ```astro
 <Plan handle="gold-membership" label="Join Gold" levels={["gold"]}>
@@ -242,7 +242,7 @@ Everything about who reads what can be set in the EmDash admin, so a new content
 - **Taxonomies.** Rules for terms in every taxonomy, for one collection or every collection the taxonomy is on.
 - **Features** and **Protected files.**
 
-The first save of a setting copies its value from your code config, so nothing is lost, and from then on the admin's value is used. **Use the code's setting** removes the admin's copy. Saved settings are kept in the site's database and read once per request.
+The first save of a setting copies its value from your code config, so nothing is lost, and from then on the admin's value is used. **Use the code's setting** removes the admin's copy. Saved settings are kept in the site's database. Each server keeps the last ones it read and checks one small record per request to see whether anyone saved since, so the whole set is read again only after a save. If the database can't be read, the settings last read stand; a server that has read none yet locks every entry (and refuses files in any media folder) until it can, rather than falling back to the code's settings and opening what the admin locked.
 
 Each saved entry also gets an **Access** panel in the editor. It shows who can read the entry right now and which rule says so, and sets the entry's own rule:
 
@@ -253,7 +253,7 @@ Each saved entry also gets an **Access** panel in the editor. It shows who can r
 | Only the levels ticked | One of those levels (none ticked: any signed-in member) |
 | The site rules, and also a level ticked | What the rules say and one of those levels |
 
-It can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
+Moving an entry to the trash keeps its rule for a restore but frees its slug, so a new entry that takes the slug doesn't inherit the rule. It can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
 
 ### Meter and drip
 
@@ -329,7 +329,7 @@ Products, collections, search and the cart come from the Storefront API. Shopify
 
 Everything works without JavaScript: the forms post to `/_emdash/api/auth/redeemid/cart-edit`, which reads every product, variant, option and selling plan from Shopify again and only changes the visitor's own cart. `<RedeemIDClient />` adds the drawer, option pickers that follow the choice, and search suggestions. A new cart carries the `_redeemid_page` attribute (the page the first item was added on), which shows on the order in Shopify admin. Editors get the same with the Product, Collection, Product search and Contribution blocks.
 
-**Signed-in checkout.** When a signed-in member checks out, RedeemID puts their store sign-in (the Customer Account API access token, kept only in the server-side session and renewed when it's about to expire) on the cart, so Shopify's checkout opens signed in and the order lands on their customer record, where your Flow or apps tag it. If that can't be done, they check out as a guest with their email filled in. Set `checkout: { signIn: false }` to always use a guest checkout.
+**Signed-in checkout.** When a signed-in member checks out, RedeemID puts their store sign-in (the Customer Account API access token, kept only in the server-side session, encrypted with a key kept in the site's database, and renewed when it's about to expire) on the cart, so Shopify's checkout opens signed in and the order lands on their customer record, where your Flow or apps tag it. If that can't be done, they check out as a guest with their email filled in. Set `checkout: { signIn: false }` to always use a guest checkout; then the tokens aren't kept at all.
 
 **Local prices.** Set `market: { country: "visitor" }` to show each visitor prices in their own market (from Cloudflare's `CF-IPCountry`), or a fixed `country` and `language`. Markets are set up in Shopify.
 
@@ -383,7 +383,7 @@ Limits: only EmDash's file route is checked, so don't give the storage bucket a 
 
 ### Privacy requests
 
-What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, first sign-in, last sync) and their meter. Preference answers stay on the Shopify customer, and webhook deliveries keep only a topic and a time. Erasing on the site never erases Shopify data; it can only ask Shopify to.
+What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, first sign-in, last sync, whether the email was verified, email and SMS marketing consent, and the membership dates) and their meter. Preference answers stay on the Shopify customer, and webhook deliveries keep only a topic and a time. Erasing on the site never erases Shopify data; it can only ask Shopify to.
 
 | Started by | What happens |
 | --- | --- |
@@ -393,7 +393,7 @@ What RedeemID keeps about a member: the synced record (Shopify customer ID, emai
 | Shopify `customers/redact` | The member's record and meter are erased. |
 | Shopify `shop/redact` | Every member record and meter is erased. |
 
-The Privacy page shows each request's source and Shopify customer ID, never an email or a name. An erase sends the `member.erased` event so a CRM can delete its copy too. The site's own user account stays; delete it under Users if the person asks. The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, `POST` with `confirm=yes` erases, only for the signed-in member and only from the site's own origin.
+The Privacy page shows each request's source and Shopify customer ID, never an email or a name. The daily check deletes finished requests after a year; open ones stay until staff mark them done. An erase sends the `member.erased` event so a CRM can delete its copy too. The site's own user account stays; delete it under Users if the person asks. The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, `POST` with `confirm=yes` erases, only for the signed-in member and only from the site's own origin.
 
 ### Staff tools
 
@@ -404,7 +404,20 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API toke
 - **Webhook subscriptions.** Webhooks → Setup lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
 - **Access test.** A collection, an entry, terms and a reader's tags in; the verdict out.
 
-Resync updates email, name and tags. Enabled or disabled status comes only from the enable and disable webhooks.
+Resync updates email, name, tags, email marketing consent and the membership dates. Enabled or disabled status comes only from the enable and disable webhooks. With the app set up, two more things read the customer from the Admin API as it is now: every sign-in (and Refresh membership), and every `customer.tags_added` or `customer.tags_removed` webhook. Those topics carry only the change and can arrive out of order, so reading the current tags keeps the mirror right. Without the app, or when the read fails, the webhook's change is applied as sent.
+
+#### Membership dates
+
+A subscription app or Shopify Flow can keep these customer metafields, as dates (`YYYY-MM-DD`):
+
+| Metafield | Shown |
+| --- | --- |
+| `membership.member_since` | As the start date on the member card, in place of when the tag arrived |
+| `membership.renews_on` | "Renews on ..." |
+| `membership.ends_on` | "Ends on ...", for a pass that doesn't renew |
+| `membership.gift_until` | "Gift membership until ...", while it's in the future |
+
+RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they need the Admin API app. They're for display only: access still comes from tags alone, and nothing on the site ends access on these dates. Time-boxed access is a Flow that waits and removes the tag.
 
 ### Webhooks, app events and reports
 
@@ -488,7 +501,7 @@ A route cache keys pages by URL alone and serves stored pages without running an
 
 ### Rate limits
 
-On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one visitor can start Sign in, Buy or a cart change, the routes that call Shopify. Add a [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) named `REDEEMID_RATE_LIMIT`, which sets the limit and period:
+On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one visitor can start Sign in, Buy, a cart change or a catalog search (`api/search`), the routes that call Shopify. Add a [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) named `REDEEMID_RATE_LIMIT`, which sets the limit and period:
 
 ```jsonc
 "ratelimits": [{ "name": "REDEEMID_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }]
@@ -553,12 +566,12 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `LockedPanel` | `reason`, `required`, … | The wall on its own |
 | `AccessBadge` | `collection`, `terms`, `content`, `id`, `free`, `class` | What an entry needs, with a lock for readers kept out |
 | `Account` | | Sign in, or the member's name, levels, Account and Sign out |
-| `MemberCard` | `title` | Levels, past levels, meter, features, Refresh membership |
+| `MemberCard` | `title` | Levels, renewal, end and gift dates, past levels, meter, features, Refresh membership |
 | `Preferences` | `title`, `heading`, `label`; slot `signed-out` | The member's preference form |
 | `YourData` | `title`, `heading` | Download or delete my data |
 | `Feature` | `slug`; slot `else` | Shows its content to members holding the feature |
 | `Notices` | `messages` | The message for `?redeemid_notice=` |
-| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel` | A product with a buy button |
+| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel`, `renewLabel` | A product with a buy button |
 | `Product` | `handle`, `heading`, `compact`, `html`, `schema`, `addLabel`, `buyLabel` | A product page |
 | `Collection` | `handle`, `limit`, `productHref`, `showTitle`, `browse`, `quickAdd` | A grid of products, with filters and pages |
 | `ProductSearch` | `productHref`, `limit`, `boxOnly`, `action`, `label`, `quickAdd` | Product search |
@@ -632,6 +645,7 @@ Reword one with `messages={{ cart_empty: "…" }}`, or for every page with `text
 - Staff accounts (any EmDash role above Subscriber) can't sign in through the store, even with a matching email. When that happens, the store session ends too, so the next sign-in attempt starts fresh.
 - Customers can't create the first (admin) account on a new site.
 - Webhooks are checked against the app's signature before anything changes.
+- Access fails closed: when the saved access settings can't be read, a server keeps the ones it last read, and with none it locks every entry.
 
 ## Troubleshooting
 

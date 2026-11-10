@@ -17,7 +17,7 @@ import { siteConfig } from "../site-config.js";
 import { emit } from "../events.js";
 import { allowSave, formValues, PreferenceError, preferenceFields, preferencesConfigured, readPreferences, savePreferences } from "../preferences.js";
 import { memberForUser, stores } from "../storage.js";
-import { fail } from "./shared.js";
+import { fail, sessionUser } from "./shared.js";
 
 export const prerender = false;
 
@@ -28,7 +28,7 @@ async function context(locals: unknown, session: { get(k: string): Promise<unkno
 	const emdash = (locals as { emdash?: { config?: unknown; db?: unknown } }).emdash;
 	const config = await siteConfig(locals);
 	if (!config || !preferencesConfigured(config) || !emdash?.db) return { error: "unavailable" as const };
-	const user = (await session?.get("user")) as { id?: string } | undefined;
+	const user = await sessionUser(session, emdash.db);
 	if (!user?.id) return { error: "sign_in" as const, config };
 	const s = stores(emdash.db);
 	const member = await memberForUser(s, user.id);

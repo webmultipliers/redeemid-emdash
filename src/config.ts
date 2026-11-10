@@ -188,6 +188,12 @@ export interface RedeemIDConfig {
 	 */
 	entries?: Record<string, EntryRule>;
 	/**
+	 * Set by RedeemID, never in astro.config.mjs: the settings saved in the
+	 * admin couldn't be read and none were read before, so every entry is
+	 * locked until they can be (see lockdown in settings.ts).
+	 */
+	unavailable?: boolean;
+	/**
 	 * Only for local tests: lets `shop` be a full http:// origin of a fake store.
 	 * Never set this on a live site.
 	 */

@@ -19,11 +19,13 @@ import { applyEntryRule, describe, requirement, ruleSource, SIGNED_IN, termTree,
 import type { FeatureConfig, FileRule, LevelConfig, MeterConfig, RedeemIDConfig, RuleConfig } from "./config.js";
 import {
 	days,
+	deleteAccess,
 	entryKey,
 	list,
 	MANAGED,
 	mergeAccess,
 	overridden,
+	putAccess,
 	SITE_ID,
 	slugify,
 	validSlug,
@@ -435,7 +437,7 @@ async function saveSite(env: AccessEnv, change: (site: SiteAccess, now: RedeemID
 	const out = change(site, now);
 	if (typeof out === "string") return out;
 	out.updatedAt = new Date().toISOString();
-	await env.store.put(SITE_ID, out);
+	await putAccess(env.store, SITE_ID, out);
 	env.saved = { ...env.saved, site: out };
 	return null;
 }
@@ -741,14 +743,18 @@ export async function entrySave(env: AccessEnv, entry: PanelEntry, values: Recor
 	rule.lockedUntil = isoDay(values.locked_until);
 	rule.openUntil = isoDay(values.open_until);
 	const empty = mode === "inherit" && !rule.drip && rule.meter !== false && !rule.lockedUntil && !rule.openUntil;
-	if (empty) await env.store.delete(entryKey(entry.id));
-	else await env.store.put(entryKey(entry.id), rule);
+	if (empty) await deleteAccess(env.store, entryKey(entry.id));
+	else await putAccess(env.store, entryKey(entry.id), rule);
 	env.saved = { ...env.saved, entries: [...env.saved.entries.filter((e) => e.entryId !== entry.id), ...(empty ? [] : [rule])] };
 	return entryPanel(env, entry, { type: "success", message: empty ? "This entry follows the site rules." : "Access saved." });
 }
 
-/** Keep an entry's own rule in step with its slug, and drop it with the entry. */
-export async function entrySlugChanged(store: StorageCollection<AccessRecord>, collection: string, id: string, slug: string | null): Promise<void> {
+/**
+ * Keep an entry's own rule in step with its slug. A trashed entry passes a
+ * null slug: its rule stays (by id) for a restore, but gives up the slug, so
+ * a new entry that takes the slug doesn't inherit the rule.
+ */
+export async function entrySlugChanged(store: StorageCollection<AccessRecord>, collection: string | null, id: string, slug: string | null): Promise<void> {
 	const rule = (await store.get(entryKey(id))) as EntryRule | null;
-	if (rule?.kind === "entry" && rule.collection === collection && rule.slug !== slug) await store.put(entryKey(id), { ...rule, slug });
+	if (rule?.kind === "entry" && (collection === null || rule.collection === collection) && (rule.slug ?? null) !== slug) await putAccess(store, entryKey(id), { ...rule, slug });
 }

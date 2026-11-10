@@ -8,7 +8,7 @@
  * and `joinUrl` come from the level's config, the join link from `join`.
  * Anything in the default slot is shown above the built-in text.
  */
-import { passes, signInUrl, type Reason } from "../access.js";
+import { membership, passes, refreshUrl, signInUrl, viewer, type Reason } from "../access.js";
 import type { SoldItem } from "../blocks-names.js";
 import { plan as loadPlan } from "../storefront.js";
 import { siteConfig } from "../site-config.js";
@@ -39,6 +39,9 @@ const config = await siteConfig(Astro.locals);
 const missing = required.find((clause) => clause.length > 0 && !passes(held, [clause]));
 const level = missing ? config?.levels?.find((l) => l.slug === missing[0]) : undefined;
 const joinHref = level?.joinUrl ?? config?.join?.href;
+// A member who held the level before is offered it back ("Renew"), not "Join" as if new.
+const member = reason === "upgrade" && level ? (await viewer(Astro)).member : null;
+const lapsed = Boolean(member && member.status !== "disabled" && membership(member, config?.levels).past.some((p) => p.slug === level?.slug));
 const joinLabel = config?.join?.label ?? text(config, "Become a member");
 const week = meterPeriod === "week";
 // "Buy just this": the item's product and price, read from Shopify.
@@ -73,7 +76,14 @@ const here = Astro.url.pathname + Astro.url.search;
 			{opens ? textParts(config, "This opens for you on {date}.", { date: <time datetime={opensAt?.toISOString()}>{opens}</time> }) : text(config, "This opens for you after you've been a member a little longer.")}
 		</p>
 	)}
-	{reason === "upgrade" && (
+	{reason === "upgrade" && lapsed && level && (
+		<p class="redeemid-locked__renew">
+			{text(config, "Your {level} membership has ended.", { level: level.name })}
+			{joinHref && <> <a href={joinHref}>{text(config, "Renew {level}", { level: level.name })}</a></>}
+			{" "}{textParts(config, "Already renewed? {refresh}", { refresh: <a href={refreshUrl(here)}>{text(config, "Refresh")}</a> })}
+		</p>
+	)}
+	{reason === "upgrade" && !lapsed && (
 		<p>
 			{level ? text(config, "This is for {level} members.", { level: level.name }) : text(config, "Your membership doesn't include this yet.")}
 			{joinHref && <> <a href={joinHref}>{joinLabel}</a></>}

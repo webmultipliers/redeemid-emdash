@@ -12,7 +12,7 @@ vi.mock("../src/admin-api.js", async (orig) => ({
 
 import type { RedeemIDConfig } from "../src/config.js";
 import { LOG_DAYS, record, setLogSink, timed, type LogEntry } from "../src/log.js";
-import { eventsPage, filterId, healthCheck, lastCheck, parseFilter, reportsPage, saveMonitor, webhooksPage, type Kv, type MonitorEnv } from "../src/monitor.js";
+import { eventsPage, filterId, REQUEST_DAYS, tidy, healthCheck, lastCheck, parseFilter, reportsPage, saveMonitor, webhooksPage, type Kv, type MonitorEnv } from "../src/monitor.js";
 import { POST } from "../src/routes/webhook.js";
 import { emptyMember } from "../src/storage.js";
 import { sign } from "../src/webhooks.js";
@@ -102,14 +102,19 @@ describe("app events", () => {
 		expect(parseFilter(filterId({ event: "webhook.failed", problems: true }))).toEqual({ event: "webhook.failed", problems: true });
 	});
 
-	it(`drops events and deliveries older than ${LOG_DAYS} days`, async () => {
+	it(`drops events, deliveries and failed events older than ${LOG_DAYS} days`, async () => {
 		const old = new Date(Date.now() - (LOG_DAYS + 1) * 86_400_000).toISOString();
 		store.log.set("old", { at: old, event: "member.signed_in", label: "x", status: "ok", level: "ok" } as LogEntry);
 		store.deliveries.set("old", { topic: "customers/update", receivedAt: old });
 		store.deliveries.set("new", { topic: "customers/update", receivedAt: new Date().toISOString() });
+		const failed = { body: "{}", event: "member.signed_in" as const, attempts: 3, error: "HTTP 503" };
+		store.failedEvents.set("old", { ...failed, id: "old", at: old });
+		store.failedEvents.set("new", { ...failed, id: "new", at: new Date().toISOString() });
 		await eventsPage(store.stores);
 		expect(store.log.has("old")).toBe(false);
 		expect([...store.deliveries.keys()]).toEqual(["new"]);
+		expect([...store.failedEvents.keys()]).toEqual(["new"]);
+		store.failedEvents.clear();
 	});
 });
 
@@ -196,5 +201,17 @@ describe("reports", () => {
 		expect(chart.config.options.xAxis.data).toHaveLength(12);
 		expect(chart.config.options.series[0]!.data.at(-1)).toBe(1);
 		expect(chart.config.options.series[1]!.data.at(-2)).toBe(1);
+	});
+});
+
+describe("tidy", () => {
+	it("drops finished privacy requests after a year, and never open ones", async () => {
+		const old = new Date(Date.now() - (REQUEST_DAYS + 1) * 86_400_000).toISOString();
+		const recent = new Date().toISOString();
+		store.requests.set("a", { kind: "export", source: "member", customerId: "1", at: old, status: "done" });
+		store.requests.set("b", { kind: "export", source: "shopify", customerId: "1", at: old, status: "open" });
+		store.requests.set("c", { kind: "export", source: "member", customerId: "1", at: recent, status: "done" });
+		await tidy(store.stores);
+		expect([...store.requests.keys()].sort()).toEqual(["b", "c"]);
 	});
 });

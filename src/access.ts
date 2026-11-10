@@ -11,9 +11,9 @@
  */
 
 import type { LevelConfig, RedeemIDConfig, RuleConfig } from "./config.js";
-import type { EntryRule } from "./settings.js";
+import { UNAVAILABLE, type EntryRule } from "./settings.js";
 import { siteConfig } from "./site-config.js";
-import { memberForUser, stores, type MemberRecord } from "./storage.js";
+import { memberForUser, stores, type MemberRecord, type MeterRecord } from "./storage.js";
 
 /** The parts of Astro's global that access checks read. */
 export interface AstroLike {
@@ -336,7 +336,7 @@ export function passes(held: string[], required: string[][]): boolean {
  */
 export function describe(required: Requirement, levels: LevelConfig[] = [], open = "Free", signedIn = "Signed in"): string {
 	if (required === null) return open;
-	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
+	const name = (slug: string) => (slug === UNAVAILABLE ? "Members" : (levels.find((l) => l.slug === slug)?.name ?? slug));
 	const parts = reduce(required).filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
 	return parts.length ? parts.join(" + ") : signedIn;
 }
@@ -384,6 +384,8 @@ export async function entryRequirement(
 	id?: string | null,
 ): Promise<Requirement> {
 	if (!config) return null;
+	// Saved settings can't be read: nobody passes this.
+	if (config.unavailable) return [[UNAVAILABLE]];
 	const own = entryRuleFor(config, collection, id);
 	if (own && (own.mode === "open" || own.mode === "levels") && !own.openUntil && !own.lockedUntil) return applyEntryRule(null, own);
 	const tree = await termTree(config.rules, collection, terms);
@@ -445,7 +447,7 @@ export async function canRead(
 	const v = await viewer(astro);
 
 	if (required === null) return { allowed: true, reason: "open", required: [], viewer: v };
-	if (!config) return { allowed: false, reason: "unconfigured", required, viewer: v };
+	if (!config || config.unavailable) return { allowed: false, reason: "unconfigured", required, viewer: v };
 	if (!v.signedIn) return { allowed: false, reason: "sign_in", required, viewer: v };
 	if (v.member?.status === "disabled") return { allowed: false, reason: "disabled", required, viewer: v };
 	if (!v.member) return { allowed: false, reason: "upgrade", required, viewer: v };
@@ -529,12 +531,31 @@ export async function readEntry(
 	const key = `${user.id}:${periodKey(new Date(), period)}`;
 	try {
 		const s = stores(db);
-		const record = (await s.meter.get(key)) ?? { userId: user.id, period: periodKey(new Date(), period), items: [] };
-		const used = consume(record.items, `${entry.collection}:${entry.id}`, meter.limit);
 		const info = { limit: meter.limit, period };
-		if (!used.allowed) return { ...verdict, meterLeft: 0, meter: info };
-		if (used.items !== record.items) {
-			await s.meter.put(key, { ...record, items: used.items });
+		// Read, count and write with compare-and-set, so parallel requests
+		// can't each take the last free entry.
+		let record: MeterRecord | null = null;
+		let used: ReturnType<typeof consume> | null = null;
+		let wrote = false;
+		for (let attempt = 0; attempt < 3 && !used; attempt++) {
+			const current = await s.meter.getVersioned(key);
+			const r = current?.value ?? { userId: user.id, period: periodKey(new Date(), period), items: [] };
+			const next = consume(r.items, `${entry.collection}:${entry.id}`, meter.limit);
+			if (!next.allowed || next.items === r.items) {
+				record = r;
+				used = next;
+				break;
+			}
+			const write = await s.meter.compareAndSet(key, current?.revision ?? null, { ...r, items: next.items });
+			if (write.applied) {
+				record = r;
+				used = next;
+				wrote = true;
+			}
+		}
+		// Lost every race: count it as used up rather than open one too many.
+		if (!used || !record || !used.allowed) return { ...verdict, meterLeft: 0, meter: info };
+		if (wrote) {
 			const { emit } = await import("./events.js");
 			const data = { userId: user.id, entry: `${entry.collection}:${entry.id}`, used: used.items.length, limit: meter.limit, period: record.period };
 			const { record: log } = await import("./log.js");

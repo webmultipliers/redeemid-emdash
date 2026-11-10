@@ -6,7 +6,9 @@ vi.mock("virtual:emdash/config", () => ({ default: {} }));
 import { accessAction, accessPage, entryPanel, entrySave, type AccessEnv } from "../src/access-admin.js";
 import { applyEntryRule, canRead, dripDays, meterable, requirement, ruleSource } from "../src/access.js";
 import type { RedeemIDConfig } from "../src/config.js";
-import { announceLevels, loadAccess, mergeAccess, onLevels, type EntryRule } from "../src/settings.js";
+import { announceLevels, forgetAccess, loadAccess, mergeAccess, onLevels, STAMP_ID, UNAVAILABLE, withSaved, type EntryRule } from "../src/settings.js";
+import { entryRequirement } from "../src/access.js";
+import { entrySlugChanged } from "../src/access-admin.js";
 import { siteConfig } from "../src/site-config.js";
 import { emptyMember } from "../src/storage.js";
 import { memoryStores } from "./memory-store.js";
@@ -41,6 +43,8 @@ const live = async () => mergeAccess(code, await loadAccess(store.stores.access)
 const toastOf = (r: { toast?: { type: string; message: string } }) => r.toast;
 
 afterEach(() => {
+	forgetAccess();
+	vi.restoreAllMocks();
 	store.access.clear();
 	store.members.clear();
 });
@@ -202,5 +206,72 @@ describe("site config", () => {
 		expect(a).toBe(b);
 		expect(spy).toHaveBeenCalledTimes(1);
 		expect(a?.levels?.map((l) => l.slug)).toEqual(["member", "patron"]);
+	});
+});
+
+describe("saved settings held in memory", () => {
+	const locals = () => ({ emdash: { db: {}, config: { authProviders: [{ id: "redeemid", config: code }] } } });
+
+	it("reads the whole collection again only when a save moved the stamp", async () => {
+		await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Patron", tags: "patron" } });
+		const spy = vi.spyOn(store.stores.access, "query");
+		await siteConfig(locals());
+		await siteConfig(locals());
+		expect(spy).toHaveBeenCalledTimes(1);
+		// A save on another server: only the stamp changes here.
+		await store.stores.access.put(STAMP_ID, { kind: "stamp", version: "elsewhere" });
+		await siteConfig(locals());
+		expect(spy).toHaveBeenCalledTimes(2);
+	});
+
+	it("starts a stamp for settings saved before stamps existed", async () => {
+		await store.stores.access.put("site", { kind: "site", meter: null });
+		await siteConfig(locals());
+		expect(store.access.get(STAMP_ID)).toMatchObject({ kind: "stamp" });
+		const spy = vi.spyOn(store.stores.access, "query");
+		await siteConfig(locals());
+		expect(spy).not.toHaveBeenCalled();
+	});
+});
+
+describe("saved settings that can't be read", () => {
+	const broken = () => {
+		vi.spyOn(store.stores.access, "get").mockRejectedValue(new Error("D1 is down"));
+		vi.spyOn(console, "error").mockImplementation(() => undefined);
+	};
+
+	it("keeps the settings last read", async () => {
+		await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Patron", tags: "patron" } });
+		await withSaved(code, {});
+		broken();
+		const merged = await withSaved(code, {});
+		expect(merged?.unavailable).toBeUndefined();
+		expect(merged?.levels?.map((l) => l.slug)).toEqual(["member", "patron"]);
+	});
+
+	it("locks every entry, with no meter, when nothing was read before", async () => {
+		broken();
+		const merged = await withSaved(code, {});
+		expect(merged?.unavailable).toBe(true);
+		expect(merged?.meter).toBeUndefined();
+		// Even an entry the code leaves open.
+		expect(await entryRequirement(merged!, "pages", {})).toEqual([[UNAVAILABLE]]);
+		const locals = { user: { id: "u1" }, emdash: { db: {}, config: { authProviders: [{ id: "redeemid", config: code }] } } };
+		const verdict = await canRead({ locals }, { collection: "pages" });
+		expect(verdict).toMatchObject({ allowed: false, reason: "unconfigured" });
+	});
+
+});
+
+describe("a trashed entry's rule", () => {
+	it("gives up its slug, so a new entry with the slug doesn't inherit it, and gets it back on restore", async () => {
+		const rule: EntryRule = { kind: "entry", collection: "posts", entryId: "e1", slug: "hello", mode: "levels", levels: ["member"] };
+		await store.stores.access.put("entry:e1", rule);
+		await entrySlugChanged(store.stores.access, null, "e1", null);
+		const trashed = mergeAccess(code, await loadAccess(store.stores.access))!;
+		expect(trashed.entries?.["posts:hello"]).toBeUndefined();
+		expect(trashed.entries?.["posts:e1"]).toMatchObject({ mode: "levels" });
+		await entrySlugChanged(store.stores.access, "posts", "e1", "hello");
+		expect(mergeAccess(code, await loadAccess(store.stores.access))!.entries?.["posts:hello"]).toMatchObject({ mode: "levels" });
 	});
 });

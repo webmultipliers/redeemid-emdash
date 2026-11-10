@@ -40,8 +40,37 @@ export interface MemberRecord {
 	linkedAt?: string | null;
 	/** Tags Shopify has removed, with when each was held (newest last, at most 50). */
 	pastTags?: PastTag[];
+	/**
+	 * Membership dates the shop keeps in customer metafields (membership.member_since,
+	 * membership.renews_on, membership.ends_on for a pass that doesn't renew,
+	 * membership.gift_until), written by Shopify Flow or a subscription app and
+	 * read with the Admin API. YYYY-MM-DD. Display only: never access.
+	 */
+	dates?: MembershipDates;
+	/** Shopify's email marketing state (SUBSCRIBED, NOT_SUBSCRIBED, ...), as Shopify last said. */
+	emailMarketing?: string | null;
+	/** Shopify's SMS marketing state, from the customer webhooks. */
+	smsMarketing?: string | null;
+	/** Whether Shopify had verified the email at the member's last sign-in. */
+	emailVerified?: boolean;
 	/** When the member last saved preferences (ms), newest last, at most 10: the rate limit. */
 	prefSaves?: number[];
+}
+
+export interface MembershipDates {
+	since?: string | null;
+	renews?: string | null;
+	ends?: string | null;
+	gift?: string | null;
+}
+
+/** A metafield date or date-time as YYYY-MM-DD, or null when it isn't one. */
+export function metaDate(raw: unknown): string | null {
+	if (typeof raw !== "string") return null;
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw.trim());
+	if (!m) return null;
+	const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+	return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]) ? `${m[1]}-${m[2]}-${m[3]}` : null;
 }
 
 /** A tag the customer held from `from` (when known) until `to`. */

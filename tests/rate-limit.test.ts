@@ -12,7 +12,8 @@ function limiter(allow: boolean, keys: string[] = []): RateLimiter {
 }
 
 describe("rate limits", () => {
-	it("covers Sign in, Buy and cart changes only", () => {
+	it("covers Sign in, Buy, cart changes and catalog search only", () => {
+		expect(limitedAction("GET", "/_emdash/api/auth/redeemid/api/search")).toBe("search");
 		expect(limitedAction("GET", "/_emdash/api/auth/redeemid/login")).toBe("login");
 		expect(limitedAction("POST", "/_emdash/api/auth/redeemid/buy")).toBe("buy");
 		expect(limitedAction("POST", "/_emdash/api/auth/redeemid/cart-edit/")).toBe("cart");
