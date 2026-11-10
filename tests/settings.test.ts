@@ -69,6 +69,29 @@ describe("saved settings over code", () => {
 		expect(now.levels?.[1]).toMatchObject({ name: "Patrons of the Arts", tags: ["patron", "arts-patron"] });
 	});
 
+	it("saves tag groups and includes, and drops a removed level from includes", async () => {
+		await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Gold", tags: "gold\nall: silver, annual", includes: ["member", "ghost"] } });
+		let now = await live();
+		expect(now.levels?.[1]).toEqual({ slug: "gold", name: "Gold", tags: ["gold"], groups: [{ tags: ["silver", "annual"], match: "all" }], includes: ["member"] });
+		const page = JSON.stringify(await accessPage(await env(), "levels", undefined, { level: "gold" }));
+		expect(page).toContain("gold or silver + annual");
+		expect(page).toContain("all: silver, annual");
+		// The code's rule uses "member", so make a level only Gold includes and remove it.
+		await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Bronze", tags: "bronze" } });
+		await accessAction(await env(), { action_id: "level_save", block_id: "level:gold", values: { name: "Gold", tags: "gold", includes: ["member", "bronze"] } });
+		expect((await live()).levels?.find((l) => l.slug === "gold")?.includes).toEqual(["member", "bronze"]);
+		expect(toastOf(await accessAction(await env(), { action_id: "level_menu", value: "remove:bronze" }))).toMatchObject({ type: "success" });
+		now = await live();
+		expect(now.levels?.find((l) => l.slug === "gold")).toEqual({ slug: "gold", name: "Gold", tags: ["gold"], includes: ["member"] });
+	});
+
+	it("saves products, members' home and badge colour, and checks them", async () => {
+		expect(toastOf(await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Gold", tags: "gold", home: "https://x.test/" } }))).toMatchObject({ type: "error" });
+		expect(toastOf(await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Gold", tags: "gold", badge: "red" } }))).toMatchObject({ type: "error" });
+		await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Gold", tags: "gold", products: "Gold-Membership, gold-membership", home: "/members/gold/", badge: "#c9a227" } });
+		expect((await live()).levels?.[1]).toMatchObject({ products: ["gold-membership"], home: "/members/gold/", badge: "#c9a227" });
+	});
+
 	it("refuses a duplicate or built-in slug, and a level without tags", async () => {
 		expect(toastOf(await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Member", tags: "x" } }))).toMatchObject({ type: "error" });
 		expect(toastOf(await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Signed in", tags: "x" } }))).toMatchObject({ type: "error" });

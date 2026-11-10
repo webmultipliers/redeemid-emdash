@@ -17,7 +17,7 @@
  */
 
 import { adminConfigured, adminScopes, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
-import { env, ENV, storeDomain, type RedeemIDConfig } from "./config.js";
+import { env, ENV, levelTags, storeDomain, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import type { Stores } from "./storage.js";
 
@@ -100,7 +100,7 @@ export async function setupFacts(config: RedeemIDConfig, s: Stores, origin: stri
 		admin,
 		scopes,
 		webhooksMissing,
-		levels: (config.levels ?? []).map((l) => ({ name: l.name, tags: l.tags })),
+		levels: (config.levels ?? []).map((l) => ({ name: l.name, tags: levelTags(l) })),
 		signedIn,
 		storefront: Boolean(env(ENV.storefrontPrivateToken) || env(ENV.storefrontPublicToken)),
 	};

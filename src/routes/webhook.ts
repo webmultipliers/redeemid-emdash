@@ -16,7 +16,7 @@ import { stores, type Stores } from "../storage.js";
 import { adminConfigured, resync } from "../admin-api.js";
 import type { RedeemIDConfig } from "../config.js";
 import { record } from "../log.js";
-import { apply, customerOf, kindOf, verifyHmac, type Outcome } from "../webhooks.js";
+import { apply, customerOf, kindOf, mergeIds, verifyHmac, type Outcome } from "../webhooks.js";
 
 export const prerender = false;
 
@@ -81,6 +81,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	try {
 		const config = await siteConfig(locals);
 		const outcome = (await currentTags(config, s, topic, customerId)) ?? (await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic), config));
+		if (outcome === "processed" && kindOf(topic) === "merge") await mergedTags(config, s, topic, payload);
 		if (delivery) await s.deliveries.put(delivery, { topic, receivedAt, outcome, customerId }).catch(() => undefined);
 		await record({ event: "webhook.received", label: topic, status: outcome, origin: "webhook", customerId, ms: Date.now() - started });
 		return new Response(outcome, { status: 200 });
@@ -110,5 +111,24 @@ async function currentTags(config: RedeemIDConfig | null, s: Stores, topic: stri
 	} catch (e) {
 		console.error("[redeemid] tag webhook resync failed, applying the change:", (e as Error).message);
 		return null;
+	}
+}
+
+/**
+ * customers/merge moves the sign-in link to the customer kept, but the payload
+ * has no tags. With the Admin API app set up, read the survivor's tags now
+ * rather than wait for its next webhook or sign-in. A failed read leaves the
+ * merge as it is.
+ */
+async function mergedTags(config: RedeemIDConfig | null, s: Stores, topic: string, payload: Record<string, unknown>): Promise<void> {
+	const { kept } = mergeIds(payload);
+	if (!config || !kept || !adminConfigured()) return;
+	try {
+		const before = await s.members.get(kept);
+		if (!before) return;
+		const { updated } = await resync(config, s, [kept], topic);
+		if (updated[0]) await levelChange(config, before.tags, updated[0], topic);
+	} catch (e) {
+		console.error("[redeemid] merge resync failed:", (e as Error).message);
 	}
 }

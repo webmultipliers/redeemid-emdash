@@ -10,7 +10,7 @@
  * "entitled".
  */
 
-import type { LevelConfig, RedeemIDConfig, RuleConfig } from "./config.js";
+import { groupsOf, levelTags, type LevelConfig, type RedeemIDConfig, type RuleConfig, type TagGroup } from "./config.js";
 import { UNAVAILABLE, type EntryRule } from "./settings.js";
 import { siteConfig } from "./site-config.js";
 import { memberForUser, stores, type MemberRecord, type MeterRecord } from "./storage.js";
@@ -72,15 +72,78 @@ export type Terms = Record<string, TermRef[] | undefined>;
 /** Parent slug by term slug, per taxonomy, for walking up a hierarchy. */
 export type TermTree = Record<string, Record<string, string | null>>;
 
-export function levelsFor(tags: string[], levels: LevelConfig[] = []): string[] {
+export { groupsOf, levelTags, type TagGroup };
+
+function groupPasses(g: TagGroup, held: Set<string>): boolean {
+	const has = (t: string) => held.has(t.toLowerCase());
+	return g.match === "all" ? g.tags.every(has) : g.tags.some(has);
+}
+
+/** Levels the tags grant directly, through one of their own groups, in config order. */
+export function directLevels(tags: string[], levels: LevelConfig[] = []): string[] {
 	const held = new Set(tags.map((t) => t.toLowerCase()));
-	return levels
-		.filter((l) => {
-			if (l.tags.length === 0) return false;
-			const has = (t: string) => held.has(t.toLowerCase());
-			return l.match === "all" ? l.tags.every(has) : l.tags.some(has);
-		})
-		.map((l) => l.slug);
+	return levels.filter((l) => groupsOf(l).some((g) => groupPasses(g, held))).map((l) => l.slug);
+}
+
+/**
+ * Every level holding `slug` opens, itself first: the levels it includes, and
+ * theirs (Gold includes Silver includes Members). Unknown slugs are skipped and
+ * loops stop, so a bad config can't hang.
+ */
+export function closure(slug: string, levels: LevelConfig[] = []): string[] {
+	const bySlug = new Map(levels.map((l) => [l.slug, l]));
+	const seen: string[] = [];
+	const queue = [slug];
+	while (queue.length) {
+		const next = queue.shift()!;
+		if (seen.includes(next) || !bySlug.has(next)) continue;
+		seen.push(next);
+		queue.push(...(bySlug.get(next)!.includes ?? []));
+	}
+	return seen;
+}
+
+/** Does holding `holder` open what needs `needed`? */
+export function covers(holder: string, needed: string, levels: LevelConfig[] = []): boolean {
+	return holder === needed || closure(holder, levels).includes(needed);
+}
+
+/**
+ * The levels a member with these tags holds: the ones their tags grant, and
+ * every level those include. In config order.
+ */
+export function levelsFor(tags: string[], levels: LevelConfig[] = []): string[] {
+	const held = new Set(directLevels(tags, levels).flatMap((s) => closure(s, levels)));
+	return levels.filter((l) => held.has(l.slug)).map((l) => l.slug);
+}
+
+/**
+ * The held levels no other held level includes, for showing a member's
+ * levels: "Gold", not "Gold, Silver", when Gold includes Silver.
+ */
+export function topLevels(held: string[], levels: LevelConfig[] = []): string[] {
+	return held.filter((slug) => !held.some((o) => o !== slug && covers(o, slug, levels) && !covers(slug, o, levels)));
+}
+
+/**
+ * Where a member lands after signing in from the home page or a plain
+ * sign-in link: the `home` of their first top level (in level order) that has
+ * one, or null. Only same-site paths count.
+ */
+export function memberHome(tags: string[], levels: LevelConfig[] = []): string | null {
+	const top = topLevels(levelsFor(tags, levels), levels);
+	for (const level of levels) {
+		if (!top.includes(level.slug) || !level.home) continue;
+		const home = safeReturn(level.home.trim());
+		if (home !== "/") return home;
+	}
+	return null;
+}
+
+/** A level's badge colour when it is a hex colour, else null. */
+export function badgeColor(level: LevelConfig | undefined): string | null {
+	const c = level?.badge?.trim() ?? "";
+	return /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(c) ? c : null;
 }
 
 const slugOf = (t: TermRef) => (typeof t === "string" ? t : t.slug);
@@ -89,12 +152,16 @@ const slugOf = (t: TermRef) => (typeof t === "string" ? t : t.slug);
  * The clauses, simplified: duplicates go, a clause that contains another
  * clause goes (needing Pro already passes "Member or Pro"), and an empty
  * clause goes when a level clause is there (any level implies signed in).
+ *
+ * With `levels`, inclusion counts too: in "Silver or Gold" Gold goes when it
+ * includes Silver, and "Silver + Gold" needs only Gold.
  */
-function reduce(clauses: string[][]): string[][] {
+function reduce(clauses: string[][], levels?: LevelConfig[]): string[][] {
 	const seen = new Set<string>();
 	const out: string[][] = [];
 	for (const c of clauses) {
-		const sorted = c.includes(SIGNED_IN) ? [] : [...new Set(c)].sort();
+		let sorted = c.includes(SIGNED_IN) ? [] : [...new Set(c)].sort();
+		if (levels?.length) sorted = sorted.filter((l) => !sorted.some((o) => o !== l && covers(l, o, levels) && !covers(o, l, levels)));
 		const key = sorted.join("|");
 		if (seen.has(key)) continue;
 		seen.add(key);
@@ -102,7 +169,14 @@ function reduce(clauses: string[][]): string[][] {
 	}
 	const levelled = out.filter((c) => c.length > 0);
 	if (levelled.length === 0) return out;
-	return levelled.filter((c) => !levelled.some((o) => o !== c && o.length < c.length && o.every((l) => c.includes(l))));
+	// `o` implies `c` when every level in `o` opens some level in `c`.
+	const implies = (o: string[], c: string[]) => o.every((l) => c.some((x) => (levels?.length ? covers(l, x, levels) : l === x)));
+	return levelled.filter((c) => !levelled.some((o) => o !== c && implies(o, c) && !(implies(c, o) && levelled.indexOf(c) < levelled.indexOf(o))));
+}
+
+/** A requirement simplified with the levels' includes (see reduce). */
+export function simplify(required: Requirement, levels: LevelConfig[] = []): Requirement {
+	return required === null ? null : reduce(required, levels);
 }
 
 function combined(rules: RuleConfig[], mode: "all" | "any"): string[][] {
@@ -229,29 +303,52 @@ export function meterable(rules: RuleConfig[] = [], collection: string, terms: T
 }
 
 /**
+ * When each held level started, by slug (ISO, or null when unknown). A group
+ * starts when its first tag arrived ("any") or its last one ("all"); a level
+ * starts with its earliest passing group, and a level held only because
+ * another includes it starts with the earliest of those.
+ */
+export function levelStarts(member: MemberRecord, levels: LevelConfig[] = []): Map<string, string | null> {
+	const since = member.tagsSince ?? {};
+	const heldTags = new Set(member.tags.map((t) => t.toLowerCase()));
+	const direct = new Map<string, string | null>();
+	for (const level of levels) {
+		const starts: string[] = [];
+		let passing = false;
+		for (const g of groupsOf(level)) {
+			if (!groupPasses(g, heldTags)) continue;
+			passing = true;
+			const dates = g.tags.filter((t) => heldTags.has(t.toLowerCase())).map((t) => since[t.toLowerCase()]).filter((d): d is string => Boolean(d)).sort();
+			const pick = g.match === "all" ? dates.at(-1) : dates[0];
+			if (pick) starts.push(pick);
+		}
+		if (passing) direct.set(level.slug, starts.sort()[0] ?? null);
+	}
+	const out = new Map<string, string | null>();
+	for (const slug of levelsFor(member.tags, levels)) {
+		const dates = [...direct.entries()].filter(([d]) => closure(d, levels).includes(slug)).map(([, at]) => at).filter((d): d is string => Boolean(d)).sort();
+		out.set(slug, dates[0] ?? null);
+	}
+	return out;
+}
+
+/**
  * When a member's membership started, for drip: the earliest start among the
- * levels they hold now (a level starts when its last needed tag arrived),
- * else when they first signed in. Null when neither is known.
+ * levels they hold now (see levelStarts), else when they first signed in.
+ * Null when neither is known.
  */
 export function memberSince(member: MemberRecord, levels: LevelConfig[] = []): string | null {
-	const since = member.tagsSince ?? {};
-	const starts: string[] = [];
-	for (const slug of levelsFor(member.tags, levels)) {
-		const level = levels.find((l) => l.slug === slug);
-		const dates = (level?.tags ?? []).map((t) => since[t.toLowerCase()]).filter((d): d is string => Boolean(d)).sort();
-		if (dates.length === 0) continue;
-		const pick = level?.match === "all" ? dates[dates.length - 1] : dates[0];
-		if (pick) starts.push(pick);
-	}
-	starts.sort();
+	const starts = [...levelStarts(member, levels).values()].filter((d): d is string => Boolean(d)).sort();
 	return starts[0] ?? member.linkedAt ?? null;
 }
 
 export interface HeldLevel {
 	slug: string;
 	name: string;
-	/** When the level started (see memberSince), ISO, or null when unknown. */
+	/** When the level started (see levelStarts), ISO, or null when unknown. */
 	since: string | null;
+	/** Set when the member holds it only because a level they hold includes it: that level's slug. */
+	via?: string;
 }
 
 export interface PastLevel {
@@ -267,15 +364,18 @@ export interface PastLevel {
  */
 export function membership(member: MemberRecord, levels: LevelConfig[] = []): { current: HeldLevel[]; past: PastLevel[] } {
 	const held = levelsFor(member.tags, levels);
+	const direct = directLevels(member.tags, levels);
+	const starts = levelStarts(member, levels);
 	const current = held.map((slug) => {
 		const level = levels.find((l) => l.slug === slug)!;
-		return { slug, name: level.name, since: memberSince({ ...member, linkedAt: null }, [level]) };
+		const via = direct.includes(slug) ? undefined : direct.find((d) => closure(d, levels).includes(slug));
+		return { slug, name: level.name, since: starts.get(slug) ?? null, ...(via ? { via } : {}) };
 	});
 	const pastTags = member.pastTags ?? [];
 	const past: PastLevel[] = [];
 	for (const level of levels) {
 		if (held.includes(level.slug)) continue;
-		const wanted = new Set(level.tags.map((t) => t.toLowerCase()));
+		const wanted = new Set(levelTags(level));
 		const spans = pastTags.filter((p) => wanted.has(p.tag));
 		if (spans.length === 0) continue;
 		const froms = spans.map((p) => p.from).filter((d): d is string => Boolean(d)).sort();
@@ -340,7 +440,7 @@ export function passes(held: string[], required: string[][]): boolean {
 export function describe(required: Requirement, levels: LevelConfig[] = [], open = "Free", signedIn = "Signed in"): string {
 	if (required === null) return open;
 	const name = (slug: string) => (slug === UNAVAILABLE ? "Members" : (levels.find((l) => l.slug === slug)?.name ?? slug));
-	const parts = reduce(required).filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
+	const parts = reduce(required, levels).filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
 	return parts.length ? parts.join(" + ") : signedIn;
 }
 
@@ -392,7 +492,7 @@ export async function entryRequirement(
 	const own = entryRuleFor(config, collection, id);
 	if (own && (own.mode === "open" || own.mode === "levels") && !own.openUntil && !own.lockedUntil) return applyEntryRule(null, own);
 	const tree = await termTree(config.rules, collection, terms);
-	return applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), own);
+	return simplify(applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), own), config.levels);
 }
 
 const viewers = new WeakMap<object, Promise<Viewer>>();

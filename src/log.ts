@@ -42,6 +42,7 @@ export const LOG_EVENTS: Record<string, string> = {
 	"shopify.admin": "Admin API call",
 	"staff.resync": "Resync",
 	"staff.tags": "Tag edit",
+	"staff.link": "Account link",
 	"staff.webhooks": "Webhook registration",
 	"settings.saved": "Settings saved",
 	"events.failed": "Outbound event failed",

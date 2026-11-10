@@ -9,7 +9,7 @@
  * carries `data-redeemid-level` (the level slugs) for styling, and
  * `is-locked` with a lock for readers who can't read the members part.
  */
-import { canRead, describe, entryRequirement, viewer, type Terms } from "../access.js";
+import { badgeColor, canRead, describe, entryRequirement, simplify, viewer, type Terms } from "../access.js";
 import { holdsItem, soldItem, splitAtPaywall } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 import { text } from "../text.js";
@@ -37,12 +37,15 @@ const owner = item ? (await viewer(Astro)).member : null;
 const owned = Boolean(owner && owner.status !== "disabled" && holdsItem(item, owner.tags));
 const locked = required !== null && !owned && !(await canRead(Astro, { collection, terms, id }, { required })).allowed;
 const slugs = required?.flat().join(" ") || (required ? "signed-in" : "free");
+// The colour of the level the badge names first, when that level has one.
+const color = badgeColor(config?.levels?.find((l) => l.slug === simplify(required, config?.levels)?.find((c) => c.length)?.[0]));
 ---
 
 {label && (
 	<span
 		class:list={["redeemid-badge", { "is-locked": locked }, className]}
 		data-redeemid-level={slugs}
+		style={color ? `--redeemid-level-color: ${color}` : undefined}
 	>
 		{locked && <span class="redeemid-badge__lock" aria-hidden="true">🔒&#xFE0E; </span>}
 		{label}

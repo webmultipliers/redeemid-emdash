@@ -10,7 +10,7 @@
  */
 
 import { adminConfigured } from "./admin-api.js";
-import { applyEntryRule, entryRuleFor, describe as describeRequirement, dripDays, levelsFor, membership, passes, requirement, termTree, type Requirement, type Terms } from "./access.js";
+import { applyEntryRule, entryRuleFor, groupsOf, simplify, describe as describeRequirement, dripDays, levelsFor, membership, passes, requirement, termTree, type Requirement, type Terms } from "./access.js";
 import { ENV, env, storeDomain, unknownEnvNames, type RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
 import { bodyClauses } from "./files.js";
@@ -69,7 +69,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 	const disabled = member?.status === "disabled";
 	const held = disabled ? [] : levelsFor(tags, levels);
 	const tree = await termTree(config.rules, collection, terms);
-	const required: Requirement = applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), own);
+	const required: Requirement = simplify(applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), own), levels);
 	const owned = !disabled && holdsItem(item, tags);
 	const canReadRule = owned || required === null || (signedIn && !disabled && passes(held, required));
 	const name = (slug: string) => (slug === "signed-in" ? "Signed in" : (levels.find((l) => l.slug === slug)?.name ?? slug));
@@ -101,7 +101,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 }
 
 export function listLevels(config: RedeemIDConfig): Array<Record<string, unknown>> {
-	return (config.levels ?? []).map((l) => ({ slug: l.slug, name: l.name, tags: l.tags, match: l.match ?? "any", wall: l.wall ?? null, joinUrl: l.joinUrl ?? null }));
+	return (config.levels ?? []).map((l) => ({ slug: l.slug, name: l.name, groups: groupsOf(l).map((g) => ({ tags: g.tags, match: g.match ?? "any" })), includes: l.includes ?? [], wall: l.wall ?? null, joinUrl: l.joinUrl ?? null }));
 }
 
 export function getRules(config: RedeemIDConfig): Record<string, unknown> {

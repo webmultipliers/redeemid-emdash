@@ -558,7 +558,7 @@ try {
 	});
 	check("api/cart answers 422 for a sold-out choice", jsonUnavailable.res.status === 422 && JSON.parse(jsonUnavailable.text).notice === "plan_unavailable");
 	const guestState = JSON.parse((await shopper.go("/_emdash/api/auth/redeemid/api/state")).text);
-	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.2.0", JSON.stringify(guestState));
+	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.3.0", JSON.stringify(guestState));
 	const guestCheckout = JSON.parse(
 		(await shopper.go("/_emdash/api/auth/redeemid/api/cart", { method: "POST", headers: { "content-type": "application/json", origin: SITE }, body: JSON.stringify({ action: "checkout" }) })).text,
 	);
@@ -763,6 +763,24 @@ try {
 	check("the item's tag opens the whole post", itemOpen.text.includes("SINGLE-BODY") && !itemOpen.text.includes("Buy just this"), itemOpen.text.slice(0, 200));
 	const explainedItem = await cli("access", "posts", "--id", "single-story", "--customer", "3003");
 	check("CLI explains the item", explainedItem.code === 0 && JSON.parse(explainedItem.stdout).soldOnItsOwn?.held === true && JSON.parse(explainedItem.stdout).canRead === true, explainedItem.stderr || explainedItem.stdout.slice(0, 300));
+	shop.customer = original;
+
+	// Tag groups and includes: "silver" + "annual" grants Gold, and Gold includes Pro.
+	shop.customer = { id: 4004, email: "gold@example.com", firstName: "Gale", lastName: "Gold", tags: ["silver", "annual"] };
+	const gold = new Browser();
+	const landed = await gold.go("/_emdash/api/auth/redeemid/login?return=/");
+	check("a member signing in from the home page lands on their level's home", landed.url.pathname === "/posts/pro-only", landed.url.href);
+	check("silver plus annual grants Gold, and Gold reads what Pro reads", landed.text.includes("PRO-BODY"), landed.text.slice(0, 200));
+	const levelsBox = (landed.text.match(/redeemid-account__levels[^]*?<\/span>\s*<\/span>/) ?? [""])[0];
+	check("the account box names only the top level, in its colour", levelsBox.includes('data-redeemid-level="gold"') && levelsBox.includes("--redeemid-level-color: #c9a227") && !levelsBox.includes("Pro"), levelsBox);
+	const goldJoin = await gold.go("/join");
+	check("a plan a bigger level includes says so", goldJoin.text.includes('data-redeemid-state="included"') && goldJoin.text.includes("Included in your Gold membership."), (goldJoin.text.match(/redeemid-plan[^]{0,400}/) ?? [""])[0]);
+	const fromPost = await new Browser().go("/_emdash/api/auth/redeemid/login?return=/posts/members-only");
+	check("signing in from a post still returns to it", fromPost.url.pathname === "/posts/members-only", fromPost.url.href);
+	shop.customer = { id: 4005, email: "silver@example.com", firstName: "Sil", lastName: "Ver", tags: ["silver"] };
+	const silverOnly = new Browser();
+	const noGold = await silverOnly.go("/_emdash/api/auth/redeemid/login?return=/posts/pro-only");
+	check("one tag of an all-group isn't enough", !noGold.text.includes("PRO-BODY") && noGold.text.includes('data-redeemid-reason="upgrade"'), noGold.text.slice(0, 200));
 	shop.customer = original;
 
 	const mcp = async (method, params) => {

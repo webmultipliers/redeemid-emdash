@@ -6,12 +6,12 @@
 
 import { adminConfigured, adminScopes, editTags, registerWebhooks, resync, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
 import { applyEntryRule, describe, entryRuleFor, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
-import type { RedeemIDConfig } from "./config.js";
+import { PROVIDER_ID, type RedeemIDConfig } from "./config.js";
 import { levelChange } from "./events.js";
 import { featuresFor } from "./features.js";
 import { record } from "./log.js";
 import { recentRequests } from "./privacy.js";
-import { cleanTags, numericId, type MemberRecord, type Stores } from "./storage.js";
+import { cleanTags, memberForUser, numericId, type MemberRecord, type Stores } from "./storage.js";
 
 /** Members resynced per click; well inside Shopify's query cost limits. */
 /**
@@ -100,9 +100,96 @@ export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Bl
 				? { type: "actions", elements: [{ type: "button", action_id: "member_resync", label: "Resync from Shopify", style: "primary", value: m.customerId }] }
 				: { type: "divider" },
 			{ type: "context", text: "Tags are written to Shopify, then read back. Shopify stays the only source of access." },
+			...linkSection(m),
 			...privacySection(m.customerId),
 		],
 	};
+}
+
+/** Linking the customer to a site user whose email differs, on their detail page. */
+function linkSection(m: MemberRecord): unknown[] {
+	return [
+		{ type: "header", text: "Site user" },
+		{
+			type: "context",
+			text: m.userId
+				? "This customer signs in as the site user linked below. Unlink to let their next sign-in pick the user by email again."
+				: "Signing in links the customer to the site user with the same verified email. When their emails differ, link them here: their next sign-in uses that user.",
+		},
+		m.userId
+			? {
+					type: "actions",
+					elements: [
+						{
+							type: "button",
+							action_id: "member_unlink",
+							label: "Unlink site user",
+							style: "danger",
+							value: m.customerId,
+							confirm: { title: "Unlink this site user?", text: "Their levels stop applying to that user until a sign-in links a user again. Nothing changes in Shopify.", confirm: "Unlink", deny: "Cancel", style: "danger" },
+						},
+					],
+				}
+			: {
+					type: "form",
+					block_id: `link:${m.customerId}`,
+					fields: [{ type: "text_input", action_id: "email", label: "Site user's email", placeholder: "reader@example.com" }],
+					submit: { label: "Link", action_id: "member_link" },
+				},
+	];
+}
+
+/** The parts of EmDash's auth adapter that linking uses. */
+export interface LinkAdapter {
+	getUserByEmail(email: string): Promise<{ id: string; role: number; disabled: boolean } | null>;
+	getOAuthAccount(provider: string, providerAccountId: string): Promise<{ userId: string } | null>;
+	getOAuthAccountsByUserId(userId: string): Promise<Array<{ provider: string; providerAccountId: string }>>;
+	createOAuthAccount(account: { provider: string; providerAccountId: string; userId: string }): Promise<unknown>;
+	deleteOAuthAccount(provider: string, providerAccountId: string): Promise<void>;
+}
+
+/** EmDash's Subscriber role: anything above it is staff. */
+const SUBSCRIBER = 10;
+
+export class LinkError extends Error {}
+
+/**
+ * Link a customer to an existing site user by the user's email, for a member
+ * whose store email differs. Only Subscribers, never staff, and never a user
+ * already linked to another customer. Access still comes only from the
+ * customer's Shopify tags.
+ */
+export async function staffLink(adapter: LinkAdapter, s: Stores, customerId: string, rawEmail: unknown): Promise<MemberRecord> {
+	const m = await s.members.get(customerId);
+	if (!m) throw new LinkError("That member is gone.");
+	if (m.userId) throw new LinkError("This customer is already linked. Unlink first.");
+	const email = String(rawEmail ?? "").trim().toLowerCase();
+	if (!email.includes("@")) throw new LinkError("Give the site user's email.");
+	const user = await adapter.getUserByEmail(email);
+	if (!user) throw new LinkError("No site user has that email.");
+	if (user.role > SUBSCRIBER) throw new LinkError("Staff accounts can't be linked to a store customer.");
+	if (user.disabled) throw new LinkError("That site user is turned off.");
+	const theirs = (await adapter.getOAuthAccountsByUserId(user.id)).find((a) => a.provider === PROVIDER_ID && a.providerAccountId !== customerId);
+	const other = theirs ? null : await memberForUser(s, user.id);
+	if (theirs || (other && other.customerId !== customerId)) throw new LinkError(`That site user is linked to customer ${theirs?.providerAccountId ?? other?.customerId}.`);
+	const held = await adapter.getOAuthAccount(PROVIDER_ID, customerId);
+	if (held && held.userId !== user.id) await adapter.deleteOAuthAccount(PROVIDER_ID, customerId);
+	if (!held || held.userId !== user.id) await adapter.createOAuthAccount({ provider: PROVIDER_ID, providerAccountId: customerId, userId: user.id });
+	const linked = { ...m, userId: user.id, linkedAt: m.linkedAt ?? new Date().toISOString() };
+	await s.members.put(customerId, linked);
+	await record({ event: "staff.link", label: "linked", status: "ok", origin: "staff", customerId });
+	return linked;
+}
+
+/** Undo a link: the customer's next sign-in picks a user by email again. */
+export async function staffUnlink(adapter: LinkAdapter, s: Stores, customerId: string): Promise<MemberRecord> {
+	const m = await s.members.get(customerId);
+	if (!m) throw new LinkError("That member is gone.");
+	if (await adapter.getOAuthAccount(PROVIDER_ID, customerId)) await adapter.deleteOAuthAccount(PROVIDER_ID, customerId);
+	const unlinked = { ...m, userId: null };
+	await s.members.put(customerId, unlinked);
+	await record({ event: "staff.link", label: "unlinked", status: "ok", origin: "staff", customerId });
+	return unlinked;
 }
 
 /** Export and erase for one member, on their detail page. */

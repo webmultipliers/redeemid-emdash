@@ -15,14 +15,65 @@ export interface LevelConfig {
 	slug: string;
 	/** Name shown to members. */
 	name: string;
-	/** Shopify customer tags that grant this level. Matched case-insensitively. */
-	tags: string[];
-	/** "any" (default): one of the tags is enough. "all": every tag is needed. */
+	/**
+	 * Shopify customer tags that grant this level. Matched case-insensitively.
+	 * This is the level's first tag group; `groups` adds more.
+	 */
+	tags?: string[];
+	/** For `tags`: "any" (default): one of the tags is enough. "all": every tag is needed. */
 	match?: "any" | "all";
+	/**
+	 * More tag groups, any one of which also grants the level: a level that is
+	 * "gold", or "silver" and "annual", is `tags: ["gold"]` with
+	 * `groups: [{ tags: ["silver", "annual"], match: "all" }]`.
+	 */
+	groups?: TagGroup[];
+	/**
+	 * Slugs of levels this one also opens: Gold with `includes: ["silver"]`
+	 * reads everything for Silver. Inclusion carries on (Gold includes Silver
+	 * includes Members), so rules name only the lowest level that may read.
+	 */
+	includes?: string[];
 	/** What the wall says to readers this level would let in, e.g. "Gold members read every investigation." */
 	wall?: string;
 	/** Where the wall's join link goes for this level. Falls back to `join.href`. */
 	joinUrl?: string;
+	/**
+	 * Handles of the Shopify products whose purchase leads to this level
+	 * (Flow or an app tags the buyer). Display only: plan cards use it to say
+	 * "You're on this plan", "Included in your Gold membership" or "Upgrade".
+	 * It grants nothing.
+	 */
+	products?: string[];
+	/**
+	 * Members' home: a same-site path members of this level land on after
+	 * signing in from the home page or a plain sign-in link, e.g. "/members/gold/".
+	 * Signing in from an entry returns them to it.
+	 */
+	home?: string;
+	/** Badge colour, a hex such as "#c9a227", set as `--redeemid-level-color` on badges and level names. Badges always show the name too. */
+	badge?: string;
+}
+
+/** One way to hold a level: any one of `tags`, or every one with `match: "all"`. */
+export interface TagGroup {
+	tags: string[];
+	match?: "any" | "all";
+}
+
+/** A level's tag groups: `tags`/`match` first, then `groups`. Empty groups are dropped. */
+export function groupsOf(level: LevelConfig): TagGroup[] {
+	const out: TagGroup[] = [];
+	if (level.tags?.length) out.push({ tags: level.tags, ...(level.match === "all" ? { match: "all" as const } : {}) });
+	for (const g of level.groups ?? []) {
+		if (g && Array.isArray(g.tags) && g.tags.length) out.push({ tags: g.tags, ...(g.match === "all" ? { match: "all" as const } : {}) });
+	}
+	return out;
+}
+
+/** Every tag any of the level's groups names, lower case. */
+export function levelTags(level: LevelConfig): string[] {
+	return [...new Set(groupsOf(level).flatMap((g) => g.tags.map((t) => t.toLowerCase())))];
 }
 
 /**

@@ -3,20 +3,31 @@
  * Sign in link for visitors; name, levels, Account and Sign out for members.
  */
 import { siteConfig } from "../site-config.js";
-import { accountUrl, signInUrl, signOutUrl, viewer } from "../access.js";
+import { accountUrl, badgeColor, signInUrl, signOutUrl, topLevels, viewer } from "../access.js";
 import { text } from "../text.js";
 
 const v = await viewer(Astro);
 const config = await siteConfig(Astro.locals);
 const here = Astro.url.pathname + Astro.url.search;
-const names = (config?.levels ?? []).filter((l) => v.levels.includes(l.slug)).map((l) => l.name);
+// "Gold", not "Gold, Silver", when Gold includes Silver.
+const top = topLevels(v.levels, config?.levels);
+const held = (config?.levels ?? []).filter((l) => top.includes(l.slug));
 ---
 
 <div class="redeemid-account" data-redeemid-signed-in={v.signedIn ? "true" : "false"}>
 	{v.signedIn ? (
 		<>
 			<span class="redeemid-account__who">{v.member?.firstName ?? v.member?.email ?? text(config, "Signed in")}</span>
-			{names.length > 0 && <span class="redeemid-account__levels">{names.join(", ")}</span>}
+			{held.length > 0 && (
+				<span class="redeemid-account__levels">
+					{held.map((l, i) => (
+						<>
+							{i > 0 && ", "}
+							<span data-redeemid-level={l.slug} style={badgeColor(l) ? `--redeemid-level-color: ${badgeColor(l)}` : undefined}>{l.name}</span>
+						</>
+					))}
+				</span>
+			)}
 			<a class="redeemid-account__link" href={accountUrl(here)}>{text(config, "Account")}</a>
 			<form method="post" action={signOutUrl(here)}>
 				<button type="submit">{text(config, "Sign out")}</button>

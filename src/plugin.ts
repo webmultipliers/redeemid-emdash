@@ -28,17 +28,17 @@
 import type { PluginContext, ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
-import { levelsFor, SIGNED_IN, type Terms } from "./access.js";
+import { levelsFor, SIGNED_IN, topLevels, type Terms } from "./access.js";
 import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, isAccessAction, type AccessEnv, type PanelEntry } from "./access-admin.js";
 import { deleteAccess, entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
-import { env, ENV, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
+import { env, ENV, shopOrigin, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
 import { EDITOR_PANELS, PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
-import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit } from "./staff.js";
+import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, staffLink, staffUnlink, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
 import { gatedFindings, templateFindings } from "./template-scan.js";
 import { setupFacts, setupPage, WEBHOOK } from "./setup.js";
@@ -539,6 +539,20 @@ async function action(
 				return m ? memberDetail(config, m, fail(e)) : membersPage(config);
 			}
 		}
+		case "member_link":
+		case "member_unlink": {
+			const id = i.action_id === "member_link" ? String(i.block_id ?? "").replace(/^link:/, "") : String(i.value ?? "");
+			try {
+				const { getDb } = await import("emdash/runtime");
+				const { createKyselyAdapter } = await import("@emdash-cms/auth/adapters/kysely");
+				const adapter = createKyselyAdapter((await getDb()) as never);
+				const m = i.action_id === "member_link" ? await staffLink(adapter, s, id, i.values?.email) : await staffUnlink(adapter, s, id);
+				return memberDetail(config, m, { type: "success", message: m.userId ? "Linked. Their next sign-in uses that site user." : "Unlinked." });
+			} catch (e) {
+				const m = await s.members.get(id);
+				return m ? memberDetail(config, m, fail(e)) : membersPage(config);
+			}
+		}
 		case "member_tag_add":
 		case "member_tag_remove": {
 			const add = i.action_id === "member_tag_add";
@@ -675,7 +689,7 @@ async function membersPage(config: RedeemIDConfig) {
 	}));
 	const name = (m: MemberRecord) => [m.firstName, m.lastName].filter(Boolean).join(" ") || "No name";
 	const levelNames = (m: MemberRecord) => {
-		const held = levelsFor(m.tags, levels);
+		const held = topLevels(levelsFor(m.tags, levels), levels);
 		return levels.filter((l) => held.includes(l.slug)).map((l) => l.name).join(", ");
 	};
 	return {
@@ -812,6 +826,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 						},
 					]
 				: []),
+			...customDomainBlocks(config),
 			...templateBlocks(config),
 			{ type: "context", text: "Setting up a store step by step is under Setup. Deliveries, their health and the webhook subscriptions are under Webhooks; everything RedeemID did is under App events." },
 			{ type: "divider" },
@@ -829,6 +844,30 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 			{ type: "context", text: "Levels, rules and the meter are under Access." },
 		],
 	};
+}
+
+/**
+ * Status: the Admin API (staff tools, webhook registration, tag reads) only
+ * answers on the store's myshopify.com domain, so a custom domain in `shop`
+ * breaks it while sign-in still works.
+ */
+export function customDomainBlocks(config: RedeemIDConfig): unknown[] {
+	if (!adminConfigured() || config.allowInsecureShop) return [];
+	let host = "";
+	try {
+		host = new URL(shopOrigin(config)).hostname;
+	} catch {
+		return [];
+	}
+	if (host.endsWith(".myshopify.com")) return [];
+	return [
+		{
+			type: "banner",
+			variant: "alert",
+			title: "Use the myshopify.com domain",
+			description: `The store domain is ${host}. Shopify's Admin API, which the staff tools, webhook registration and tag reads use, only answers on the store's myshopify.com domain. Set REDEEMID_SHOPIFY_STORE_DOMAIN (or shop) to it; sign-in works with it too.`,
+		},
+	];
 }
 
 /** Status: templates that would show a gated body in full (see template-scan.ts). */

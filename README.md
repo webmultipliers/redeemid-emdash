@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.22, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover the features below. Expect changes before 1.0.
+**Status: 0.0.23, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover the features below. Expect changes before 1.0.
 
 ## Contents
 
@@ -26,7 +26,7 @@ Readers sign in with the store's own customer account. Their Shopify customer ta
 
 1. **Sign in.** A reader clicks "Sign in", signs in on the store's customer account page, and comes back signed in as an EmDash Subscriber. That role only means "signed in". It never opens content.
 2. **Mirror.** RedeemID keeps a copy of the customer: email, name, tags and whether the account is enabled. Signed Shopify webhooks keep it current.
-3. **Levels.** You map tags to levels and name them whatever you like, such as `gold-member` to Gold. Tags come from Shopify Flow, a subscription app or staff, never from the site.
+3. **Levels.** You map tags to levels and name them whatever you like, such as `gold-member` to Gold, or Gold for `gold` or for `silver` with `annual`. A level can include others, so Gold members read everything for Silver. Tags come from Shopify Flow, a subscription app or staff, never from the site.
 4. **Rules.** You say which content types or terms need which levels, in the admin (Plugins → RedeemID → Access) or in code. Each entry can have its own rule in the editor's Access panel, and editors can drop a Paywall break or a Members only block into any body.
 5. **Render.** Templates render bodies with `<Content>`. Readers who pass see everything. Everyone else gets a teaser and the wall, and the locked part never reaches the page.
 
@@ -181,7 +181,7 @@ Pass `id` on the entry's own page. It lets the meter count the read, and a locke
 <Gate levels={["pro"]}><a href="/reports/archive.zip">Download the archive</a></Gate>
 ```
 
-**`<AccessBadge>`** shows what an entry needs, on cards and on the entry. It shows "Free" for open entries (`free=""` hides it), adds `is-locked` and a lock for readers it keeps out, and puts the level slugs in `data-redeemid-level` for colours:
+**`<AccessBadge>`** shows what an entry needs, on cards and on the entry. It shows "Free" for open entries (`free=""` hides it), adds `is-locked` and a lock for readers it keeps out, and puts the level slugs in `data-redeemid-level` for colours (and the first level's `badge` colour in `--redeemid-level-color`):
 
 ```astro
 <AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} />
@@ -191,7 +191,7 @@ Pass `id` on the entry's own page. It lets the meter count the read, and a locke
 
 **`<MemberCard />`** is for an account page: levels with start dates, the renewal or end date and any gift membership that Shopify keeps (see [membership dates](#membership-dates)), past levels, the meter, and links to the store account, Refresh membership and Sign out. Refresh membership sends a member to the store with no sign-in form; one still signed in there comes straight back with their tags read again. Add `<Preferences />` and `<YourData />` beside it.
 
-**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). With `levels`, members who already hold one see "You're on this plan." in place of the button, and a member who held one before (Shopify has since removed its tag) gets **Renew** (`renewLabel`) instead of `label`. The wall does the same: a lapsed member reads "Your Pro membership has ended." with **Renew Pro** and **Already renewed? Refresh**, not the newcomer's join link.
+**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). Its levels are `levels`, or else the levels whose `products` list the handle. Then the card fits the member: one who holds a level through its own tags sees "You're on this plan." in place of the button; one whose bigger level includes it sees "Included in your Gold membership."; one the plan would move up (its level includes theirs) gets **Upgrade** (`upgradeLabel`); and one who held it before (Shopify has since removed its tag) gets **Renew** (`renewLabel`) instead of `label`. `data-redeemid-state` is `held`, `included`, `upgrade`, `renew` or `join`. The wall does the same: a lapsed member reads "Your Pro membership has ended." with **Renew Pro** and **Already renewed? Refresh**, not the newcomer's join link.
 
 ```astro
 <Plan handle="gold-membership" label="Join Gold" levels={["gold"]}>
@@ -247,13 +247,35 @@ Each rule names a collection and the levels, any of which may read. An empty `le
 
 Term rules beat the collection's rule, which beats the site default. When several term rules cover one entry (a story in Investigations, which needs Gold, and Culture, which needs Silver), readers must pass every one of them, so only members with both read it. Set `combine: "any"` to let one be enough.
 
-Levels can need several tags: `{ slug: "both", name: "Member + Pro", tags: ["member", "pro"], match: "all" }`. A level's `wall` is what the wall says to readers it would let in, and its `joinUrl` overrides `join.href`.
+### Levels
+
+A level is a name for customers who hold some Shopify tags. `tags` is one group: any one of them grants the level, or every one with `match: "all"`. `groups` adds more groups, and any one group is enough:
+
+```js
+levels: [
+	{ slug: "silver", name: "Silver", tags: ["silver"] },
+	// "gold", or "silver" with "annual".
+	{ slug: "gold", name: "Gold", tags: ["gold"], groups: [{ tags: ["silver", "annual"], match: "all" }], includes: ["silver"] },
+],
+```
+
+`includes` lists levels this one also opens: Gold members read everything for Silver, and inclusion carries on (Gold includes Silver includes Members). So a rule names only the lowest level that may read, and an entry that needs Silver and Gold needs Gold once. Members hold the levels their tags grant and every level those include; the account box and member card show only the top one ("Gold", not "Gold, Silver"), and `member.levels_changed` lists them all.
+
+The rest of a level is how it looks and where it leads:
+
+| Key | What it does |
+| --- | --- |
+| `wall` | What the wall says to readers this level would let in |
+| `joinUrl` | Where the wall's join link goes for this level (else `join.href`) |
+| `products` | Handles of the Shopify products whose purchase leads to the level. Display only: plan cards use it (see `<Plan>`). It grants nothing. |
+| `home` | Members' home: the same-site path a member lands on after signing in from the home page or a plain sign-in link (their top level's, in level order). Signing in from an entry returns them to it. |
+| `badge` | A hex colour, set as `--redeemid-level-color` on badges, the account box and the member card. Badges always show the name too. |
 
 ### Access settings in the admin
 
 Everything about who reads what can be set in the EmDash admin, so a new content type, taxonomy or level never needs a code change. Under **Plugins → RedeemID → Access**:
 
-- **Levels.** Add, rename and remove levels and the Shopify tags that grant them. Name them anything; the slug is made from the name. A level that rules, features or folders still use can't be removed.
+- **Levels.** Add, rename and remove levels and the Shopify tags that grant them: one group per line, commas between tags, and `all:` before a line that needs every tag on it. Tick the levels each one includes, and set its plan products, members' home and badge colour. Name them anything; the slug is made from the name. A level that rules, features or folders still use can't be removed; removing one drops it from other levels' includes.
 - **Site rules.** The site default, how term rules combine, the meter and the wall's join link.
 - **Content types.** Who can read each collection, with drip, the meter and the teaser. Every collection on the site is listed, including ones made after RedeemID was set up.
 - **Taxonomies.** Rules for terms in every taxonomy, for one collection or every collection the taxonomy is on.
@@ -283,7 +305,7 @@ teaser: { posts: 40 },
 
 The meter lets a signed-in reader open a locked entry anyway, `limit` entries per `period` (`"month"`, the default, or `"week"`, in UTC). Each entry counts once per period, when its own page renders through `<Content>` with an `id`. Lists, feeds, search and the content API never count. Visitors get the wall and a nudge to sign in. While it runs, `<Content>` says how many free reads are left, and when it runs out the wall says so. Rules with `meter: false` are never metered, and the meter never opens an entry a member is waiting on by drip.
 
-Drip holds a rule's entries back from members who pass it until they've held their level for `drip` days. A level starts when the customer first had its tag (for a `match: "all"` level, the last of its tags). With several levels the earliest counts, and with none known, the first sign-in. RedeemID notes when each tag first arrives and forgets it when Shopify removes it. The wall shows the date the entry opens.
+Drip holds a rule's entries back from members who pass it until they've held their level for `drip` days. A level starts when the customer first had a tag of its group (for a `match: "all"` group, the last of its tags); a level held through another's `includes` starts with that one. With several levels the earliest counts, and with none known, the first sign-in. RedeemID notes when each tag first arrives and forgets it when Shopify removes it. The wall shows the date the entry opens.
 
 ### Selling one entry on its own
 
@@ -410,7 +432,7 @@ What RedeemID keeps about a member: the synced record (Shopify customer ID, emai
 | Staff, on a member's page | **Export data**, **Erase site data**, and **Also request erasure in Shopify** (orders included, after Shopify's wait; **Cancel the Shopify erasure** withdraws it). The Shopify request needs the `write_customer_data_erasure` scope. |
 | Shopify `customers/data_request` | An open request on the **Privacy** page. Press **Export and mark done**, then send the export to the store owner. |
 | Shopify `customers/redact` | The member's record and meter are erased. |
-| Shopify `shop/redact` | Every member record and meter is erased. |
+| Shopify `shop/redact` | Every member record and meter is erased, a hundred at a time, so even a large shop fits in one request on the Workers Free plan. |
 
 The Privacy page shows each request's source and Shopify customer ID, never an email or a name. The daily check deletes finished requests after a year; open ones stay until staff mark them done. An erase sends the `member.erased` event so a CRM can delete its copy too. The site's own user account stays; delete it under Users if the person asks. The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, `POST` with `confirm=yes` erases, only for the signed-in member and only from the site's own origin.
 
@@ -419,6 +441,7 @@ The Privacy page shows each request's source and Shopify customer ID, never an e
 With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API token for the webhook app with the client credentials grant. The app must be in the same Shopify organization as the store, as Dev Dashboard apps are, and needs `read_customers` and `write_customers`. Then, under **Plugins → RedeemID**:
 
 - **Member detail.** Levels, tags and features; resync from Shopify; add and remove tags. Tag edits are made in Shopify and read back. Nothing is granted on the site.
+- **Site user.** Signing in links a customer to the site user with the same verified email. When the emails differ, staff link the customer to an existing Subscriber by that user's email on the member's page (never a staff account, never a user linked to another customer), or unlink them. This part needs no Admin API app.
 - **Bulk resync.** Reads the 25 members synced longest ago, few enough for the Workers free limit of 50 database queries a request. Press it again for the next 25. It never runs on its own.
 - **Webhook subscriptions.** Webhooks → Setup lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
 - **Access test.** A collection, an entry, terms and a reader's tags in; the verdict out.
@@ -457,7 +480,7 @@ Staff questions as data, for AI agents and scripts. Every one needs an administr
 | MCP tool | Command | What it answers |
 | --- | --- | --- |
 | `explain_access` | `access <collection>` | Can this reader read this entry, and why. Give the entry by `id` or `terms`, and the reader by `tags`, `customerId` or `signedIn: false`. |
-| `list_levels` | `levels` | Every level, its tags, wall text and join link |
+| `list_levels` | `levels` | Every level, its tag groups, the levels it includes, wall text and join link |
 | `get_rules` | `rules` | How rules combine, every rule, the meter, teasers, features and file rules |
 | `get_member` | `member <id or email>` | One member: status, tags, levels with start dates, past levels, features, last sync |
 | `site_health` | `health` | Each setting (set or not, never a value), the last webhook, open privacy requests, ignored text replacements |
@@ -536,9 +559,9 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 
 | Option | Type | What it does |
 | --- | --- | --- |
-| `shop` | `string` | The store's `*.myshopify.com` domain (a custom customer-account domain works too). Leave it out to read `REDEEMID_SHOPIFY_STORE_DOMAIN`. |
+| `shop` | `string` | The store's `*.myshopify.com` domain. A custom domain works for sign-in, but the Admin API (staff tools, webhook registration, tag reads) answers only on myshopify.com, and the Status page warns when the app is set up with a custom domain. Leave it out to read `REDEEMID_SHOPIFY_STORE_DOMAIN`. |
 | `label` | `string` | The sign-in button's label. Default "Sign in". |
-| `levels` | `{ slug, name, tags, match?, wall?, joinUrl? }[]` | Levels from customer tags. `match: "all"` needs every tag. |
+| `levels` | `{ slug, name, tags?, match?, groups?, includes?, wall?, joinUrl?, products?, home?, badge? }[]` | Levels from customer tags. See [levels](#levels). |
 | `rules` | `{ collection, taxonomy?, term?, levels, open?, drip?, meter? }[]` | What needs which levels. See [rules](#rules). |
 | `combine` | `"all"` \| `"any"` | How several term rules on one entry combine. Default `"all"`. |
 | `join` | `{ href, label? }` | The wall's join link. |
@@ -590,7 +613,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `YourData` | `title`, `heading` | Download or delete my data |
 | `Feature` | `slug`; slot `else` | Shows its content to members holding the feature |
 | `Notices` | `messages` | The message for `?redeemid_notice=` |
-| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel`, `renewLabel` | A product with a buy button |
+| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel`, `renewLabel`, `upgradeLabel` | A product with a buy button that fits the member |
 | `Product` | `handle`, `heading`, `compact`, `html`, `schema`, `addLabel`, `buyLabel` | A product page |
 | `Collection` | `handle`, `limit`, `productHref`, `showTitle`, `browse`, `quickAdd` | A grid of products, with filters and pages |
 | `ProductSearch` | `productHref`, `limit`, `boxOnly`, `action`, `label`, `quickAdd` | Product search |
@@ -666,6 +689,7 @@ Reword one with `messages={{ cart_empty: "…" }}`, or for every page with `text
 - Staff accounts (any EmDash role above Subscriber) can't sign in through the store, even with a matching email. When that happens, the store session ends too, so the next sign-in attempt starts fresh.
 - Customers can't create the first (admin) account on a new site.
 - Webhooks are checked against the app's signature before anything changes.
+- `customers/merge` moves the sign-in link to the customer Shopify kept. With the Admin API app set up, the kept customer's tags are read straight away; without it they arrive with its next webhook or sign-in.
 - Access fails closed: when the saved access settings can't be read, a server keeps the ones it last read, and with none it locks every entry.
 
 ## Troubleshooting
