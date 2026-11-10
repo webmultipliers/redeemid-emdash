@@ -23,7 +23,7 @@ import { defineMiddleware } from "astro:middleware";
 
 import { signInUrl } from "./access.js";
 import { readCart } from "./cart.js";
-import { keysFromPath, pathAccess, refusal } from "./files.js";
+import { keysFromUrl, pathAccess, refusal } from "./files.js";
 import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
 import { shareConfig, siteConfig } from "./site-config.js";
 
@@ -49,7 +49,14 @@ export function memberMayUse(path: string, extra: string[] = []): boolean {
  */
 async function withUser(context: { locals: unknown; session?: { get(k: string): Promise<unknown> } }) {
 	const locals = context.locals as { user?: { id: string; role?: number } | null; emdash?: { db?: unknown } | null };
-	if (locals.user || !locals.emdash?.db) return context;
+	if (!locals.emdash?.db) {
+		// EmDash leaves the database off some public requests: fetch it, so the check can run.
+		const { getDb } = await import("emdash/runtime");
+		const next = { ...locals, emdash: { ...(locals.emdash ?? {}), db: await getDb() } };
+		shareConfig(locals, next);
+		return withUser({ ...context, locals: next });
+	}
+	if (locals.user) return context;
 	const sessionUser = (await context.session?.get("user")) as { id?: string } | undefined;
 	if (!sessionUser?.id) return context;
 	const { createKyselyAdapter } = await import("@emdash-cms/auth/adapters/kysely");
@@ -80,7 +87,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 	const config = await siteConfig(locals);
 
 	// Protected files: checked for everyone, on every download.
-	const keys = config?.files?.length ? keysFromPath(url.pathname) : null;
+	const keys = config?.files?.length ? keysFromUrl(url) : null;
 	if (keys) {
 		let verdict;
 		try {

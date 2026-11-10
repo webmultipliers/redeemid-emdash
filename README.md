@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.18, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
+**Status: 0.0.19, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
 
 ## Contents
 
