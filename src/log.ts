@@ -10,6 +10,7 @@
 import type { StorageCollection } from "emdash";
 
 export const LOG_DAYS = 30;
+const PRUNE_PAGES = 5;
 
 export type LogOrigin = "webhook" | "member" | "staff" | "agent" | "cron" | "site";
 
@@ -90,7 +91,13 @@ export async function timed<T>(event: string, label: string, run: () => Promise<
 /** Delete entries (and other dated records) older than `days`, a page at a time. */
 export async function prune<T>(store: StorageCollection<T>, field: string, days = LOG_DAYS): Promise<number> {
 	const before = new Date(Date.now() - days * 86_400_000).toISOString();
-	const { items } = await store.query({ where: { [field]: { lt: before } }, limit: 100 });
-	if (items.length === 0) return 0;
-	return store.deleteMany(items.map((i) => i.id));
+	let gone = 0;
+	// A few pages a run: enough to keep up with a busy site, few enough queries for one request.
+	for (let page = 0; page < PRUNE_PAGES; page++) {
+		const { items } = await store.query({ where: { [field]: { lt: before } }, limit: 100 });
+		if (items.length === 0) break;
+		gone += await store.deleteMany(items.map((i) => i.id));
+		if (items.length < 100) break;
+	}
+	return gone;
 }

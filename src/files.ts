@@ -118,7 +118,8 @@ export async function fileAccess(astro: AstroLike, config: RedeemIDConfig | null
 	if (!config?.files?.length) return { protected: false };
 	const locals = astro.locals as { user?: { role?: number } | null; emdash?: { db?: unknown } | null };
 	const db = locals.emdash?.db;
-	if (!db) return { protected: false };
+	// No database to look the file up in: the caller fails closed.
+	if (!db) throw new Error("no database for the file check");
 	const media = await mediaByKey(db, key);
 	const rule = ruleFor(config, media?.folder ?? null);
 	if (!media || !rule) return { protected: false };
@@ -162,10 +163,47 @@ export function keysFromPath(pathname: string): string[] | null {
 			break;
 		}
 		out.push(decoded);
+		// The file route drops slashes around the key, so the check does too.
+		const trimmed = decoded.replace(/^\/+|\/+$/g, "");
+		if (trimmed && trimmed !== decoded) out.push(trimmed);
 		if (decoded === candidate) break;
 		candidate = decoded;
 	}
 	return [...new Set(out)];
+}
+
+/** Astro's image endpoint, which reads the file its `href` names and answers with it. */
+export const IMAGE_PATH = "/_image";
+
+/**
+ * The storage keys a request could reach: a file URL's own, or those of the
+ * file an image-endpoint request asks for by `href`. Null when it names none.
+ */
+export function keysFromUrl(url: URL): string[] | null {
+	const direct = keysFromPath(url.pathname);
+	if (direct) return direct;
+	if (url.pathname.replace(/\/+$/, "") !== IMAGE_PATH) return null;
+	const out: string[] = [];
+	for (const href of url.searchParams.getAll("href")) {
+		let candidate = href;
+		for (let layer = 0; layer < 4; layer++) {
+			try {
+				const keys = keysFromPath(new URL(candidate, url.origin).pathname);
+				if (keys) out.push(...keys);
+			} catch {
+				// Not a URL: nothing to check.
+			}
+			let decoded: string;
+			try {
+				decoded = decodeURIComponent(candidate);
+			} catch {
+				break;
+			}
+			if (decoded === candidate) break;
+			candidate = decoded;
+		}
+	}
+	return out.length ? [...new Set(out)] : null;
 }
 
 /** Decide a download that may name several keys: the first protected one decides. */

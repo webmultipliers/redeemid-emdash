@@ -48,7 +48,8 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 	const state = url.searchParams.get("state");
 	const code = url.searchParams.get("code");
 	if (!flow || !state || state !== flow.state || !code || Date.now() - flow.at > FLOW_TTL_MS) {
-		await refused("sign_in_expired", "warn");
+		// A request with no sign-in behind it (a crawler, a probe) isn't worth an entry.
+		if (flow) await refused("sign_in_expired", "warn");
 		return fail(redirect, returnTo, "sign_in_expired");
 	}
 

@@ -19,6 +19,11 @@ import { apply, customerOf, kindOf, verifyHmac } from "../webhooks.js";
 export const prerender = false;
 
 const MAX_BYTES = 1024 * 1024;
+/** A delivery still "pending" after this long never finished. */
+const STALE_PENDING_MS = 60 * 1000;
+/** At most one "Bad signature" entry per this long, so junk requests can't fill App events. */
+const REJECT_LOG_MS = 60 * 1000;
+let lastRejectLogged = 0;
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	const emdash = (locals as { emdash?: { db?: unknown; config?: unknown } }).emdash;
@@ -31,7 +36,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	const ok = await verifyHmac(body, request.headers.get("x-shopify-hmac-sha256") ?? "", secret);
 	const topic = (request.headers.get("x-shopify-topic") ?? "").toLowerCase();
 	if (!ok) {
-		await record({ event: "webhook.rejected", label: topic || "unknown", status: "rejected", level: "warn", origin: "webhook", note: "Bad signature" });
+		if (Date.now() - lastRejectLogged > REJECT_LOG_MS) {
+			lastRejectLogged = Date.now();
+			await record({ event: "webhook.rejected", label: topic || "unknown", status: "rejected", level: "warn", origin: "webhook", note: "Bad signature" });
+		}
 		return new Response("Bad signature", { status: 401 });
 	}
 
@@ -51,7 +59,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	const customerId = topic === "shop/redact" ? null : customerOf(payload);
 	const receivedAt = new Date().toISOString();
 	if (delivery) {
-		const claimed = await s.deliveries.compareAndSet(delivery, null, { topic, receivedAt, outcome: "pending", customerId });
+		const claim = () => s.deliveries.compareAndSet(delivery, null, { topic, receivedAt, outcome: "pending", customerId });
+		let claimed = await claim();
+		if (!claimed.applied) {
+			// A delivery left "pending" was cut off before it finished (a
+			// timeout, a crash): let Shopify's retry run it again.
+			const earlier = await s.deliveries.get(delivery);
+			if (earlier?.outcome === "pending" && Date.now() - Date.parse(earlier.receivedAt) > STALE_PENDING_MS) {
+				await s.deliveries.delete(delivery);
+				claimed = await claim();
+			}
+		}
 		if (!claimed.applied) {
 			await record({ event: "webhook.received", label: topic, status: "duplicate", origin: "webhook", customerId });
 			return new Response("Duplicate", { status: 200 });

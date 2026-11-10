@@ -333,6 +333,10 @@ try {
 	check("a visitor is asked to sign in for a protected file", asVisitor.res.status === 401 && !asVisitor.text.includes("PROTECTED-") && asVisitor.res.headers.get("cache-control") === "private, no-store", `${asVisitor.res.status}`);
 	const doubled = await visitor.go(`/_emdash/api/media/file/${encodeURIComponent(encodeURIComponent(proFile.key))}`);
 	check("an encoded key doesn't get past the check", !doubled.text.includes("PROTECTED-"), `${doubled.res.status}`);
+	for (const path of [`${fileUrl(proFile.key)}/`, `${fileUrl(proFile.key)}%2F`, `/_emdash/api/media/file//${encodeURIComponent(proFile.key)}`, `/_image?href=${encodeURIComponent(`/_emdash/api/media/file/${proFile.key}`)}&w=100&f=webp`, `/_image?href=${encodeURIComponent(`${SITE}/_emdash/api/media/file/${proFile.key}/`)}`]) {
+		const r = await visitor.go(path);
+		check(`a visitor gets no protected file from ${path.slice(0, 60)}`, !r.text.includes("PROTECTED-") && !/public/.test(r.res.headers.get("cache-control") ?? ""), `${r.res.status} ${r.res.headers.get("cache-control")}`);
+	}
 	shop.customer.tags = ["member"];
 	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/" });
 	const asMember = await member.go(fileUrl(proFile.key));
