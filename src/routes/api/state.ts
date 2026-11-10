@@ -18,6 +18,7 @@ import { siteConfig } from "../../site-config.js";
 import { memberForUser, stores } from "../../storage.js";
 import { VERSION } from "../../version.js";
 import { json } from "./shared.js";
+import { sessionUser } from "../shared.js";
 
 export const prerender = false;
 
@@ -36,7 +37,7 @@ export interface State {
 export const GET: APIRoute = async ({ locals, session }) => {
 	const config = await siteConfig(locals);
 	const db = (locals as { emdash?: { db?: unknown } }).emdash?.db;
-	const user = (await session?.get("user")) as { id?: string } | undefined;
+	const user = await sessionUser(session, db);
 	const ref = await readCart(session);
 	const state: State = {
 		apiVersion: API_VERSION,

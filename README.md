@@ -242,7 +242,7 @@ Everything about who reads what can be set in the EmDash admin, so a new content
 - **Taxonomies.** Rules for terms in every taxonomy, for one collection or every collection the taxonomy is on.
 - **Features** and **Protected files.**
 
-The first save of a setting copies its value from your code config, so nothing is lost, and from then on the admin's value is used. **Use the code's setting** removes the admin's copy. Saved settings are kept in the site's database and read once per request.
+The first save of a setting copies its value from your code config, so nothing is lost, and from then on the admin's value is used. **Use the code's setting** removes the admin's copy. Saved settings are kept in the site's database. Each server keeps the last ones it read and checks one small record per request to see whether anyone saved since, so the whole set is read again only after a save. If the database can't be read, the settings last read stand; a server that has read none yet locks every entry (and refuses files in any media folder) until it can, rather than falling back to the code's settings and opening what the admin locked.
 
 Each saved entry also gets an **Access** panel in the editor. It shows who can read the entry right now and which rule says so, and sets the entry's own rule:
 
@@ -253,7 +253,7 @@ Each saved entry also gets an **Access** panel in the editor. It shows who can r
 | Only the levels ticked | One of those levels (none ticked: any signed-in member) |
 | The site rules, and also a level ticked | What the rules say and one of those levels |
 
-It can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
+Moving an entry to the trash keeps its rule for a restore but frees its slug, so a new entry that takes the slug doesn't inherit the rule. It can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
 
 ### Meter and drip
 
@@ -329,7 +329,7 @@ Products, collections, search and the cart come from the Storefront API. Shopify
 
 Everything works without JavaScript: the forms post to `/_emdash/api/auth/redeemid/cart-edit`, which reads every product, variant, option and selling plan from Shopify again and only changes the visitor's own cart. `<RedeemIDClient />` adds the drawer, option pickers that follow the choice, and search suggestions. A new cart carries the `_redeemid_page` attribute (the page the first item was added on), which shows on the order in Shopify admin. Editors get the same with the Product, Collection, Product search and Contribution blocks.
 
-**Signed-in checkout.** When a signed-in member checks out, RedeemID puts their store sign-in (the Customer Account API access token, kept only in the server-side session and renewed when it's about to expire) on the cart, so Shopify's checkout opens signed in and the order lands on their customer record, where your Flow or apps tag it. If that can't be done, they check out as a guest with their email filled in. Set `checkout: { signIn: false }` to always use a guest checkout.
+**Signed-in checkout.** When a signed-in member checks out, RedeemID puts their store sign-in (the Customer Account API access token, kept only in the server-side session, encrypted with a key kept in the site's database, and renewed when it's about to expire) on the cart, so Shopify's checkout opens signed in and the order lands on their customer record, where your Flow or apps tag it. If that can't be done, they check out as a guest with their email filled in. Set `checkout: { signIn: false }` to always use a guest checkout; then the tokens aren't kept at all.
 
 **Local prices.** Set `market: { country: "visitor" }` to show each visitor prices in their own market (from Cloudflare's `CF-IPCountry`), or a fixed `country` and `language`. Markets are set up in Shopify.
 
@@ -393,7 +393,7 @@ What RedeemID keeps about a member: the synced record (Shopify customer ID, emai
 | Shopify `customers/redact` | The member's record and meter are erased. |
 | Shopify `shop/redact` | Every member record and meter is erased. |
 
-The Privacy page shows each request's source and Shopify customer ID, never an email or a name. An erase sends the `member.erased` event so a CRM can delete its copy too. The site's own user account stays; delete it under Users if the person asks. The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, `POST` with `confirm=yes` erases, only for the signed-in member and only from the site's own origin.
+The Privacy page shows each request's source and Shopify customer ID, never an email or a name. The daily check deletes finished requests after a year; open ones stay until staff mark them done. An erase sends the `member.erased` event so a CRM can delete its copy too. The site's own user account stays; delete it under Users if the person asks. The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, `POST` with `confirm=yes` erases, only for the signed-in member and only from the site's own origin.
 
 ### Staff tools
 
@@ -501,7 +501,7 @@ A route cache keys pages by URL alone and serves stored pages without running an
 
 ### Rate limits
 
-On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one visitor can start Sign in, Buy or a cart change, the routes that call Shopify. Add a [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) named `REDEEMID_RATE_LIMIT`, which sets the limit and period:
+On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one visitor can start Sign in, Buy, a cart change or a catalog search (`api/search`), the routes that call Shopify. Add a [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) named `REDEEMID_RATE_LIMIT`, which sets the limit and period:
 
 ```jsonc
 "ratelimits": [{ "name": "REDEEMID_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }]
@@ -645,6 +645,7 @@ Reword one with `messages={{ cart_empty: "…" }}`, or for every page with `text
 - Staff accounts (any EmDash role above Subscriber) can't sign in through the store, even with a matching email. When that happens, the store session ends too, so the next sign-in attempt starts fresh.
 - Customers can't create the first (admin) account on a new site.
 - Webhooks are checked against the app's signature before anything changes.
+- Access fails closed: when the saved access settings can't be read, a server keeps the ones it last read, and with none it locks every entry.
 
 ## Troubleshooting
 

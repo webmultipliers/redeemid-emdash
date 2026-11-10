@@ -15,14 +15,14 @@ import { safeReturn, signInUrl } from "../access.js";
 import { siteConfig } from "../site-config.js";
 import { eraseMember, exportRequest } from "../privacy.js";
 import { memberForUser, stores } from "../storage.js";
-import { fail } from "./shared.js";
+import { fail, sessionUser } from "./shared.js";
 
 export const prerender = false;
 
 async function context(locals: unknown, session: { get(k: string): Promise<unknown> } | undefined) {
 	const emdash = (locals as { emdash?: { config?: unknown; db?: unknown } }).emdash;
 	if (!emdash?.db) return null;
-	const user = (await session?.get("user")) as { id?: string } | undefined;
+	const user = await sessionUser(session, emdash.db);
 	if (!user?.id) return null;
 	const s = stores(emdash.db);
 	const member = await memberForUser(s, user.id);

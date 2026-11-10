@@ -181,10 +181,14 @@ async function alert(env_: MonitorEnv, settings: MonitorSettings, result: Health
 	}
 }
 
-/** Drop app events and delivery records older than LOG_DAYS, a page of each. */
+/** Finished privacy requests are kept this long, as the record that they were answered. Open ones stay until staff close them. */
+export const REQUEST_DAYS = 365;
+
+/** Drop app events and delivery records older than LOG_DAYS, and finished privacy requests older than REQUEST_DAYS. */
 export async function tidy(s: Stores): Promise<void> {
 	await prune(s.log, "at").catch(() => 0);
 	await prune(s.deliveries, "receivedAt").catch(() => 0);
+	await prune(s.requests, "at", REQUEST_DAYS, { status: "done" }).catch(() => 0);
 }
 
 /** WEBHOOK_TOPICS name → the topic Shopify shows: CUSTOMER_TAGS_ADDED → customer.tags_added. */

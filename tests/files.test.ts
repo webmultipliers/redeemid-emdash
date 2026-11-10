@@ -49,6 +49,12 @@ describe("fileAccess", () => {
 	});
 });
 
+describe("fileAccess while saved settings can't be read", () => {
+	it("checks every download, even with no file rules, and fails closed without a database", async () => {
+		await expect(fileAccess({ locals: {} }, { unavailable: true }, "k")).rejects.toThrow();
+	});
+});
+
 describe("refusal", () => {
 	it("is private and says why", async () => {
 		const out = refusal("sign_in", "/_emdash/api/auth/redeemid/login?return=%2F");

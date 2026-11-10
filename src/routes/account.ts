@@ -11,7 +11,7 @@ import type { APIRoute } from "astro";
 import { safeReturn, signInUrl } from "../access.js";
 import { readConfig, storeDomain } from "../config.js";
 import { discover } from "../shopify.js";
-import { fail } from "./shared.js";
+import { fail, sessionUser } from "./shared.js";
 
 export const prerender = false;
 
@@ -20,7 +20,7 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 	const config = readConfig((locals as { emdash?: { config?: unknown } }).emdash?.config);
 	if (!config || !storeDomain(config)) return fail(redirect, returnTo, "not_configured");
 
-	const user = (await session?.get("user")) as { id?: string } | undefined;
+	const user = await sessionUser(session, (locals as { emdash?: { db?: unknown } }).emdash?.db);
 	if (!user?.id) return redirect(signInUrl(returnTo));
 	try {
 		const d = await discover(config);
