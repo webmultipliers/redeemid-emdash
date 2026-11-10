@@ -4,7 +4,7 @@
  * A signed-in member's cart gets their Customer Account API access token
  * (cartBuyerIdentityUpdate), so checkout opens signed in and the order lands
  * on their Shopify customer, where the shop's Flow or apps tag it. The token
- * lives only in the server-side session and is renewed with its refresh
+ * lives only in the server-side session, sealed (token-vault.ts), and is renewed with its refresh
  * token when it's about to expire. Anything that fails falls back to a guest
  * checkout: buying never breaks because sign-in couldn't be carried over.
  */
@@ -13,6 +13,7 @@ import { env, ENV, type RedeemIDConfig } from "./config.js";
 import { SESSION_CUSTOMER_TOKEN, callbackUrl, type CustomerToken } from "./routes/shared.js";
 import { discover, refreshTokens } from "./shopify.js";
 import { signInCart } from "./storefront.js";
+import { seal, unseal } from "./token-vault.js";
 
 type Session = { get(key: string): unknown; set(key: string, value: unknown): void; delete?(key: string): void } | undefined;
 
@@ -23,9 +24,9 @@ const RENEW_MS = 2 * 60 * 1000;
 export async function customerToken(
 	config: RedeemIDConfig,
 	session: Session,
-	opts: { url: URL; emdashConfig?: unknown; fetcher?: typeof fetch; now?: number },
+	opts: { url: URL; emdashConfig?: unknown; fetcher?: typeof fetch; now?: number; db?: unknown },
 ): Promise<string | null> {
-	const t = (await session?.get(SESSION_CUSTOMER_TOKEN)) as CustomerToken | undefined;
+	const t = await unseal(await session?.get(SESSION_CUSTOMER_TOKEN), opts.db);
 	if (!t?.accessToken) return null;
 	const now = opts.now ?? Date.now();
 	if (!t.expiresAt || t.expiresAt - now > RENEW_MS) return t.accessToken;
@@ -45,7 +46,7 @@ export async function customerToken(
 			{ clientId, clientSecret: env(ENV.clientSecret), origin: new URL(redirect).origin, refreshToken: t.refreshToken },
 			opts.fetcher,
 		);
-		session?.set(SESSION_CUSTOMER_TOKEN, next satisfies CustomerToken);
+		session?.set(SESSION_CUSTOMER_TOKEN, await seal(next satisfies CustomerToken, opts.db));
 		return next.accessToken;
 	} catch {
 		forget();

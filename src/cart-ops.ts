@@ -11,6 +11,7 @@
 import { readCart, saveCart } from "./cart.js";
 import type { RedeemIDConfig } from "./config.js";
 import { memberForUser, stores } from "./storage.js";
+import { sessionUser } from "./routes/shared.js";
 import { addToCart, cartDetails, product, realOptions, removeLines, setDiscountCodes, storeContext, updateLines, variantFor, type Cart, type CartDetails, type Product, type Variant } from "./storefront.js";
 
 export const MAX_QUANTITY = 1000;
@@ -100,8 +101,8 @@ export async function editCart(input: CartInput, ctx: CartContext): Promise<Cart
 		const variant = p ? pickVariant(p, input) : undefined;
 		const plan = p ? pickSellingPlan(p, input.sellingPlan) : undefined;
 		if (!p || !variant?.availableForSale || plan === undefined) return { notice: "plan_unavailable", cart: null };
-		const user = (await session?.get("user")) as { id?: string } | undefined;
-		const member = user?.id && ctx.db ? await memberForUser(stores(ctx.db), user.id) : null;
+		const user = await sessionUser(session, ctx.db);
+		const member = user && ctx.db ? await memberForUser(stores(ctx.db), user.id) : null;
 		const current = await readCart(session);
 		const cart = await addToCart(
 			config,

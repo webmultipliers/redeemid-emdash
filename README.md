@@ -329,7 +329,7 @@ Products, collections, search and the cart come from the Storefront API. Shopify
 
 Everything works without JavaScript: the forms post to `/_emdash/api/auth/redeemid/cart-edit`, which reads every product, variant, option and selling plan from Shopify again and only changes the visitor's own cart. `<RedeemIDClient />` adds the drawer, option pickers that follow the choice, and search suggestions. A new cart carries the `_redeemid_page` attribute (the page the first item was added on), which shows on the order in Shopify admin. Editors get the same with the Product, Collection, Product search and Contribution blocks.
 
-**Signed-in checkout.** When a signed-in member checks out, RedeemID puts their store sign-in (the Customer Account API access token, kept only in the server-side session and renewed when it's about to expire) on the cart, so Shopify's checkout opens signed in and the order lands on their customer record, where your Flow or apps tag it. If that can't be done, they check out as a guest with their email filled in. Set `checkout: { signIn: false }` to always use a guest checkout.
+**Signed-in checkout.** When a signed-in member checks out, RedeemID puts their store sign-in (the Customer Account API access token, kept only in the server-side session, encrypted with a key kept in the site's database, and renewed when it's about to expire) on the cart, so Shopify's checkout opens signed in and the order lands on their customer record, where your Flow or apps tag it. If that can't be done, they check out as a guest with their email filled in. Set `checkout: { signIn: false }` to always use a guest checkout; then the tokens aren't kept at all.
 
 **Local prices.** Set `market: { country: "visitor" }` to show each visitor prices in their own market (from Cloudflare's `CF-IPCountry`), or a fixed `country` and `language`. Markets are set up in Shopify.
 
@@ -393,7 +393,7 @@ What RedeemID keeps about a member: the synced record (Shopify customer ID, emai
 | Shopify `customers/redact` | The member's record and meter are erased. |
 | Shopify `shop/redact` | Every member record and meter is erased. |
 
-The Privacy page shows each request's source and Shopify customer ID, never an email or a name. An erase sends the `member.erased` event so a CRM can delete its copy too. The site's own user account stays; delete it under Users if the person asks. The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, `POST` with `confirm=yes` erases, only for the signed-in member and only from the site's own origin.
+The Privacy page shows each request's source and Shopify customer ID, never an email or a name. The daily check deletes finished requests after a year; open ones stay until staff mark them done. An erase sends the `member.erased` event so a CRM can delete its copy too. The site's own user account stays; delete it under Users if the person asks. The JSON route is `/_emdash/api/auth/redeemid/privacy`: `GET` downloads, `POST` with `confirm=yes` erases, only for the signed-in member and only from the site's own origin.
 
 ### Staff tools
 
@@ -488,7 +488,7 @@ A route cache keys pages by URL alone and serves stored pages without running an
 
 ### Rate limits
 
-On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one visitor can start Sign in, Buy or a cart change, the routes that call Shopify. Add a [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) named `REDEEMID_RATE_LIMIT`, which sets the limit and period:
+On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one visitor can start Sign in, Buy, a cart change or a catalog search (`api/search`), the routes that call Shopify. Add a [Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) named `REDEEMID_RATE_LIMIT`, which sets the limit and period:
 
 ```jsonc
 "ratelimits": [{ "name": "REDEEMID_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }]

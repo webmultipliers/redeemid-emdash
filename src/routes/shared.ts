@@ -63,3 +63,22 @@ export function readAfterLogout(raw: string | undefined): { code: string; return
 		return null;
 	}
 }
+
+type SessionLike = { get(key: string): unknown } | undefined;
+
+/**
+ * The signed-in EmDash user behind this session, or null: none, gone, or
+ * disabled in EmDash since they signed in. Every member route asks this
+ * instead of trusting the session's user id.
+ */
+export async function sessionUser(session: SessionLike, db: unknown): Promise<{ id: string } | null> {
+	const held = (await session?.get("user")) as { id?: string } | undefined;
+	if (!held?.id || !db) return null;
+	try {
+		const { createKyselyAdapter } = await import("@emdash-cms/auth/adapters/kysely");
+		const user = await createKyselyAdapter(db as never).getUserById(held.id);
+		return user && !user.disabled ? { id: user.id } : null;
+	} catch {
+		return null;
+	}
+}

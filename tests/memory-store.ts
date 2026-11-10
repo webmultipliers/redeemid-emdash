@@ -18,6 +18,7 @@ function matches(d: unknown, where: Record<string, unknown>): boolean {
 /** Just enough of StorageCollection for unit tests. */
 function collection<T>() {
 	const rows = new Map<string, T>();
+	const revisions = new Map<string, string>();
 	return {
 		rows,
 		async get(id: string) {
@@ -28,14 +29,20 @@ function collection<T>() {
 		},
 		async put(id: string, data: T) {
 			rows.set(id, structuredClone(data));
+			revisions.set(id, String(Number(revisions.get(id) ?? "0") + 1));
 		},
 		async delete(id: string) {
 			return rows.delete(id);
 		},
+		async getVersioned(id: string) {
+			return rows.has(id) ? { value: structuredClone(rows.get(id)!), revision: revisions.get(id) ?? "0" } : null;
+		},
 		async compareAndSet(id: string, expected: string | null, data: T) {
-			if (expected === null && rows.has(id)) return { applied: false as const };
+			if (expected === null ? rows.has(id) : (revisions.get(id) ?? "0") !== expected) return { applied: false as const };
 			rows.set(id, structuredClone(data));
-			return { applied: true as const, revision: "1" };
+			const revision = String(Number(revisions.get(id) ?? "0") + 1);
+			revisions.set(id, revision);
+			return { applied: true as const, revision };
 		},
 		async deleteMany(ids: string[]) {
 			let n = 0;
