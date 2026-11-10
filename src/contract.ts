@@ -23,6 +23,7 @@ export const MODULES = {
 	"@redeemid/emdash/catalog": ["searchProducts", "collectionPage", "suggest", "recommendations", "browseFromUrl", "browseHref", "parseFilters", "priceFilter", "SORTS"],
 	"@redeemid/emdash/events": ["signBody"],
 	"@redeemid/emdash/text": ["STRINGS", "text", "textParts"],
+	"@redeemid/emdash/search": ["readableResults"],
 } as const;
 
 /** Public JSON routes under /_emdash/api/auth/redeemid/. */

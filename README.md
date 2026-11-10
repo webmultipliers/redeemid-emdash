@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.21, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover the features below. Expect changes before 1.0.
+**Status: 0.0.22, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover the features below. Expect changes before 1.0.
 
 ## Contents
 
@@ -212,6 +212,18 @@ const read = await readEntry(Astro, { collection: "posts", terms: post.data.term
 const config = await siteConfig(Astro.locals);
 const needs = await entryRequirement(config, "posts", post.data.terms, post.id);
 // e.g. [["gold", "pro"]]: readers pass every clause, each with any one of its levels; null when open
+```
+
+**Site search.** EmDash's search API (`/_emdash/api/search`, which its live search box uses) is public and answers with a snippet of the matching text. `redeemidGuard()` checks each result for visitors and members: an entry the reader can't read in full keeps its title but loses its snippet, and stays in the results only when its title holds every searched word, so a search can't show locked text or tell which locked entry contains a word. Staff get every result. A search page that calls EmDash's `search()` in its template filters the same way with `readableResults()`:
+
+```astro
+---
+import { search } from "emdash";
+import { readableResults } from "@redeemid/emdash/search";
+
+const q = Astro.url.searchParams.get("q") ?? "";
+const results = q ? await readableResults(Astro, q, (await search(q)).items) : [];
+---
 ```
 
 `siteConfig(Astro.locals)` is the config for this request: your code's config with the Access page's saved settings laid over it. Pass it to the functions that take a `config`, such as `entryRequirement()`, `readPreferences()` and the storefront and catalog calls.
@@ -619,6 +631,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `@redeemid/emdash/catalog` | `searchProducts()`, `collectionPage()`, `suggest()`, `recommendations()` |
 | `@redeemid/emdash/events` | `signBody(body, secret)`, the signature a receiver checks against `X-RedeemID-Signature` |
 | `@redeemid/emdash/text` | `STRINGS`, the list of every replaceable string |
+| `@redeemid/emdash/search` | `readableResults()`, for a search page that calls EmDash's `search()` |
 | `@redeemid/emdash/contract` | The stable API as a list, and `API_VERSION` |
 
 The full developer API (stable exports, JSON routes, the browser client and its events, MCP tools) is in [docs/developer-api.md](docs/developer-api.md).
@@ -649,7 +662,7 @@ Reword one with `messages={{ cart_empty: "…" }}`, or for every page with `text
 - Shopify is the only source of entitlements. Nothing on the site grants access.
 - Levels read the mirrored tags as they are, however old. They change only when Shopify sends new ones.
 - Enabled or disabled status comes only from the `customers/enable` and `customers/disable` webhooks.
-- Locked content never reaches the content API, search, feeds or the sitemap for readers kept out, nor a page that renders bodies with `<Content>` (the Status page flags templates that use `<PortableText>` for a gated collection). The end-to-end test checks each of these. Members are refused EmDash's own APIs except what they need.
+- Locked content never reaches the content API, site search (snippets, or which entry matched), feeds or the sitemap for readers kept out, nor a page that renders bodies with `<Content>` (the Status page flags templates that use `<PortableText>` for a gated collection). The end-to-end test checks each of these. Members are refused EmDash's own APIs except what they need.
 - Staff accounts (any EmDash role above Subscriber) can't sign in through the store, even with a matching email. When that happens, the store session ends too, so the next sign-in attempt starts fresh.
 - Customers can't create the first (admin) account on a new site.
 - Webhooks are checked against the app's signature before anything changes.

@@ -12,7 +12,7 @@
  */
 import { membership, viewer } from "../access.js";
 import { siteConfig } from "../site-config.js";
-import { plan as loadPlan, type Plan } from "../storefront.js";
+import { money, plan as loadPlan, storeContext, type Plan } from "../storefront.js";
 import { text } from "../text.js";
 
 interface Props {
@@ -33,14 +33,13 @@ const { handle, label = text(config, "Join"), title, levels = [], heldLabel = te
 let p: Plan | null = null;
 if (config) {
 	try {
-		p = await loadPlan(config, handle);
+		// The visitor's market, so the price is the one checkout charges.
+		p = await loadPlan(config, handle, undefined, storeContext(config, Astro.request));
 	} catch {
 		p = null;
 	}
 }
-const price = p?.price
-	? new Intl.NumberFormat("en-US", { style: "currency", currency: p.price.currencyCode }).format(Number(p.price.amount))
-	: null;
+const price = money(p?.price);
 const here = Astro.url.pathname + Astro.url.search;
 const v = levels.length > 0 ? await viewer(Astro) : null;
 const held = Boolean(v?.levels.some((l) => levels.includes(l)));

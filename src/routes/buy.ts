@@ -30,7 +30,8 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 	if (!/^[a-z0-9][a-z0-9-]*$/i.test(handle)) return fail(redirect, returnTo, "plan_unavailable");
 
 	try {
-		const p = await plan(config, handle);
+		const context = storeContext(config, request);
+		const p = await plan(config, handle, undefined, context);
 		if (!p?.variantId || !p.availableForSale) return fail(redirect, returnTo, "plan_unavailable");
 		// Provider routes are public, so read the member from the session.
 		const user = await sessionUser(session, emdash?.db);
@@ -40,7 +41,7 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 			config,
 			current?.id ?? null,
 			{ variantId: p.variantId, sellingPlanId: p.sellingPlanId },
-			{ email: member?.email ?? null, attributes: { _redeemid_page: returnTo }, buyerIp: request.headers.get("cf-connecting-ip"), context: storeContext(config, request) },
+			{ email: member?.email ?? null, attributes: { _redeemid_page: returnTo }, buyerIp: request.headers.get("cf-connecting-ip"), context },
 		);
 		saveCart(session, { id: cart.id, count: cart.totalQuantity });
 		return redirect(await checkoutFor(config, cart, { session, request, emdashConfig: emdash?.config }), 303);

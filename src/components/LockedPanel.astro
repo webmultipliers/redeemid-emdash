@@ -10,7 +10,7 @@
  */
 import { membership, passes, refreshUrl, signInUrl, viewer, type Reason } from "../access.js";
 import type { SoldItem } from "../blocks-names.js";
-import { plan as loadPlan } from "../storefront.js";
+import { money, plan as loadPlan, storeContext } from "../storefront.js";
 import { siteConfig } from "../site-config.js";
 import { text, textParts } from "../text.js";
 
@@ -48,10 +48,9 @@ const week = meterPeriod === "week";
 let single: { handle: string; price: string } | null = null;
 if (item?.product && config && (reason === "sign_in" || reason === "upgrade" || reason === "drip")) {
 	try {
-		const p = await loadPlan(config, item.product);
-		if (p?.availableForSale && p.price) {
-			single = { handle: p.handle, price: new Intl.NumberFormat("en-US", { style: "currency", currency: p.price.currencyCode }).format(Number(p.price.amount)) };
-		}
+		const p = await loadPlan(config, item.product, undefined, storeContext(config, Astro.request));
+		const price = p?.availableForSale ? money(p.price) : null;
+		if (p && price) single = { handle: p.handle, price };
 	} catch {
 		single = null;
 	}

@@ -3,4 +3,4 @@
  * when something is added, the major part when something stable changes or
  * goes. Separate from the package version.
  */
-export const API_VERSION = "1.1.0";
+export const API_VERSION = "1.2.0";

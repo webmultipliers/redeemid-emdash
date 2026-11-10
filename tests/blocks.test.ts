@@ -43,6 +43,11 @@ describe("teaser", () => {
 		expect(teaser(body, 99)).toEqual([body[0], body[2], body[3]]);
 		expect(teaser(null, 5)).toEqual([]);
 	});
+	it("stops at a Members only part, so its text is never teaser", async () => {
+		const { teaser, MEMBERS_BLOCK, MEMBERS_END_BLOCK } = await import("../src/blocks-names.js");
+		const body = [block("open"), { _type: MEMBERS_BLOCK, levels: ["gold"] }, block("gold only"), { _type: MEMBERS_END_BLOCK }, block("after")];
+		expect(teaser(body, 99)).toEqual([body[0]]);
+	});
 });
 
 describe("members-only sections", () => {

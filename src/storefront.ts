@@ -128,13 +128,17 @@ interface PlanData {
 	} | null;
 }
 
-/** A product by handle, cached for five minutes. Null when Shopify has no such product. */
-export async function plan(config: RedeemIDConfig, handle: string, fetcher?: typeof fetch): Promise<Plan | null> {
-	const key = `${shopOrigin(config)}|${handle}`;
+/**
+ * A product by handle, cached for five minutes. Null when Shopify has no such
+ * product. Pass `context` (storeContext) so the price is the visitor's
+ * market's, the one checkout will charge.
+ */
+export async function plan(config: RedeemIDConfig, handle: string, fetcher?: typeof fetch, context?: StoreContext): Promise<Plan | null> {
+	const key = `${shopOrigin(config)}|${handle}|${contextKey(context)}`;
 	const hit = planCache.get(key);
 	if (hit && Date.now() - hit.at < PLAN_TTL_MS) return hit.value;
 
-	const { product: p } = await storefront<PlanData>(config, PLAN_QUERY, { handle }, { fetcher });
+	const { product: p } = await storefront<PlanData>(config, PLAN_QUERY, { handle }, { fetcher, context });
 	const variant = p?.variants.nodes[0] ?? null;
 	const value: Plan | null = p
 		? {

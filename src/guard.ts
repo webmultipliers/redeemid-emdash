@@ -24,6 +24,7 @@ import { defineMiddleware } from "astro:middleware";
 import { signInUrl } from "./access.js";
 import { readCart } from "./cart.js";
 import { keysFromUrl, pathAccess, refusal } from "./files.js";
+import { guardSearch, SEARCH_PATH, SUGGEST_PATH } from "./search-guard.js";
 import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
 import { shareConfig, siteConfig } from "./site-config.js";
 
@@ -38,8 +39,12 @@ export const MEMBER_PATHS = [
 	"/_emdash/api/plugins/",
 ];
 
+/** Exact paths members may use: site search (results filtered by the guard) and its title suggestions. */
+export const MEMBER_EXACT = [SEARCH_PATH, SUGGEST_PATH];
+
 export function memberMayUse(path: string, extra: string[] = []): boolean {
 	if (!path.startsWith("/_emdash")) return true;
+	if (MEMBER_EXACT.includes(path)) return true;
 	return [...MEMBER_PATHS, ...extra].some((p) => path === p.replace(/\/$/, "") || path.startsWith(p));
 }
 
@@ -121,6 +126,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
 	if (!url.pathname.startsWith("/_emdash")) {
 		const own = Boolean(user) || Boolean(await readCart(context.session as never).catch(() => null));
 		return own ? keepPrivate(context, await next()) : next();
+	}
+
+	// Site search answers visitors and members only with what they may read.
+	if (url.pathname === SEARCH_PATH && config && (!user || (user.role ?? 0) <= SUBSCRIBER)) {
+		try {
+			return await guardSearch(context, url, await next());
+		} catch (e) {
+			console.error("[redeemid] search check failed:", (e as Error).message);
+			return new Response(JSON.stringify({ error: { code: "SEARCH_ERROR", message: "Search failed" } }), { status: 500, headers: { "content-type": "application/json", "cache-control": "private, no-store" } });
+		}
 	}
 
 	if (!user || user.role !== SUBSCRIBER) return next();

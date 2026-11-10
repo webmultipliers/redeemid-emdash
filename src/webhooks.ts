@@ -144,7 +144,10 @@ export async function apply(
 	if (!id) return "skipped";
 
 	if (kind === "delete") {
+		const gone = await s.members.get(id);
 		await s.members.delete(id);
+		// The levels end with the customer: receivers of member.levels_changed hear it.
+		if (gone) await onWrite?.([...gone.tags], { ...gone, tags: [] });
 		return "processed";
 	}
 
