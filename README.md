@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.20, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
+**Status: 0.0.21, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover the features below. Expect changes before 1.0.
 
 ## Contents
 
@@ -129,10 +129,10 @@ Set them as runtime secrets of the site (`.env` locally, `wrangler secret put` o
 ```sh
 REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID=…       # sign-in
 REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET=…          # verifies webhooks
-REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN=…         # plans, shop and checkout
+REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN=…         # only to sell on the site: plans, shop and checkout
 ```
 
-The [secrets reference](#secrets) lists the optional ones.
+The [secrets reference](#secrets) lists the rest. The Setup page prints the command for each secret its steps need.
 
 ### 5. Render content through RedeemID
 
@@ -148,7 +148,7 @@ import Notices from "@redeemid/emdash/components/Notices.astro";
 <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title} />
 ```
 
-Use `<Content>` in place of `<PortableText>` for every body that may be locked. Plain `<PortableText>` shows everything. The Status page checks: `redeemidGuard()` scans the site's `.astro` files at build time, and Status names any template that renders a gated collection's body with EmDash's `<PortableText>`, with its line. A template whose collection it can't see (a component given the body as a prop) is listed to check while any rule is on.
+Use `<Content>` in place of `<PortableText>` for every body that may be locked, because plain `<PortableText>` shows everything. You don't have to find them by hand: `redeemidGuard()` scans the site's `.astro` files at build time, and the Status page names each template, with its line, that renders a gated collection's body with `<PortableText>`. While any rule is on, it also lists templates whose collection it can't tell (such as a component given the body as a prop), so you can check them.
 
 ### 6. Check it
 
@@ -202,15 +202,19 @@ Pass `id` on the entry's own page. It lets the meter count the read, and a locke
 **In your own code** (`@redeemid/emdash/access`):
 
 ```ts
-import { canRead, entryRequirement, readEntry } from "@redeemid/emdash/access";
+import { canRead, entryRequirement, readEntry, siteConfig } from "@redeemid/emdash/access";
 
-const verdict = await canRead(Astro, { collection: "posts", terms: post.data.terms });
+const verdict = await canRead(Astro, { collection: "posts", terms: post.data.terms, id: post.id });
 // verdict.allowed; verdict.reason: open | allowed | sign_in | upgrade | disabled | unconfigured
 const read = await readEntry(Astro, { collection: "posts", terms: post.data.terms, id: post.id });
 // adds drip (read.opensAt) and the meter (read.meterLeft), and counts a metered read
+
+const config = await siteConfig(Astro.locals);
+const needs = await entryRequirement(config, "posts", post.data.terms, post.id);
+// e.g. [["gold", "pro"]]: readers pass every clause, each with any one of its levels; null when open
 ```
 
-`entryRequirement(config, collection, terms)` gives what an entry needs: a list of clauses, each passed by any of its levels, or `null` when it's open.
+`siteConfig(Astro.locals)` is the config for this request: your code's config with the Access page's saved settings laid over it. Pass it to the functions that take a `config`, such as `entryRequirement()`, `readPreferences()` and the storefront and catalog calls.
 
 ## Guides
 
@@ -251,10 +255,12 @@ Each saved entry also gets an **Access** panel in the editor. It shows who can r
 | --- | --- |
 | Follow the site rules | What the rules say (the default) |
 | Free to everyone | Nothing |
-| Only the levels ticked | One of those levels (none ticked: any signed-in member) |
-| The site rules, and also a level ticked | What the rules say and one of those levels |
+| Only some levels | One of the levels ticked (none ticked: any signed-in member) |
+| Site rules plus a level | What the rules say and one of the levels ticked |
 
-Moving an entry to the trash keeps its rule for a restore but frees its slug, so a new entry that takes the slug doesn't inherit the rule. It can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
+The panel can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
+
+Moving an entry to the trash keeps its rule for a restore but frees its slug, so a new entry that takes the slug doesn't inherit the rule.
 
 ### Meter and drip
 
@@ -359,7 +365,7 @@ Define each field in Shopify (**Settings → Custom data → Customers**); the d
 | Decimal | A number, as a string |
 | Date | `YYYY-MM-DD` |
 
-Every value is checked against the definition first. One refusal saves nothing, and an empty value clears the field. Scripts can `GET` `/_emdash/api/auth/redeemid/preferences` for `{ fields }`, or `POST` JSON `{ values: { "namespace.key": value } }`. A refused save answers `400` with `fields` mapping each key to `unknown_field`, `read_only`, `invalid_type`, `invalid_choice`, `invalid_length` or `invalid_range`. Saves are limited to 10 a minute per member (`429`). `readPreferences()` and `savePreferences()` in `@redeemid/emdash/preferences` do the same from your code.
+Every value is checked against the definition first. One refusal saves nothing, and an empty value clears the field. Scripts can `GET` `/_emdash/api/auth/redeemid/preferences` for `{ fields }`, or `POST` JSON `{ values: { "namespace.key": value } }`. A refused save answers `400` with `fields` mapping each key to `unknown_field`, `read_only`, `invalid_type`, `invalid_choice`, `invalid_length` or `invalid_range`. Saves are limited to 10 a minute per member (`429`). From your own code, `readPreferences(config, customerId)` and `savePreferences(config, customerId, values)` in `@redeemid/emdash/preferences` do the same (no rate limit there; `config` comes from `siteConfig()`).
 
 ### Protected files
 
@@ -425,7 +431,7 @@ RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they 
 Members gain and lose access only when Shopify sends tag changes, so RedeemID shows what arrived and warns when deliveries stop.
 
 - **Webhooks → Received.** Each delivery's topic, what became of it (processed, skipped, older than what's stored, not used) and the customer ID, with counts of deliveries turned away (bad signature) and failed (storage errors; Shopify sends those again).
-- **Webhooks → Health.** Once a day RedeemID registers again any subscription Shopify dropped (with the Admin API app), and warns when no webhook has come in for a number of days (3 by default, 0 turns it off), or when deliveries were turned away or failed in the last day. **Check now** runs it at once. Warnings show on the page and the dashboard widget, and go by email to the address you set when the site has an EmDash email provider: once when problems start or change, then once a week while they last.
+- **Webhooks → Health.** Once a day RedeemID registers again any subscription Shopify dropped (with the Admin API app), and warns when no webhook has come in for a number of days (3 by default, 0 turns it off), or when deliveries were turned away or failed in the last day. **Check now** runs it at once. Warnings show on the page and the dashboard widget. If you enter an address on the Health tab and the site has an EmDash email provider, they also go by email: once when problems start or change, then once a week while they last.
 - **Webhooks → Setup.** The endpoint, whether signatures can be checked, and the subscriptions.
 - **App events.** What RedeemID did and what came of it: webhooks received, turned away and failed, sign-ins and refusals (by reason), Admin API calls (by operation, with timings), resyncs, tag edits, webhook registrations, settings saves, outbound events that failed, metered reads and the health checks. Filter by event or show problems only. Entries hold ids, labels and outcomes, never bodies, tokens or emails. Failed outbound events also keep the event body (ids and levels, never an email or a name) so they can be sent again.
 - **Reports.** Members on each level, who joined and left in the last 30 days and by week for 12 weeks (from each member's tag dates), sign-ins and metered reads.
@@ -459,7 +465,7 @@ npx -p @redeemid/emdash redeemid-emdash access posts --id my-story --tags gold-m
 npx -p @redeemid/emdash redeemid-emdash member jane@example.com
 ```
 
-Each command calls a staff-only route at `/_emdash/api/plugins/redeemid/<name>`, which scripts can POST to directly.
+Each command POSTs JSON to a staff-only route under `/_emdash/api/plugins/redeemid/`, named after its tool with hyphens (`explain_access` is `explain-access`). Scripts can call those routes directly.
 
 ### Replacement text
 
@@ -508,7 +514,7 @@ On Cloudflare Workers, `redeemidGuard({ rateLimit: true })` limits how often one
 "ratelimits": [{ "name": "REDEEMID_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }]
 ```
 
-Each action counts separately per visitor (by `CF-Connecting-IP`), and Cloudflare's count is approximate. A visitor over the limit goes back to their page with the `too_many_requests` notice. If the binding is missing or fails, nothing is limited. Off by default; leave it off on Node.
+Each action counts separately per visitor (by `CF-Connecting-IP`), and Cloudflare's count is approximate. A visitor over the limit goes back to their page with the `too_many_requests` notice; the JSON routes answer `429` with `{ "error": "too_many_requests" }`. If the binding is missing or fails, nothing is limited. Off by default; leave it off on Node.
 
 ## Reference
 
@@ -548,8 +554,8 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID` | Sign-in | Client ID of the Headless storefront's Customer Account API client |
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET` | Sign-in, confidential clients | Its client secret. Leave unset for a public client. |
 | `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET` | Webhooks | Client secret of the app that sends the webhooks. Shopify signs each webhook with it. |
-| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` | Staff tools, preferences, privacy erasure requests | Client ID of that same app. Optional. |
-| `REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN` | Plans, shop, checkout | Storefront API private access token, used server-side |
+| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` | Webhook registration, staff tools, preferences, membership dates, Shopify erasure requests | Client ID of that same app. Optional, but most of the admin needs it. |
+| `REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN` | Plans, shop, checkout | Storefront API private access token, used server-side. Optional if the site sells nothing. |
 | `REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN` | Plans, shop, checkout | Public access token, only used without the private one |
 | `REDEEMID_SHOPIFY_STORE_DOMAIN` | Discovery | The store's domain, only when `shop` isn't in the config |
 | `REDEEMID_EVENTS_SECRET` | Events | Signs outbound events. Set it with `events.url`. |
@@ -578,6 +584,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `ProductSearch` | `productHref`, `limit`, `boxOnly`, `action`, `label`, `quickAdd` | Product search |
 | `Recommendations` | `handle`, `intent`, `limit`, `productHref`, `title`, `quickAdd` | Shopify's recommendations |
 | `ProductGrid` | `products`, `productHref`, `heading`, `quickAdd` | Product cards, for your own lists |
+| `BrowseControls` | `filters`, `pageInfo`, `id`, `search`, `query` | Sort, filter and page controls, for your own lists from `collectionPage()` or `searchProducts()` |
 | `Cart` | `label`, `href`, `drawer` | The cart count, linking to checkout or opening the drawer |
 | `CartView` | `productHref`, `empty` | A cart page |
 | `CartDrawer` | `title` | The cart in a slide-in dialog |
@@ -605,7 +612,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | Import | Gives |
 | --- | --- |
 | `@redeemid/emdash` | `redeemid()`, `redeemidPlugin()`, `redeemidGuard()`, config types |
-| `@redeemid/emdash/access` | `canRead()`, `readEntry()`, `entryRequirement()`, `viewer()`, and links: `signInUrl()`, `signOutUrl()`, `accountUrl()`, `cartUrl()`, `refreshUrl()` |
+| `@redeemid/emdash/access` | `siteConfig()`, `canRead()`, `readEntry()`, `entryRequirement()`, `viewer()`, and links: `signInUrl()`, `signOutUrl()`, `accountUrl()`, `cartUrl()`, `refreshUrl()` |
 | `@redeemid/emdash/features` | `hasFeature()`, `viewerFeatures()` |
 | `@redeemid/emdash/preferences` | `readPreferences()`, `savePreferences()` |
 | `@redeemid/emdash/storefront` | `product()`, `collection()`, `plan()`, `money()` and the cart calls |
@@ -620,7 +627,7 @@ The full developer API (stable exports, JSON routes, the browser client and its 
 
 Under `/_emdash/api/auth/redeemid/`: `login`, `callback`, `logout`, `webhook`, `buy`, `cart`, `cart-edit`, `account`, `preferences` and `privacy`, and the JSON routes `api/state`, `api/cart` and `api/search`. Staff-only routes for the admin, agents and the command line are under `/_emdash/api/plugins/redeemid/`.
 
-In the Customer Account API client, set the callback URI to `https://<site>/_emdash/api/auth/redeemid/callback`, the logout URI to `https://<site>/`, and (public clients) the JavaScript origin to `https://<site>`. Point webhooks at `https://<site>/_emdash/api/auth/redeemid/webhook`: `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed` and `customers/redact`.
+In the Customer Account API client, set the callback URI to `https://<site>/_emdash/api/auth/redeemid/callback`, the logout URI to `https://<site>/`, and (public clients) the JavaScript origin to `https://<site>`. Point webhooks at `https://<site>/_emdash/api/auth/redeemid/webhook`: `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added` and `customer.tags_removed` (the Setup page registers these for you). The compliance topics `customers/data_request`, `customers/redact` and `shop/redact` go to the same URL, set in the app's own configuration.
 
 ### Notices
 

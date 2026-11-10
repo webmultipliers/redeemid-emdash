@@ -6,3 +6,4 @@ playground/uploads/
 playground/.env
 .env
 tests/e2e/.tmp/
+*.tgz

@@ -2,6 +2,8 @@
 
 What to set up in Shopify, and on the site, to run RedeemID on an EmDash site. One store can serve several sites: each site gets its own Headless storefront for sign-in, and each receives webhooks.
 
+Once the package is installed, **Plugins → RedeemID → Setup** in the EmDash admin walks through these same steps with your site's own addresses filled in, checks each one, and registers the webhooks for you.
+
 ## 1. Sign-in: a Headless storefront
 
 1. In Shopify admin, open **Sales channels → Headless** (add the channel if it isn't there) and **Create storefront**. Name it after the site.
@@ -23,15 +25,17 @@ The store must use the new customer accounts (Settings → Customer accounts). C
 
 ## 2. Webhooks
 
-RedeemID keeps tags and status current from webhooks. Point these topics at `https://<site>/_emdash/api/auth/redeemid/webhook`:
+RedeemID keeps tags and status current from webhooks sent by a Shopify app on the store (for example a Dev Dashboard app). Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
 
-`customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`, `customers/redact`
+Give the app the `read_customers` and `write_customers` Admin API scopes, plus `read_customer_merge` for `customers/merge`, and set its **client ID** on the site as well. Then the Setup page (or **Webhooks → Setup**) registers these topics at `https://<site>/_emdash/api/auth/redeemid/webhook` with one button:
 
-Subscribe them from a Shopify app on the store (for example a Dev Dashboard app). If the app already sends webhooks to another site, add this URL as extra subscriptions. `customers/merge` needs the `read_customer_merge` scope. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
+`customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`
 
-For the staff tools (member resync, tag edits written to Shopify, the Register webhooks button) and member preferences, give the same app the `read_customers` and `write_customers` Admin API scopes and set its **client ID** as well. RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization. For the **Also request erasure in Shopify** button on a member's page, add the optional `write_customer_data_erasure` scope.
+Without the client ID, subscribe them to that URL yourself. If the app already sends webhooks to another site, add this URL as extra subscriptions.
 
-Shopify's compliance topics (`customers/data_request`, `customers/redact`, `shop/redact`) reach only apps that declare them in the app's configuration, under `[webhooks.privacy_compliance]`. Point all three at the same webhook URL. RedeemID logs each one on the Privacy page.
+The client ID and those scopes also run the staff tools (member resync and tag edits written to Shopify), member preferences, and the reads that keep tags in order (see the README). RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization. For the **Also request erasure in Shopify** button on a member's page, add the optional `write_customer_data_erasure` scope.
+
+Shopify's compliance topics (`customers/data_request`, `customers/redact`, `shop/redact`) can't be registered by the button: they reach only apps that declare them in the app's configuration, under `[webhooks.privacy_compliance]`. Point all three at the same webhook URL. RedeemID logs each one on the Privacy page and acts on it (see the README's privacy requests).
 
 ## 3. The site
 
@@ -46,11 +50,13 @@ npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET # confid
 npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET        # the webhook app's client secret
 npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID            # optional; the webhook app's client ID, for the staff tools
 npx wrangler secret put REDEEMID_EVENTS_SECRET                          # optional; signs outbound events (events.url)
-npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN       # Headless storefront's Storefront API private token (plans, checkout)
+npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN       # optional; the Storefront API private token, to sell on the site (plans, shop, checkout)
 npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN        # optional; used only without the private token
 ```
 
 The Workers free plan is enough: RedeemID is a native plugin and doesn't need sandboxing. Worker secrets reach the code through `nodejs_compat`, which EmDash's Cloudflare templates turn on.
+
+On Workers, also add a Cron Trigger to the site's Worker, as EmDash's deployment guide describes, so EmDash's scheduler runs RedeemID's daily webhook health check.
 
 ## 4. Try it
 
@@ -59,4 +65,4 @@ The Workers free plan is enough: RedeemID is a native plugin and doesn't need sa
 3. Click **Sign in**, sign in with that customer's email, and you come back to the post, unlocked.
 4. Add or remove the tag in Shopify; the post opens or locks again once the webhook arrives.
 
-If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` (secrets or `shop` missing), `sign_in_unavailable` (store discovery failed), `sign_in_expired`, `staff_account`, `site_not_ready`, `email_required`, `token_failed`, `bad_id_token`, `identity_failed`. A Buy button can return `plan_unavailable` (no such product, or sold out) or `checkout_failed`. The Cart link returns `cart_empty` when there's nothing in the cart, and Account returns `account_unavailable` when store discovery fails. Cart changes return `cart_added`, `cart_updated`, `discount_applied` or `discount_not_applicable`. Refresh membership returns `refreshed` once it has read the member's tags again. Preferences return `preferences_saved`, `preferences_refused` or `preferences_unavailable`.
+If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` means the client ID or `shop` is missing, and `sign_in_unavailable` means store discovery failed, usually a wrong `shop`. The README lists [every notice](../README.md#notices).
