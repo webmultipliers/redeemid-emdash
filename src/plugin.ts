@@ -41,6 +41,7 @@ import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRe
 import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
 import { record } from "./log.js";
+import { resend } from "./events.js";
 import { eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, WEBHOOK_TABS, webhooksPage, type MonitorEnv, type WebhookTab } from "./monitor.js";
 import { z } from "astro/zod";
 import { AgentError, explainAccess, findProducts, getCollection, getMember, getProduct, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
@@ -551,6 +552,18 @@ async function action(
 			return eventsPage(s, { event: String(i.value ?? "") || undefined });
 		case "events_page":
 			return eventsPage(s, parseFilter(i.block_id), cursorOf(i.value));
+		case "failed_resend": {
+			const sent = await resend(config, s, String(i.value ?? "")).catch(() => false);
+			return eventsPage(s, {}, undefined, sent ? { type: "success", message: "Sent. It's off the failed list." } : { type: "error", message: "The receiver still didn't take it. It stays on the list." });
+		}
+		case "failed_clear":
+			await s.failedEvents.delete(String(i.value ?? ""));
+			return eventsPage(s, {}, undefined, { type: "success", message: "Cleared." });
+		case "failed_clear_all": {
+			const { items } = await s.failedEvents.query({ limit: 100 });
+			await s.failedEvents.deleteMany(items.map((r) => r.id));
+			return eventsPage(s, {}, undefined, { type: "success", message: "Failed events cleared." });
+		}
 		case "access_test":
 			return accessTest(config, i.values);
 		case "member_export": {

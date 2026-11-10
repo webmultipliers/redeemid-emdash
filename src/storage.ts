@@ -13,6 +13,7 @@ import { getAuthProviderStorage } from "emdash/api/route-utils";
 import { PROVIDER_ID } from "./config.js";
 import type { AccessRecord } from "./settings.js";
 import type { LogEntry } from "./log.js";
+import type { FailedEvent } from "./events.js";
 
 export interface MemberRecord {
 	/** Numeric Shopify customer id, also the record id. */
@@ -134,6 +135,7 @@ export const STORAGE_CONFIG = {
 	requests: { indexes: ["at", "customerId", "status"] },
 	access: { indexes: ["kind"] },
 	log: { indexes: ["at", "event", "level"] },
+	failedEvents: { indexes: ["at"] },
 };
 
 export interface Stores {
@@ -145,6 +147,8 @@ export interface Stores {
 	access: StorageCollection<AccessRecord>;
 	/** App events (see log.ts). */
 	log: StorageCollection<LogEntry>;
+	/** Outbound events that failed every try (see events.ts). */
+	failedEvents: StorageCollection<FailedEvent>;
 }
 
 export function stores(db: unknown): Stores {

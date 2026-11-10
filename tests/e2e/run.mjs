@@ -287,6 +287,27 @@ try {
 	check("a level change sends a signed member.levels_changed event", Boolean(levelEvent) && levelEvent.headers["x-redeemid-signature"] === `sha256=${sig}`, JSON.stringify(shop.events.map((e) => e.headers["x-redeemid-event"])));
 	check("sign-in sent member.signed_in", shop.events.some((e) => e.headers["x-redeemid-event"] === "member.signed_in"));
 	check("the meter sent meter.used and meter.exhausted", shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.used") && shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.exhausted"));
+	// Events go out after the response: a slow receiver doesn't hold up sign-in.
+	shop.eventsDelayMs = 2500;
+	const slowStart = Date.now();
+	await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	const slowTook = Date.now() - slowStart;
+	check("a slow event receiver doesn't slow sign-in", slowTook < 2000, `${slowTook} ms`);
+	shop.eventsDelayMs = 0;
+	await new Promise((r) => setTimeout(r, 2700));
+	// A receiver that's down: three tries, then the event waits under App events for staff.
+	shop.eventsDown = true;
+	shop.eventsRefused = 0;
+	await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	await new Promise((r) => setTimeout(r, 7500));
+	check("a failed event is tried three times", shop.eventsRefused === 3, String(shop.eventsRefused));
+	shop.eventsDown = false;
+	const failedList = await adminPage("/events");
+	const failedId = /"action_id":"failed_resend","label":"Send again","style":"primary","value":"([^"]+)"/.exec(failedList.text)?.[1];
+	check("App events lists the failed event with Send again", failedList.text.includes("Failed events") && failedList.text.includes('"event":"member.signed_in"') && Boolean(failedId), failedList.text.slice(0, 600));
+	const eventsBefore = shop.events.length;
+	const resent = await adminAct({ type: "block_action", action_id: "failed_resend", value: failedId, page: "/events" });
+	check("Send again delivers it with its delivery id and takes it off the list", resent.text.includes("Sent.") && !resent.text.includes("Failed events") && shop.events.length === eventsBefore + 1 && shop.events.at(-1).headers["x-redeemid-delivery"] === failedId, resent.text.slice(0, 300));
 	const bulk = await adminAct({ type: "block_action", action_id: "members_resync", page: "/" });
 	check("bulk resync reads a batch from Shopify", bulk.text.includes("Read 1 members again"), bulk.text.slice(0, 300));
 	const hooksNow = await adminPage("/webhooks");
