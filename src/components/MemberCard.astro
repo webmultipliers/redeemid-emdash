@@ -1,7 +1,9 @@
 ---
 /**
  * The member's own account card, for an account page: their levels with
- * when each started, levels they held before, the meter, and links to the
+ * when each started, when the membership renews or ends and any gift
+ * membership (from the shop's membership.* customer metafields), levels
+ * they held before, the meter, and links to the
  * store account, Refresh membership and Sign out. Visitors get a sign-in link.
  *
  *   <MemberCard />
@@ -35,6 +37,11 @@ const date = (iso: string | null) => {
 	return Number.isNaN(t) ? null : new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" }).format(new Date(t));
 };
 const name = [m?.firstName, m?.lastName].filter(Boolean).join(" ");
+// Dates the shop keeps in Shopify (Flow or a subscription app). Display only.
+const dates = m && !disabled ? (m.dates ?? {}) : {};
+const today = new Date().toISOString().slice(0, 10);
+const gift = dates.gift && dates.gift >= today ? dates.gift : null;
+const day = (ymd: string | null | undefined) => (ymd ? date(`${ymd}T12:00:00Z`) : null);
 const join = config?.join;
 ---
 
@@ -55,7 +62,7 @@ const join = config?.join;
 					{current.map((l) => (
 						<li data-redeemid-level={l.slug}>
 							<strong>{l.name}</strong>
-							{date(l.since) && <> {textParts(config, "since {date}", { date: <time datetime={l.since ?? undefined}>{date(l.since)}</time> })}</>}
+							{(dates.since ? day(dates.since) : date(l.since)) && <> {textParts(config, "since {date}", { date: <time datetime={dates.since ?? l.since ?? undefined}>{dates.since ? day(dates.since) : date(l.since)}</time> })}</>}
 						</li>
 					))}
 				</ul>
@@ -63,6 +70,13 @@ const join = config?.join;
 				<p class="redeemid-member__none">
 					{text(config, "You don't have a membership yet.")}{join && <> <a href={join.href}>{join.label ?? text(config, "Become a member")}</a></>}
 				</p>
+			)}
+			{current.length > 0 && (dates.renews || dates.ends || gift) && (
+				<ul class="redeemid-member__dates">
+					{dates.renews && <li data-redeemid-date="renews">{textParts(config, "Renews on {date}", { date: <time datetime={dates.renews}>{day(dates.renews)}</time> })}</li>}
+					{dates.ends && <li data-redeemid-date="ends">{textParts(config, "Ends on {date}", { date: <time datetime={dates.ends}>{day(dates.ends)}</time> })}</li>}
+					{gift && <li data-redeemid-date="gift">{textParts(config, "Gift membership until {date}", { date: <time datetime={gift}>{day(gift)}</time> })}</li>}
+				</ul>
 			)}
 			{features.length > 0 && (
 				<p class="redeemid-member__features">

@@ -21,6 +21,7 @@ import { record } from "../log.js";
 import { levelsFor } from "../access.js";
 import { discover, exchangeCode, identity, logoutUrl, ShopifyError, verifyIdToken, type Discovery } from "../shopify.js";
 import { emptyMember, stampTags, stores } from "../storage.js";
+import { adminConfigured, resync } from "../admin-api.js";
 import { getPublicOrigin, OptionsRepository } from "emdash/api/route-utils";
 
 import { afterLogoutCookie, callbackUrl, fail, FLOW_TTL_MS, SESSION_FLOW, SESSION_CUSTOMER_TOKEN, SESSION_ID_TOKEN, type CustomerToken, type Flow } from "./shared.js";
@@ -119,10 +120,18 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 					syncedAt: now,
 					source: "sign-in",
 					linkedAt: member.linkedAt ?? now,
+					emailVerified,
 				},
 				now,
 			),
 		);
+		// With the Admin API app, signing in is a full sync: the membership
+		// dates and marketing consent too. A failure never blocks sign-in.
+		if (adminConfigured()) {
+			await resync(config, s, [who.customerId], "sign-in").catch(async (e: Error) => {
+				await record({ event: "staff.resync", label: "sign-in", status: "error", level: "warn", origin: "member", customerId: who.customerId, note: String(e.message).slice(0, 200) });
+			});
+		}
 
 		const levels = levelsFor(who.tags, config.levels);
 		await record({ event: "member.signed_in", label: flow.refresh ? "refresh" : member.linkedAt ? "sign-in" : "first sign-in", status: "ok", origin: "member", customerId: who.customerId });

@@ -539,6 +539,7 @@ try {
 
 	// Shopify tags the customer Pro (Flow or an app would do this).
 	const gid = `gid://shopify/Customer/${shop.customer.id}`;
+	shop.customer.tags = [...shop.customer.tags, "pro"];
 	const added = await webhook("customer.tags_added", { customerId: gid, tags: ["pro"] }, { id: "evt-1" });
 	check("signed tag webhook is processed", added.status === 200 && added.text === "processed", JSON.stringify(added));
 	const dup = await webhook("customer.tags_added", { customerId: gid, tags: ["pro"] }, { id: "evt-1" });
@@ -582,11 +583,19 @@ try {
 	const joinPro = await member.go("/join");
 	check("a plan the member holds says so instead of Buy", joinPro.text.includes("You&#39;re on this plan.") || joinPro.text.includes("You're on this plan."));
 	shop.customer.tags = ["member"];
+	// The membership.* metafields a subscription app or Flow keeps; signing in reads them with the Admin API.
+	shop.customer.dates = { renews: "2027-01-15", gift: "2099-12-31", since: "2025-03-01" };
 	const refreshed = await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	check("the account card shows Shopify's renewal and gift dates", refreshed.text.includes('data-redeemid-date="renews"') && refreshed.text.includes("January 15, 2027") && refreshed.text.includes("Gift membership until") && refreshed.text.includes("March 1, 2025"), (refreshed.text.match(/<section class="redeemid-member[^]*?<\/section>/) ?? [""])[0].slice(0, 600));
 	check("Refresh membership asks the store for no sign-in form", shop.authorizeRequests.at(-1)?.prompt === "none");
 	check("Refresh membership comes back with the store's tags", refreshed.url.pathname === "/account" && refreshed.url.searchParams.get("redeemid_notice") === "refreshed" && refreshed.text.includes("Your membership is up to date."), refreshed.url.href);
 	check("a level Shopify removed shows under Before", /redeemid-member__past[^]*?data-redeemid-level="pro"/.test(refreshed.text));
-	check("the removed level no longer opens Pro posts", !(await member.go("/posts/pro-only")).text.includes("PRO-BODY"));
+	const lapsedPost = await member.go("/posts/pro-only");
+	check("the removed level no longer opens Pro posts", !lapsedPost.text.includes("PRO-BODY"));
+	check("a lapsed member's wall offers Renew, not Join", lapsedPost.text.includes("Your Pro membership has ended.") && lapsedPost.text.includes("Renew Pro") && !lapsedPost.text.includes("Become a member"), (lapsedPost.text.match(/<div class="redeemid-locked[^]*?<\/div>/) ?? [""])[0].slice(0, 500));
+	const renewPlan = await member.go("/join");
+	check("a lapsed member's plan card says Renew", /data-redeemid-plan="pro-plan" data-redeemid-state="renew"[^]*?<button type="submit">Renew<\/button>/.test(renewPlan.text), (renewPlan.text.match(/<div class="redeemid-plan[^]*?<\/div>/) ?? [""])[0].slice(0, 400));
+	shop.customer.dates = {};
 	shop.storeSession = false;
 	const before = shop.authorizeRequests.length;
 	const fallback = await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
@@ -693,6 +702,7 @@ try {
 	await buyer.go("/_emdash/api/auth/redeemid/login?return=/posts/single-story");
 	const notYet = await buyer.go("/posts/single-story");
 	check("a member without the item is offered Buy just this beside the upgrade", !notYet.text.includes("SINGLE-BODY") && notYet.text.includes('data-redeemid-reason="upgrade"') && notYet.text.includes('name="plan" value="single-story"'), notYet.text.slice(0, 200));
+	shop.customer.tags = ["member", "item-single-story"];
 	await webhook("customer.tags_added", { customerId: "gid://shopify/Customer/3003", tags: ["item-single-story"] });
 	const itemOpen = await buyer.go("/posts/single-story");
 	check("the item's tag opens the whole post", itemOpen.text.includes("SINGLE-BODY") && !itemOpen.text.includes("Buy just this"), itemOpen.text.slice(0, 200));
