@@ -41,7 +41,9 @@ import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRe
 import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
 import { gatedFindings, templateFindings } from "./template-scan.js";
+import { setupFacts, setupPage, WEBHOOK } from "./setup.js";
 import { record } from "./log.js";
+import { resend } from "./events.js";
 import { eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, WEBHOOK_TABS, webhooksPage, type MonitorEnv, type WebhookTab } from "./monitor.js";
 import { z } from "astro/zod";
 import { AgentError, explainAccess, findProducts, getCollection, getMember, getProduct, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
@@ -284,6 +286,7 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 							if (out.toast?.type === "success") await record({ event: "settings.saved", label: `access: ${String(i.action_id).replace(/_/g, " ")}`, status: "ok", origin: "staff" });
 							return out;
 						}
+						if ((i.type === "block_action" || i.type === "form_submit") && isSetupAction(i.action_id)) return await setupAction(config, live, ctx, i);
 						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx, i);
 						if (i.type !== "page_load") return { blocks: [] };
 						if (i.page === "/") return await membersPage(config);
@@ -294,6 +297,7 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 						}
 						if (i.page === "/events") return await eventsPage(await memberStores());
 						if (i.page === "/reports") return await reportsPage(config, await memberStores());
+						if (i.page === "/setup") return setupPage(await setupFacts(config, await memberStores(), siteOrigin(ctx)));
 						if (i.page === "/status") return await statusPage(config, ctx.request);
 						if (i.page === "/test") return await accessTest(config);
 						if (i.page === "/privacy") return await privacyPage(await memberStores());
@@ -464,6 +468,44 @@ function agentTools(config: RedeemIDConfig) {
 	return { tools };
 }
 
+// ---------------------------------------------------------------- setup
+
+const SETUP_ACTIONS = new Set(["setup_check", "setup_register", "setup_level"]);
+const isSetupAction = (id: unknown) => typeof id === "string" && SETUP_ACTIONS.has(id);
+
+/** The site's own origin, as visitors reach it. */
+function siteOrigin(ctx: PluginContext): string {
+	return new URL(ctx.url("/")).origin;
+}
+
+/** Setup's buttons: Check again, Register, Add level. Each answers the page as it is after the step. */
+async function setupAction(
+	config: RedeemIDConfig,
+	live: () => Promise<RedeemIDConfig>,
+	ctx: PluginContext,
+	i: { action_id?: string; values?: Record<string, unknown> },
+) {
+	const s = await memberStores();
+	const origin = siteOrigin(ctx);
+	const page = async (toast?: { type: "success" | "error" | "info"; message: string }) => setupPage(await setupFacts(await live(), s, origin), toast);
+	if (i.action_id === "setup_register") {
+		try {
+			const { added, failed } = await registerWebhooks(config, origin + WEBHOOK);
+			await record({ event: "staff.webhooks", label: "register (setup)", status: failed.length ? `${failed.length} refused` : `${added.length} registered`, level: failed.length ? "warn" : "ok", origin: "staff" });
+			const refused = failed.map((f) => `Shopify refused ${f.topic}: ${f.message}`).join(" ");
+			return page({ type: failed.length ? "error" : "success", message: [added.length ? `Registered ${added.length} webhooks.` : failed.length ? "" : "Nothing was missing.", refused].filter(Boolean).join(" ") });
+		} catch (e) {
+			return page({ type: "error", message: (e as Error).message });
+		}
+	}
+	if (i.action_id === "setup_level") {
+		const out = await accessAction(await accessEnv(config), { action_id: "level_save", block_id: "level:new", values: { name: i.values?.name, tags: i.values?.tags } });
+		if (out.toast?.type === "success") await record({ event: "settings.saved", label: "access: level save (setup)", status: "ok", origin: "staff" });
+		return page(out.toast?.type === "success" ? { type: "success", message: "Level added. Change it any time under Access." } : out.toast);
+	}
+	return page({ type: "info", message: "Checked." });
+}
+
 // ---------------------------------------------------------------- actions
 
 async function action(
@@ -552,6 +594,18 @@ async function action(
 			return eventsPage(s, { event: String(i.value ?? "") || undefined });
 		case "events_page":
 			return eventsPage(s, parseFilter(i.block_id), cursorOf(i.value));
+		case "failed_resend": {
+			const sent = await resend(config, s, String(i.value ?? "")).catch(() => false);
+			return eventsPage(s, {}, undefined, sent ? { type: "success", message: "Sent. It's off the failed list." } : { type: "error", message: "The receiver still didn't take it. It stays on the list." });
+		}
+		case "failed_clear":
+			await s.failedEvents.delete(String(i.value ?? ""));
+			return eventsPage(s, {}, undefined, { type: "success", message: "Cleared." });
+		case "failed_clear_all": {
+			const { items } = await s.failedEvents.query({ limit: 100 });
+			await s.failedEvents.deleteMany(items.map((r) => r.id));
+			return eventsPage(s, {}, undefined, { type: "success", message: "Failed events cleared." });
+		}
 		case "access_test":
 			return accessTest(config, i.values);
 		case "member_export": {
@@ -759,7 +813,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 					]
 				: []),
 			...templateBlocks(config),
-			{ type: "context", text: "Deliveries, their health and the webhook subscriptions are under Webhooks; everything RedeemID did is under App events." },
+			{ type: "context", text: "Setting up a store step by step is under Setup. Deliveries, their health and the webhook subscriptions are under Webhooks; everything RedeemID did is under App events." },
 			{ type: "divider" },
 			{ type: "header", text: "Shopify settings" },
 			{

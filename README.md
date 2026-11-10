@@ -36,7 +36,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 **For members**
 - Sign in, Account (orders, profile and addresses on the store) and Sign out, which ends the store session too. Members never see the word "Shopify".
-- A member card with their levels and when each started, past levels, the meter, and Refresh membership to read their tags again after a purchase.
+- A member card with their levels and when each started, when the membership renews or ends and any gift membership (from Shopify), past levels, the meter, and Refresh membership to read their tags again after a purchase.
 - Preferences they can change, such as topics or a newsletter choice, saved on the Shopify customer.
 - Download or delete what the site keeps about them.
 
@@ -53,6 +53,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 - Webhooks page: what Shopify sent and what became of it, delivery health with a daily check and email warnings, and the subscriptions with a Register button.
 - App events: webhooks, sign-ins and refusals, Admin API calls, staff actions and settings saves, filterable, kept 30 days.
 - Reports: members by level, who joined and left by week, sign-ins and metered reads.
+- Setup page: connecting a store step by step, with the exact values to paste into Shopify, the command for each secret, a Register button for the webhooks and a form for the first level. Each step checks the site as it is.
 - Status page: every setting, store discovery, levels and rules, and any template that would show a locked body in full.
 - Access test, Privacy page, and a dashboard widget.
 
@@ -75,7 +76,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 ### 1. Set up Shopify
 
-Follow [docs/shopify-setup.md](docs/shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and a webhook app.
+Follow [docs/shopify-setup.md](docs/shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and a webhook app. Once the package is installed, **Plugins → RedeemID → Setup** walks through the same steps for your site, with its own callback URI filled in, and says which are done.
 
 ### 2. Install
 
@@ -152,7 +153,7 @@ Use `<Content>` in place of `<PortableText>` for every body that may be locked. 
 ### 6. Check it
 
 1. Finish EmDash setup as staff first. Store customers can't create the first account.
-2. Open **Plugins → RedeemID → Status**. Every setting should say Set. Then open **Webhooks → Setup** and press **Register**.
+2. Open **Plugins → RedeemID → Setup**. Work down the steps until it says RedeemID is set up (it registers the webhooks for you). **Status** lists every setting as Set or Missing.
 3. Tag a test customer `member` in Shopify, open a locked post, and sign in as that customer. The post opens.
 4. Remove the tag in Shopify. The post locks again once the webhook arrives.
 
@@ -188,9 +189,9 @@ Pass `id` on the entry's own page. It lets the meter count the read, and a locke
 
 **`<Notices />`** goes near the top of the layout. It shows the message for a `?redeemid_notice=` code (see [notices](#notices)) and nothing otherwise.
 
-**`<MemberCard />`** is for an account page: levels with start dates, past levels, the meter, and links to the store account, Refresh membership and Sign out. Refresh membership sends a member to the store with no sign-in form; one still signed in there comes straight back with their tags read again. Add `<Preferences />` and `<YourData />` beside it.
+**`<MemberCard />`** is for an account page: levels with start dates, the renewal or end date and any gift membership that Shopify keeps (see [membership dates](#membership-dates)), past levels, the meter, and links to the store account, Refresh membership and Sign out. Refresh membership sends a member to the store with no sign-in form; one still signed in there comes straight back with their tags read again. Add `<Preferences />` and `<YourData />` beside it.
 
-**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). With `levels`, members who already hold one see "You're on this plan." in place of the button.
+**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). With `levels`, members who already hold one see "You're on this plan." in place of the button, and a member who held one before (Shopify has since removed its tag) gets **Renew** (`renewLabel`) instead of `label`. The wall does the same: a lapsed member reads "Your Pro membership has ended." with **Renew Pro** and **Already renewed? Refresh**, not the newcomer's join link.
 
 ```astro
 <Plan handle="gold-membership" label="Join Gold" levels={["gold"]}>
@@ -383,7 +384,7 @@ Limits: only EmDash's file route is checked, so don't give the storage bucket a 
 
 ### Privacy requests
 
-What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, first sign-in, last sync) and their meter. Preference answers stay on the Shopify customer, and webhook deliveries keep only a topic and a time. Erasing on the site never erases Shopify data; it can only ask Shopify to.
+What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, first sign-in, last sync, whether the email was verified, email and SMS marketing consent, and the membership dates) and their meter. Preference answers stay on the Shopify customer, and webhook deliveries keep only a topic and a time. Erasing on the site never erases Shopify data; it can only ask Shopify to.
 
 | Started by | What happens |
 | --- | --- |
@@ -404,7 +405,20 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API toke
 - **Webhook subscriptions.** Webhooks → Setup lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
 - **Access test.** A collection, an entry, terms and a reader's tags in; the verdict out.
 
-Resync updates email, name and tags. Enabled or disabled status comes only from the enable and disable webhooks.
+Resync updates email, name, tags, email marketing consent and the membership dates. Enabled or disabled status comes only from the enable and disable webhooks. With the app set up, two more things read the customer from the Admin API as it is now: every sign-in (and Refresh membership), and every `customer.tags_added` or `customer.tags_removed` webhook. Those topics carry only the change and can arrive out of order, so reading the current tags keeps the mirror right. Without the app, or when the read fails, the webhook's change is applied as sent.
+
+#### Membership dates
+
+A subscription app or Shopify Flow can keep these customer metafields, as dates (`YYYY-MM-DD`):
+
+| Metafield | Shown |
+| --- | --- |
+| `membership.member_since` | As the start date on the member card, in place of when the tag arrived |
+| `membership.renews_on` | "Renews on ..." |
+| `membership.ends_on` | "Ends on ...", for a pass that doesn't renew |
+| `membership.gift_until` | "Gift membership until ...", while it's in the future |
+
+RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they need the Admin API app. They're for display only: access still comes from tags alone, and nothing on the site ends access on these dates. Time-boxed access is a Flow that waits and removes the tag.
 
 ### Webhooks, app events and reports
 
@@ -413,7 +427,7 @@ Members gain and lose access only when Shopify sends tag changes, so RedeemID sh
 - **Webhooks → Received.** Each delivery's topic, what became of it (processed, skipped, older than what's stored, not used) and the customer ID, with counts of deliveries turned away (bad signature) and failed (storage errors; Shopify sends those again).
 - **Webhooks → Health.** Once a day RedeemID registers again any subscription Shopify dropped (with the Admin API app), and warns when no webhook has come in for a number of days (3 by default, 0 turns it off), or when deliveries were turned away or failed in the last day. **Check now** runs it at once. Warnings show on the page and the dashboard widget, and go by email to the address you set when the site has an EmDash email provider: once when problems start or change, then once a week while they last.
 - **Webhooks → Setup.** The endpoint, whether signatures can be checked, and the subscriptions.
-- **App events.** What RedeemID did and what came of it: webhooks received, turned away and failed, sign-ins and refusals (by reason), Admin API calls (by operation, with timings), resyncs, tag edits, webhook registrations, settings saves, outbound events that failed, metered reads and the health checks. Filter by event or show problems only. Entries hold ids, labels and outcomes, never bodies, tokens or emails.
+- **App events.** What RedeemID did and what came of it: webhooks received, turned away and failed, sign-ins and refusals (by reason), Admin API calls (by operation, with timings), resyncs, tag edits, webhook registrations, settings saves, outbound events that failed, metered reads and the health checks. Filter by event or show problems only. Entries hold ids, labels and outcomes, never bodies, tokens or emails. Failed outbound events also keep the event body (ids and levels, never an email or a name) so they can be sent again.
 - **Reports.** Members on each level, who joined and left in the last 30 days and by week for 12 weeks (from each member's tag dates), sign-ins and metered reads.
 
 App events and delivery records are kept 30 days. The daily check runs from EmDash's scheduler: on Node it runs by itself; on Cloudflare Workers, add a Cron Trigger to the site's Worker as EmDash's deployment guide describes. The plugin asks for `email:send` only to send these warnings.
@@ -467,7 +481,7 @@ A replacement may use its original's placeholders (such as `{level}`, or `{signI
 events: { url: "https://hooks.example.com/redeemid", only: ["member.signed_in", "member.levels_changed"] },
 ```
 
-With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to the URL with the headers `X-RedeemID-Event`, `X-RedeemID-Delivery` (the `id`) and `X-RedeemID-Signature: sha256=<hex HMAC-SHA256 of the raw body>`. Check the signature before you trust a body. A send waits at most 3 seconds and never breaks the page; a failed send is logged, not retried.
+With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to the URL with the headers `X-RedeemID-Event`, `X-RedeemID-Delivery` (the `id`) and `X-RedeemID-Signature: sha256=<hex HMAC-SHA256 of the raw body>`. Check the signature before you trust a body. Events go out after the response (with `waitUntil` on Workers), so sign-in, webhooks and pages never wait for your receiver. Each try waits at most 3 seconds; a send that fails is tried again after 1 second and after 5 seconds. One that fails all three tries is kept under **App events → Failed events**, where staff can **Send again** (same `id`, so drop duplicates by it) or **Clear** it; failed events are deleted after 30 days.
 
 | Event | `data` |
 | --- | --- |
@@ -553,12 +567,12 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `LockedPanel` | `reason`, `required`, … | The wall on its own |
 | `AccessBadge` | `collection`, `terms`, `content`, `id`, `free`, `class` | What an entry needs, with a lock for readers kept out |
 | `Account` | | Sign in, or the member's name, levels, Account and Sign out |
-| `MemberCard` | `title` | Levels, past levels, meter, features, Refresh membership |
+| `MemberCard` | `title` | Levels, renewal, end and gift dates, past levels, meter, features, Refresh membership |
 | `Preferences` | `title`, `heading`, `label`; slot `signed-out` | The member's preference form |
 | `YourData` | `title`, `heading` | Download or delete my data |
 | `Feature` | `slug`; slot `else` | Shows its content to members holding the feature |
 | `Notices` | `messages` | The message for `?redeemid_notice=` |
-| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel` | A product with a buy button |
+| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel`, `renewLabel` | A product with a buy button |
 | `Product` | `handle`, `heading`, `compact`, `html`, `schema`, `addLabel`, `buyLabel` | A product page |
 | `Collection` | `handle`, `limit`, `productHref`, `showTitle`, `browse`, `quickAdd` | A grid of products, with filters and pages |
 | `ProductSearch` | `productHref`, `limit`, `boxOnly`, `action`, `label`, `quickAdd` | Product search |

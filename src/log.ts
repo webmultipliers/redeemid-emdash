@@ -45,6 +45,7 @@ export const LOG_EVENTS: Record<string, string> = {
 	"staff.webhooks": "Webhook registration",
 	"settings.saved": "Settings saved",
 	"events.failed": "Outbound event failed",
+	"events.resent": "Outbound event sent again",
 	"health.check": "Health check",
 	"meter.used": "Metered read",
 	"meter.exhausted": "Metered read, meter used up",

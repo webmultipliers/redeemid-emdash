@@ -102,14 +102,19 @@ describe("app events", () => {
 		expect(parseFilter(filterId({ event: "webhook.failed", problems: true }))).toEqual({ event: "webhook.failed", problems: true });
 	});
 
-	it(`drops events and deliveries older than ${LOG_DAYS} days`, async () => {
+	it(`drops events, deliveries and failed events older than ${LOG_DAYS} days`, async () => {
 		const old = new Date(Date.now() - (LOG_DAYS + 1) * 86_400_000).toISOString();
 		store.log.set("old", { at: old, event: "member.signed_in", label: "x", status: "ok", level: "ok" } as LogEntry);
 		store.deliveries.set("old", { topic: "customers/update", receivedAt: old });
 		store.deliveries.set("new", { topic: "customers/update", receivedAt: new Date().toISOString() });
+		const failed = { body: "{}", event: "member.signed_in" as const, attempts: 3, error: "HTTP 503" };
+		store.failedEvents.set("old", { ...failed, id: "old", at: old });
+		store.failedEvents.set("new", { ...failed, id: "new", at: new Date().toISOString() });
 		await eventsPage(store.stores);
 		expect(store.log.has("old")).toBe(false);
 		expect([...store.deliveries.keys()]).toEqual(["new"]);
+		expect([...store.failedEvents.keys()]).toEqual(["new"]);
+		store.failedEvents.clear();
 	});
 });
 

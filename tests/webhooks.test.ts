@@ -24,6 +24,14 @@ describe("HMAC", () => {
 });
 
 describe("mirror", () => {
+	it("mirrors email and SMS marketing consent from customer webhooks, and leaves it when a payload has none", async () => {
+		const m = memoryStores();
+		await apply(m.stores, "customers/update", { id: 7, email_marketing_consent: { state: "subscribed", opt_in_level: "single_opt_in" }, sms_marketing_consent: { state: "not_subscribed" }, updated_at: "2026-11-01T00:00:00Z" });
+		expect(m.members.get("7")).toMatchObject({ emailMarketing: "SUBSCRIBED", smsMarketing: "NOT_SUBSCRIBED" });
+		await apply(m.stores, "customers/update", { id: 7, last_name: "Lee", updated_at: "2026-11-02T00:00:00Z" });
+		expect(m.members.get("7")).toMatchObject({ emailMarketing: "SUBSCRIBED", smsMarketing: "NOT_SUBSCRIBED" });
+	});
+
 	it("creates and updates profiles, keeping tags when a payload has none", async () => {
 		const m = memoryStores();
 		await apply(m.stores, "customers/create", { id: 7, email: "A@B.co", first_name: "Ann", tags: "member, vip", updated_at: "2026-11-01T00:00:00Z" });

@@ -342,7 +342,16 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				if (query.includes("nodes(ids")) {
 					const nodes = variables.ids.map((id) =>
 						id === `gid://shopify/Customer/${c.id}`
-							? { id, firstName: c.firstName, lastName: c.lastName, tags: c.tags, updatedAt: new Date().toISOString(), defaultEmailAddress: { emailAddress: c.email } }
+							? {
+									id,
+									firstName: c.firstName,
+									lastName: c.lastName,
+									tags: c.tags,
+									updatedAt: new Date().toISOString(),
+									defaultEmailAddress: { emailAddress: c.email, marketingState: c.emailMarketing ?? "NOT_SUBSCRIBED" },
+									// The membership.* metafields Flow or a subscription app writes.
+									...Object.fromEntries(Object.entries(c.dates ?? {}).map(([k, v]) => [k, v ? { value: v } : null])),
+								}
 							: null,
 					);
 					return json(200, { data: { nodes } });
@@ -383,6 +392,12 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				return json(400, { errors: [{ message: "unknown query" }] });
 			}
 			case "/events":
+				// A slow or broken receiver, for the retry and after-the-response checks.
+				if (shop.eventsDelayMs) await new Promise((r) => setTimeout(r, shop.eventsDelayMs));
+				if (shop.eventsDown) {
+					shop.eventsRefused = (shop.eventsRefused ?? 0) + 1;
+					return json(503, { error: "down" });
+				}
 				shop.events.push({ headers: req.headers, body });
 				return json(200, { ok: true });
 			case "/":

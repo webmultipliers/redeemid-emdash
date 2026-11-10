@@ -11,7 +11,7 @@
 
 import { env, ENV, shopOrigin, type RedeemIDConfig } from "./config.js";
 import { USER_AGENT } from "./shopify.js";
-import { cleanTags, emptyMember, stampTags, type MemberRecord, type Stores } from "./storage.js";
+import { cleanTags, emptyMember, metaDate, stampTags, type MemberRecord, type MembershipDates, type Stores } from "./storage.js";
 import { timed } from "./log.js";
 
 export const ADMIN_API_VERSION = "2026-10";
@@ -100,15 +100,32 @@ export interface AdminCustomer {
 	lastName: string | null;
 	tags: string[];
 	updatedAt: number | null;
+	emailMarketing: string | null;
+	dates: MembershipDates;
 }
+
+/** The membership.* customer metafields read with each customer (see MemberRecord.dates). */
+const DATE_FIELDS = `since: metafield(namespace: "membership", key: "member_since") { value } renews: metafield(namespace: "membership", key: "renews_on") { value } ends: metafield(namespace: "membership", key: "ends_on") { value } gift: metafield(namespace: "membership", key: "gift_until") { value }`;
 
 /** Up to 100 customers by numeric id. Customers Shopify no longer has are left out. */
 export async function customers(config: RedeemIDConfig, ids: string[], fetcher: typeof fetch = fetch): Promise<AdminCustomer[]> {
 	if (ids.length === 0) return [];
-	type Node = { id: string; firstName: string | null; lastName: string | null; tags: string[]; updatedAt: string; defaultEmailAddress: { emailAddress: string | null } | null } | null;
+	type Meta = { value: string | null } | null;
+	type Node = {
+		id: string;
+		firstName: string | null;
+		lastName: string | null;
+		tags: string[];
+		updatedAt: string;
+		defaultEmailAddress: { emailAddress: string | null; marketingState?: string | null } | null;
+		since?: Meta;
+		renews?: Meta;
+		ends?: Meta;
+		gift?: Meta;
+	} | null;
 	const data = await admin<{ nodes: Node[] }>(
 		config,
-		`query RedeemIDCustomers($ids: [ID!]!) { nodes(ids: $ids) { ... on Customer { id firstName lastName tags updatedAt defaultEmailAddress { emailAddress } } } }`,
+		`query RedeemIDCustomers($ids: [ID!]!) { nodes(ids: $ids) { ... on Customer { id firstName lastName tags updatedAt defaultEmailAddress { emailAddress marketingState } ${DATE_FIELDS} } } }`,
 		{ ids: ids.slice(0, 100).map(gid) },
 		fetcher,
 	);
@@ -121,11 +138,14 @@ export async function customers(config: RedeemIDConfig, ids: string[], fetcher: 
 			lastName: n.lastName || null,
 			tags: cleanTags(n.tags),
 			updatedAt: Number.isFinite(Date.parse(n.updatedAt)) ? Date.parse(n.updatedAt) : null,
+			emailMarketing: n.defaultEmailAddress?.marketingState ?? null,
+			dates: { since: metaDate(n.since?.value), renews: metaDate(n.renews?.value), ends: metaDate(n.ends?.value), gift: metaDate(n.gift?.value) },
 		}));
 }
 
 /**
- * Read members from Shopify again and update the mirror: profile and tags.
+ * Read members from Shopify again and update the mirror: profile, tags,
+ * email marketing state and the membership dates.
  * Status stays with the enable/disable webhooks. Members Shopify no longer
  * has are reported in `missing` and left alone.
  */
@@ -142,6 +162,8 @@ export async function resync(config: RedeemIDConfig, s: Stores, ids: string[], s
 		m.lastName = c.lastName ?? m.lastName;
 		m.tags = c.tags;
 		m.profileUpdatedAt = c.updatedAt ?? m.profileUpdatedAt;
+		m.emailMarketing = c.emailMarketing ?? m.emailMarketing ?? null;
+		m.dates = c.dates;
 		m.syncedAt = new Date().toISOString();
 		m.source = source;
 		await s.members.put(c.customerId, stampTags(m));

@@ -6,7 +6,7 @@ vi.mock("virtual:emdash/config", () => ({ default: {} }));
 
 import { customers, editTags, registerWebhooks, resetAdminToken, resync, WEBHOOK_TOPICS } from "../src/admin-api.js";
 import type { RedeemIDConfig } from "../src/config.js";
-import { emit, levelChange } from "../src/events.js";
+import { emit, flushEvents, levelChange, resend, RETRY_DELAYS_MS, type FailedEvent } from "../src/events.js";
 import { featuresFor } from "../src/features.js";
 import { accessTest, BULK_BATCH, bulkResync, parseTerms } from "../src/staff.js";
 import { emptyMember } from "../src/storage.js";
@@ -63,7 +63,8 @@ describe("featuresFor", () => {
 describe("events", () => {
 	it("signs the raw body with the events secret", async () => {
 		const { calls, fetcher } = fakeFetch(() => ({}));
-		expect(await emit(config, "meter.used", { left: 1 }, fetcher)).toBe(true);
+		expect(await emit(config, "meter.used", { left: 1 }, { fetcher })).toBe(true);
+		await flushEvents();
 		const { url, init } = calls[0]!;
 		const headers = init.headers as Record<string, string>;
 		expect(url).toBe("https://hooks.test/in");
@@ -75,34 +76,77 @@ describe("events", () => {
 	});
 	it("sends nothing without a secret, or for an event left out of `only`", async () => {
 		const { calls, fetcher } = fakeFetch(() => ({}));
-		expect(await emit({ ...config, events: { url: "https://hooks.test/in", only: ["member.signed_in"] } }, "meter.used", {}, fetcher)).toBe(false);
+		expect(await emit({ ...config, events: { url: "https://hooks.test/in", only: ["member.signed_in"] } }, "meter.used", {}, { fetcher })).toBe(false);
 		delete process.env.REDEEMID_EVENTS_SECRET;
-		expect(await emit(config, "meter.used", {}, fetcher)).toBe(false);
+		expect(await emit(config, "meter.used", {}, { fetcher })).toBe(false);
 		expect(calls).toHaveLength(0);
 	});
-	it("never throws when the receiver is down", async () => {
+	it("returns before the receiver answers: the request never waits for it", async () => {
+		let release: (() => void) | null = null;
+		const slow = (() => new Promise<Response>((r) => (release = () => r(new Response("{}"))))) as unknown as typeof fetch;
+		let done = false;
+		expect(await emit(config, "meter.used", {}, { fetcher: slow })).toBe(true);
+		const flushed = flushEvents().then(() => (done = true));
+		await vi.waitFor(() => expect(release).not.toBeNull());
+		expect(done).toBe(false);
+		release!();
+		await flushed;
+	});
+	it("tries three times, then keeps the event for staff, and never throws", async () => {
 		const err = vi.spyOn(console, "error").mockImplementation(() => {});
+		let tries = 0;
 		const down = (async () => {
+			tries++;
 			throw new Error("refused");
 		}) as unknown as typeof fetch;
-		expect(await emit(config, "meter.used", {}, down)).toBe(false);
+		const waits: number[] = [];
+		const failed: FailedEvent[] = [];
+		expect(await emit(config, "meter.used", { left: 0 }, { fetcher: down, wait: async (ms) => void waits.push(ms), failed: async (f) => void failed.push(f) })).toBe(true);
+		await flushEvents();
+		expect(tries).toBe(3);
+		expect(waits).toEqual(RETRY_DELAYS_MS);
+		expect(failed).toHaveLength(1);
+		expect(failed[0]).toMatchObject({ event: "meter.used", attempts: 3, error: "refused" });
+		expect(JSON.parse(failed[0]!.body)).toMatchObject({ id: failed[0]!.id, data: { left: 0 } });
 		err.mockRestore();
+	});
+	it("stops trying once the receiver takes it", async () => {
+		let tries = 0;
+		const flaky = (async () => new Response("{}", { status: ++tries < 2 ? 503 : 200 })) as unknown as typeof fetch;
+		const failed: FailedEvent[] = [];
+		await emit(config, "meter.used", {}, { fetcher: flaky, wait: async () => undefined, failed: async (f) => void failed.push(f) });
+		await flushEvents();
+		expect(tries).toBe(2);
+		expect(failed).toHaveLength(0);
+	});
+	it("sends a failed event again with the same delivery id, and clears it on success", async () => {
+		const store = memoryStores();
+		const body = JSON.stringify({ id: "d1", event: "meter.used", at: "2026-11-10T00:00:00Z", data: {} });
+		await store.stores.failedEvents.put("d1", { id: "d1", event: "meter.used", body, at: "2026-11-10T00:00:00Z", attempts: 3, error: "HTTP 500" });
+		const { calls, fetcher } = fakeFetch(() => ({}));
+		expect(await resend(config, store.stores, "d1", fetcher)).toBe(true);
+		expect((calls[0]!.init.headers as Record<string, string>)["X-RedeemID-Delivery"]).toBe("d1");
+		expect(String(calls[0]!.init.body)).toBe(body);
+		expect(store.failedEvents.size).toBe(0);
 	});
 	it("sends member.levels_changed only when the levels change", async () => {
 		const { calls, fetcher } = fakeFetch(() => ({}));
 		const after = { customerId: "1", tags: ["member", "pro"], status: "enabled" };
 		await levelChange(config, ["pro", "member", "newsletter"], after, "webhook", fetcher);
+		await flushEvents();
 		expect(calls).toHaveLength(0);
 		await levelChange(config, ["member"], after, "webhook", fetcher);
+		await flushEvents();
 		expect(JSON.parse(String(calls[0]!.init.body)).data).toMatchObject({ levels: ["member", "pro"], added: ["pro"], removed: [], source: "webhook" });
 		expect(JSON.parse(String(calls[0]!.init.body)).data).not.toHaveProperty("email");
 		await levelChange(config, ["member"], { ...after, status: "disabled" }, "webhook", fetcher);
+		await flushEvents();
 		expect(JSON.parse(String(calls[1]!.init.body)).data).toMatchObject({ levels: [], added: [], removed: ["member"] });
 	});
 });
 
 describe("Admin API", () => {
-	const customer = { id: "gid://shopify/Customer/7", firstName: "Mia", lastName: null, tags: ["Pro", "member"], updatedAt: "2026-11-01T00:00:00Z", defaultEmailAddress: { emailAddress: "Mia@Example.test" } };
+	const customer = { id: "gid://shopify/Customer/7", firstName: "Mia", lastName: null, tags: ["Pro", "member"], updatedAt: "2026-11-01T00:00:00Z", defaultEmailAddress: { emailAddress: "Mia@Example.test", marketingState: "SUBSCRIBED" }, renews: { value: "2027-01-15" }, gift: { value: "2026-12-31T00:00:00Z" }, ends: { value: "not a date" } };
 	function shop() {
 		return fakeFetch((url, body) => {
 			if (url.endsWith("/admin/oauth/access_token")) {
@@ -124,7 +168,19 @@ describe("Admin API", () => {
 		const { calls, fetcher } = shop();
 		const found = await customers(config, ["7", "8"], fetcher);
 		await customers(config, ["7"], fetcher);
-		expect(found).toEqual([{ customerId: "7", email: "mia@example.test", firstName: "Mia", lastName: null, tags: ["Pro", "member"], updatedAt: Date.parse("2026-11-01T00:00:00Z") }]);
+		expect(found).toEqual([
+			{
+				customerId: "7",
+				email: "mia@example.test",
+				firstName: "Mia",
+				lastName: null,
+				tags: ["Pro", "member"],
+				updatedAt: Date.parse("2026-11-01T00:00:00Z"),
+				emailMarketing: "SUBSCRIBED",
+				dates: { since: null, renews: "2027-01-15", ends: null, gift: "2026-12-31" },
+			},
+		]);
+		expect(String(calls[1]!.init.body)).toContain('metafield(namespace: \\"membership\\", key: \\"renews_on\\")');
 		expect(calls.filter((c) => c.url.endsWith("/access_token"))).toHaveLength(1);
 		expect((calls[1]!.init.headers as Record<string, string>)["X-Shopify-Access-Token"]).toBe("tok");
 	});

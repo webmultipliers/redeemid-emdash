@@ -290,13 +290,46 @@ try {
 	check("a level change sends a signed member.levels_changed event", Boolean(levelEvent) && levelEvent.headers["x-redeemid-signature"] === `sha256=${sig}`, JSON.stringify(shop.events.map((e) => e.headers["x-redeemid-event"])));
 	check("sign-in sent member.signed_in", shop.events.some((e) => e.headers["x-redeemid-event"] === "member.signed_in"));
 	check("the meter sent meter.used and meter.exhausted", shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.used") && shop.events.some((e) => e.headers["x-redeemid-event"] === "meter.exhausted"));
+	// Events go out after the response: a slow receiver doesn't hold up sign-in.
+	shop.eventsDelayMs = 2500;
+	const slowStart = Date.now();
+	await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	const slowTook = Date.now() - slowStart;
+	check("a slow event receiver doesn't slow sign-in", slowTook < 2000, `${slowTook} ms`);
+	shop.eventsDelayMs = 0;
+	await new Promise((r) => setTimeout(r, 2700));
+	// A receiver that's down: three tries, then the event waits under App events for staff.
+	shop.eventsDown = true;
+	shop.eventsRefused = 0;
+	await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	await new Promise((r) => setTimeout(r, 7500));
+	check("a failed event is tried three times", shop.eventsRefused === 3, String(shop.eventsRefused));
+	shop.eventsDown = false;
+	const failedList = await adminPage("/events");
+	const failedId = /"action_id":"failed_resend","label":"Send again","style":"primary","value":"([^"]+)"/.exec(failedList.text)?.[1];
+	check("App events lists the failed event with Send again", failedList.text.includes("Failed events") && failedList.text.includes('"event":"member.signed_in"') && Boolean(failedId), failedList.text.slice(0, 600));
+	const eventsBefore = shop.events.length;
+	const resent = await adminAct({ type: "block_action", action_id: "failed_resend", value: failedId, page: "/events" });
+	check("Send again delivers it with its delivery id and takes it off the list", resent.text.includes("Sent.") && !resent.text.includes("Failed events") && shop.events.length === eventsBefore + 1 && shop.events.at(-1).headers["x-redeemid-delivery"] === failedId, resent.text.slice(0, 300));
 	const bulk = await adminAct({ type: "block_action", action_id: "members_resync", page: "/" });
 	check("bulk resync reads a batch from Shopify", bulk.text.includes("Read 1 members again"), bulk.text.slice(0, 300));
+	const setupBefore = await adminPage("/setup");
+	check("Setup shows each step and offers to register the missing webhooks", setupBefore.text.includes("5 of 6 steps done") && setupBefore.text.includes("Connect the store: Done") && setupBefore.text.includes("Register the webhooks: To do") && setupBefore.text.includes("Register 8 webhooks") && setupBefore.text.includes("setup_register"), setupBefore.text.slice(0, 400));
 	const hooksNow = await adminPage("/webhooks");
 	check("Webhooks Setup lists missing webhooks with a Register button", hooksNow.text.includes("webhooks_register") && hooksNow.text.includes("Missing") && hooksNow.text.includes("Setup"), hooksNow.text.slice(0, 300));
 	const registered = await adminAct({ type: "block_action", action_id: "webhooks_register", value: "", page: "/webhooks" });
 	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks.") && registered.text.includes('"default_tab":2'), JSON.stringify(shop.subscriptions.slice(0, 2)));
 	check("Status points to Webhooks and App events", (await adminPage("/status")).text.includes("under Webhooks"));
+	const setupAfter = await adminPage("/setup");
+	check("Setup is done once the webhooks are in and a member has signed in", setupAfter.text.includes("RedeemID is set up") && setupAfter.text.includes("Register the webhooks: Done") && setupAfter.text.includes("Try a sign-in: Done"), setupAfter.text.slice(0, 400));
+	const setupAgain = await adminAct({ type: "block_action", action_id: "setup_register", page: "/setup" });
+	check("Setup's Register says nothing was missing", setupAgain.text.includes("Nothing was missing.") && shop.subscriptions.length === 8, setupAgain.text.slice(0, 300));
+	const setupNoTag = await adminAct({ type: "form_submit", action_id: "setup_level", block_id: "setup_level", values: { name: "Setup Test", tags: "" }, page: "/setup" });
+	check("Setup refuses a level without a tag", setupNoTag.text.includes("Give it at least one Shopify tag."), setupNoTag.text.slice(0, 300));
+	const setupLevel = await adminAct({ type: "form_submit", action_id: "setup_level", block_id: "setup_level", values: { name: "Setup Test", tags: "setup-test" }, page: "/setup" });
+	check("Setup adds a level through Access", setupLevel.text.includes("Level added.") && setupLevel.text.includes("Setup Test (setup-test)"), setupLevel.text.slice(0, 300));
+	const setupGone = await accessCall({ type: "block_action", action_id: "level_menu", value: "remove:setup-test" });
+	check("the Setup level can be removed under Access", setupGone.text.includes("Level removed."), setupGone.text.slice(0, 300));
 	const test = await adminAct({ type: "form_submit", action_id: "access_test", values: { collection: "posts", terms: "category:members, category:pro", tags: "member", signed_in: true }, page: "/test" });
 	check("access test shows what an entry needs and the verdict", test.text.includes("Member or Pro + Pro") || test.text.includes("Pro"), test.text.slice(0, 400));
 	check("access test says a Member is kept out of a Members + Pro post", test.text.includes("This reader is kept out"));
@@ -542,6 +575,7 @@ try {
 
 	// Shopify tags the customer Pro (Flow or an app would do this).
 	const gid = `gid://shopify/Customer/${shop.customer.id}`;
+	shop.customer.tags = [...shop.customer.tags, "pro"];
 	const added = await webhook("customer.tags_added", { customerId: gid, tags: ["pro"] }, { id: "evt-1" });
 	check("signed tag webhook is processed", added.status === 200 && added.text === "processed", JSON.stringify(added));
 	const dup = await webhook("customer.tags_added", { customerId: gid, tags: ["pro"] }, { id: "evt-1" });
@@ -585,11 +619,19 @@ try {
 	const joinPro = await member.go("/join");
 	check("a plan the member holds says so instead of Buy", joinPro.text.includes("You&#39;re on this plan.") || joinPro.text.includes("You're on this plan."));
 	shop.customer.tags = ["member"];
+	// The membership.* metafields a subscription app or Flow keeps; signing in reads them with the Admin API.
+	shop.customer.dates = { renews: "2027-01-15", gift: "2099-12-31", since: "2025-03-01" };
 	const refreshed = await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
+	check("the account card shows Shopify's renewal and gift dates", refreshed.text.includes('data-redeemid-date="renews"') && refreshed.text.includes("January 15, 2027") && refreshed.text.includes("Gift membership until") && refreshed.text.includes("March 1, 2025"), (refreshed.text.match(/<section class="redeemid-member[^]*?<\/section>/) ?? [""])[0].slice(0, 600));
 	check("Refresh membership asks the store for no sign-in form", shop.authorizeRequests.at(-1)?.prompt === "none");
 	check("Refresh membership comes back with the store's tags", refreshed.url.pathname === "/account" && refreshed.url.searchParams.get("redeemid_notice") === "refreshed" && refreshed.text.includes("Your membership is up to date."), refreshed.url.href);
 	check("a level Shopify removed shows under Before", /redeemid-member__past[^]*?data-redeemid-level="pro"/.test(refreshed.text));
-	check("the removed level no longer opens Pro posts", !(await member.go("/posts/pro-only")).text.includes("PRO-BODY"));
+	const lapsedPost = await member.go("/posts/pro-only");
+	check("the removed level no longer opens Pro posts", !lapsedPost.text.includes("PRO-BODY"));
+	check("a lapsed member's wall offers Renew, not Join", lapsedPost.text.includes("Your Pro membership has ended.") && lapsedPost.text.includes("Renew Pro") && !lapsedPost.text.includes("Become a member"), (lapsedPost.text.match(/<div class="redeemid-locked[^]*?<\/div>/) ?? [""])[0].slice(0, 500));
+	const renewPlan = await member.go("/join");
+	check("a lapsed member's plan card says Renew", /data-redeemid-plan="pro-plan" data-redeemid-state="renew"[^]*?<button type="submit">Renew<\/button>/.test(renewPlan.text), (renewPlan.text.match(/<div class="redeemid-plan[^]*?<\/div>/) ?? [""])[0].slice(0, 400));
+	shop.customer.dates = {};
 	shop.storeSession = false;
 	const before = shop.authorizeRequests.length;
 	const fallback = await member.go("/_emdash/api/auth/redeemid/login?refresh=1&return=%2Faccount");
@@ -696,6 +738,7 @@ try {
 	await buyer.go("/_emdash/api/auth/redeemid/login?return=/posts/single-story");
 	const notYet = await buyer.go("/posts/single-story");
 	check("a member without the item is offered Buy just this beside the upgrade", !notYet.text.includes("SINGLE-BODY") && notYet.text.includes('data-redeemid-reason="upgrade"') && notYet.text.includes('name="plan" value="single-story"'), notYet.text.slice(0, 200));
+	shop.customer.tags = ["member", "item-single-story"];
 	await webhook("customer.tags_added", { customerId: "gid://shopify/Customer/3003", tags: ["item-single-story"] });
 	const itemOpen = await buyer.go("/posts/single-story");
 	check("the item's tag opens the whole post", itemOpen.text.includes("SINGLE-BODY") && !itemOpen.text.includes("Buy just this"), itemOpen.text.slice(0, 200));

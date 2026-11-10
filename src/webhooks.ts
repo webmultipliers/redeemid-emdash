@@ -161,6 +161,10 @@ export async function apply(
 		current.firstName = str(payload.first_name) ?? current.firstName;
 		current.lastName = str(payload.last_name) ?? current.lastName;
 		if ("tags" in payload) current.tags = cleanTags(payload.tags);
+		// Marketing consent, as Shopify states it (display and export only).
+		const consent = (raw: unknown) => str((raw as { state?: unknown } | null | undefined)?.state)?.toUpperCase() ?? null;
+		if (payload.email_marketing_consent && typeof payload.email_marketing_consent === "object") current.emailMarketing = consent(payload.email_marketing_consent);
+		if (payload.sms_marketing_consent && typeof payload.sms_marketing_consent === "object") current.smsMarketing = consent(payload.sms_marketing_consent);
 		current.profileUpdatedAt = updatedAt ?? current.profileUpdatedAt;
 	} else if (kind === "status") {
 		if (updatedAt !== null && current.statusUpdatedAt !== null && updatedAt < current.statusUpdatedAt) {

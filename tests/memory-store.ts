@@ -1,6 +1,7 @@
 import type { DeliveryRecord, MemberRecord, MeterRecord, PrivacyRequest, Stores } from "../src/storage.js";
 import type { AccessRecord } from "../src/settings.js";
 import type { LogEntry } from "../src/log.js";
+import type { FailedEvent } from "../src/events.js";
 
 function matches(d: unknown, where: Record<string, unknown>): boolean {
 	return Object.entries(where).every(([k, v]) => {
@@ -72,8 +73,10 @@ export function memoryStores() {
 	const requests = collection<PrivacyRequest>();
 	const access = collection<AccessRecord>();
 	const log = collection<LogEntry>();
+	const failedEvents = collection<FailedEvent>();
 	return {
-		stores: { members, deliveries, meter, requests, access, log } as unknown as Stores,
+		stores: { members, deliveries, meter, requests, access, log, failedEvents } as unknown as Stores,
+		failedEvents: failedEvents.rows,
 		log: log.rows,
 		access: access.rows,
 		requests: requests.rows,
