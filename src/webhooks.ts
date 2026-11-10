@@ -10,6 +10,12 @@ import { cleanTags, emptyMember, numericId, stampTags, type MemberRecord, type S
 import type { RedeemIDConfig } from "./config.js";
 import { eraseAll, eraseMember, shopifyDataRequest } from "./privacy.js";
 
+/** customers/merge: the customer kept and the one merged away, or nulls for a failed merge. */
+export function mergeIds(payload: Record<string, unknown>): { kept: string | null; gone: string | null } {
+	if (payload.status === "failed") return { kept: null, gone: null };
+	return { kept: numericId(payload.admin_graphql_api_customer_kept_id), gone: numericId(payload.admin_graphql_api_customer_deleted_id) };
+}
+
 export type Kind = "profile" | "delete" | "status" | "tags" | "merge" | "compliance" | "ignored";
 
 const TOPICS: Record<string, Kind> = {
@@ -124,9 +130,7 @@ export async function apply(
 	}
 
 	if (kind === "merge") {
-		if (payload.status === "failed") return "skipped";
-		const kept = numericId(payload.admin_graphql_api_customer_kept_id);
-		const gone = numericId(payload.admin_graphql_api_customer_deleted_id);
+		const { kept, gone } = mergeIds(payload);
 		if (!kept || !gone) return "skipped";
 		const old = await s.members.get(gone);
 		if (old?.userId) {

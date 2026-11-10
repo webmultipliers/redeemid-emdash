@@ -15,8 +15,8 @@
 
 import type { StorageCollection } from "emdash";
 
-import { applyEntryRule, describe, requirement, ruleSource, SIGNED_IN, termTree, type Requirement, type Terms } from "./access.js";
-import type { FeatureConfig, FileRule, LevelConfig, MeterConfig, RedeemIDConfig, RuleConfig } from "./config.js";
+import { applyEntryRule, badgeColor, describe, requirement, ruleSource, SIGNED_IN, termTree, type Requirement, type Terms } from "./access.js";
+import { groupsOf, type FeatureConfig, type FileRule, type LevelConfig, type MeterConfig, type RedeemIDConfig, type RuleConfig, type TagGroup } from "./config.js";
 import {
 	days,
 	deleteAccess,
@@ -153,6 +153,40 @@ function ruleText(rule: RuleConfig | undefined, levels: LevelConfig[]): string {
 	return extra ? `${who} (${extra})` : who;
 }
 
+/** A level's tag groups as the form shows them: one per line, "all:" before a line that needs every tag. */
+function groupsText(level: LevelConfig | undefined): string {
+	if (!level) return "";
+	return groupsOf(level)
+		.map((g) => `${g.match === "all" && g.tags.length > 1 ? "all: " : ""}${g.tags.join(", ")}`)
+		.join("\n");
+}
+
+/** The level's tags in the table: "gold or silver + annual". */
+function groupsWords(level: LevelConfig): string {
+	return groupsOf(level)
+		.map((g) => g.tags.join(g.match === "all" ? " + " : " or "))
+		.join(" or ");
+}
+
+/**
+ * Tag groups from the form: one per line, tags separated by commas; a line
+ * starting "all:" needs every tag. `firstMatch` ("all") applies to a first
+ * line with no prefix, for callers that still send the old Customer needs field.
+ */
+export function parseGroups(raw: unknown, firstMatch?: unknown): TagGroup[] {
+	const lines = Array.isArray(raw) ? [raw.join(",")] : String(raw ?? "").split(/\r?\n/);
+	const out: TagGroup[] = [];
+	lines.forEach((line, i) => {
+		const all = /^\s*all\s*:/i.test(line);
+		const tags = list(line.replace(/^\s*(all|any)\s*:/i, "").split(","));
+		if (tags.length === 0) return;
+		const match = all || (i === 0 && firstMatch === "all") ? "all" : "any";
+		if (out.some((g) => (g.match ?? "any") === match && g.tags.join("|").toLowerCase() === tags.join("|").toLowerCase())) return;
+		out.push({ tags, ...(match === "all" && tags.length > 1 ? { match: "all" as const } : {}) });
+	});
+	return out;
+}
+
 // ---------------------------------------------------------------- tabs
 
 function levelsTab(env: AccessEnv, editing?: string): unknown[] {
@@ -161,8 +195,9 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 	const rules = config.rules ?? [];
 	const used = (slug: string) => rules.filter((r) => r.levels.includes(slug)).length;
 	const current = editing ? levels.find((l) => l.slug === editing) : undefined;
+	const others = levels.filter((l) => l.slug !== current?.slug);
 	return [
-		{ type: "context", text: "A level is a name for readers who hold some Shopify customer tags. Name them anything. Tags come from Shopify (Flow, a subscription app or staff), never from this site." },
+		{ type: "context", text: "A level is a name for readers who hold some Shopify customer tags. Name them anything. Tags come from Shopify (Flow, a subscription app or staff), never from this site. A level that includes another reads everything for it too, so a rule names only the lowest level that may read." },
 		...sourceLine(env, "levels", "Levels"),
 		levels.length
 			? {
@@ -173,31 +208,44 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 						{ key: "name", label: "Level" },
 						{ key: "slug", label: "Slug", format: "code" },
 						{ key: "tags", label: "Shopify tags" },
-						{ key: "match", label: "Needs" },
+						{ key: "includes", label: "Includes" },
 						{ key: "rules", label: "Rules", format: "number" },
 						{ key: "act", label: "", format: "element" },
 					],
 					rows: levels.map((l) => ({
 						name: l.name,
 						slug: l.slug,
-						tags: l.tags.join(", "),
-						match: l.tags.length < 2 ? "The tag" : l.match === "all" ? "Every tag" : "Any tag",
+						tags: groupsWords(l),
+						includes: (l.includes ?? []).map((s) => levels.find((x) => x.slug === s)?.name ?? s).join(", "),
 						rules: used(l.slug),
 						act: { type: "menu", action_id: "level_menu", label: "Edit", items: [{ label: "Edit", value: `edit:${l.slug}` }, { label: "Remove", value: `remove:${l.slug}` }] },
 					})),
 				}
 			: { type: "empty", title: "No levels yet", description: "Add one below, such as Members for the tag member.", size: "sm" },
 		{ type: "header", text: current ? `Edit ${current.name}` : "Add a level" },
+		{ type: "context", text: "Shopify tags: a line passes when the customer has any one of its tags; start a line with all: to need every tag on it. Any one line grants the level, so gold on one line and all: silver, annual on the next means Gold, or Silver with Annual." },
 		{
 			type: "form",
 			block_id: current ? `level:${current.slug}` : "level:new",
 			fields: [
 				{ type: "text_input", action_id: "name", label: "Name", placeholder: "Members", initial_value: current?.name ?? "" },
 				...(current ? [] : [{ type: "text_input", action_id: "slug", label: "Slug (optional, fixed once saved)", placeholder: "members" }]),
-				{ type: "text_input", action_id: "tags", label: "Shopify tags, comma separated", placeholder: "member", initial_value: current?.tags.join(", ") ?? "" },
-				{ type: "select", action_id: "match", label: "Customer needs", options: [{ label: "Any one tag", value: "any" }, { label: "Every tag", value: "all" }], initial_value: current?.match ?? "any" },
+				{
+					type: "text_input",
+					action_id: "tags",
+					label: "Shopify tags: commas between tags, one group per line",
+					placeholder: "gold\nall: silver, annual",
+					initial_value: groupsText(current),
+					multiline: true,
+				},
+				...(others.length
+					? [{ type: "checkbox", action_id: "includes", label: "Also opens what these levels read", options: others.map((l) => ({ label: l.name, value: l.slug })), initial_value: current?.includes ?? [] }]
+					: []),
 				{ type: "text_input", action_id: "wall", label: "Wall text (optional)", initial_value: current?.wall ?? "", multiline: true },
 				{ type: "text_input", action_id: "join_url", label: "Join link (optional)", placeholder: "/join/", initial_value: current?.joinUrl ?? "" },
+				{ type: "text_input", action_id: "products", label: "Shopify product handles that lead to it (optional, for plan cards)", placeholder: "gold-membership", initial_value: current?.products?.join(", ") ?? "" },
+				{ type: "text_input", action_id: "home", label: "Members' home after sign-in (optional)", placeholder: "/members/gold/", initial_value: current?.home ?? "" },
+				{ type: "text_input", action_id: "badge", label: "Badge colour (optional)", placeholder: "#c9a227", initial_value: current?.badge ?? "" },
 			],
 			submit: { label: current ? "Save level" : "Add level", action_id: "level_save" },
 		},
@@ -497,16 +545,31 @@ export async function accessAction(env: AccessEnv, i: Interaction): Promise<Bloc
 			const now = effective(env);
 			const used = (now.rules ?? []).filter((r) => r.levels.includes(slug!)).length + (now.files ?? []).filter((f) => f.levels?.includes(slug!)).length + (now.features ?? []).filter((f) => f.levels?.includes(slug!)).length;
 			if (used) return bad("levels", `Rules, features or folders use this level (${used}). Change them first.`);
-			await saveSite(env, (site, n) => ({ ...site, levels: start(site, n, "levels").filter((l) => l.slug !== slug) }));
+			await saveSite(env, (site, n) => ({
+				...site,
+				levels: start(site, n, "levels")
+					.filter((l) => l.slug !== slug)
+					.map((l) => {
+						if (!l.includes?.includes(slug!)) return l;
+						const includes = l.includes.filter((s) => s !== slug);
+						const { includes: _gone, ...rest } = l;
+						return includes.length ? { ...rest, includes } : rest;
+					}),
+			}));
 			return ok("levels", "Level removed.");
 		}
 
 		case "level_save": {
 			const name = String(values.name ?? "").trim();
-			const tags = list(values.tags);
+			const groups = parseGroups(values.tags, values.match);
 			const editing = target !== "new" ? target : null;
 			if (!name) return bad("levels", "Give the level a name.", { level: editing ?? undefined });
-			if (tags.length === 0) return bad("levels", "Give it at least one Shopify tag.", { level: editing ?? undefined });
+			if (groups.length === 0) return bad("levels", "Give it at least one Shopify tag.", { level: editing ?? undefined });
+			const home = String(values.home ?? "").trim();
+			if (home && (!home.startsWith("/") || home.startsWith("//"))) return bad("levels", "The members' home must be a path on this site, such as /members/.", { level: editing ?? undefined });
+			const badge = String(values.badge ?? "").trim();
+			if (badge && !badgeColor({ slug: "x", name: "x", badge })) return bad("levels", "The badge colour must be a hex colour, such as #c9a227.", { level: editing ?? undefined });
+			const products = list(values.products).map((h) => h.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "")).filter(Boolean);
 			const fail = await saveSite(env, (site, n) => {
 				const levels = start(site, n, "levels");
 				let slug = editing;
@@ -515,11 +578,19 @@ export async function accessAction(env: AccessEnv, i: Interaction): Promise<Bloc
 					if (typeof made !== "string") return made.error;
 					slug = made;
 				}
-				const level: LevelConfig = { slug, name, tags, ...(values.match === "all" ? { match: "all" as const } : {}) };
+				const [first, ...more] = groups;
+				const level: LevelConfig = { slug, name, tags: first!.tags, ...(first!.match === "all" ? { match: "all" as const } : {}) };
+				if (more.length) level.groups = more;
+				const known = new Set(levels.map((l) => l.slug));
+				const includes = list(values.includes).filter((s) => s !== slug && known.has(s));
+				if (includes.length) level.includes = includes;
 				const wall = String(values.wall ?? "").trim();
 				const joinUrl = String(values.join_url ?? "").trim();
 				if (wall) level.wall = wall;
 				if (joinUrl) level.joinUrl = joinUrl;
+				if (products.length) level.products = [...new Set(products)];
+				if (home) level.home = home;
+				if (badge) level.badge = badge;
 				const at = levels.findIndex((l) => l.slug === slug);
 				if (at >= 0) levels[at] = level;
 				else levels.push(level);

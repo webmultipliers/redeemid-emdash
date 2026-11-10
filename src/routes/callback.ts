@@ -18,7 +18,7 @@ import { env, ENV, PROVIDER_ID, storeDomain } from "../config.js";
 import { siteConfig } from "../site-config.js";
 import { emit, levelChange } from "../events.js";
 import { record } from "../log.js";
-import { levelsFor } from "../access.js";
+import { levelsFor, memberHome } from "../access.js";
 import { discover, exchangeCode, identity, logoutUrl, ShopifyError, verifyIdToken, type Discovery } from "../shopify.js";
 import { emptyMember, stampTags, stores } from "../storage.js";
 import { adminConfigured, resync } from "../admin-api.js";
@@ -149,7 +149,10 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 			if (sealed) session.set(SESSION_CUSTOMER_TOKEN, sealed);
 			else session.delete?.(SESSION_CUSTOMER_TOKEN);
 		} else session.delete?.(SESSION_CUSTOMER_TOKEN);
-		return flow.refresh ? fail(redirect, returnTo, "refreshed") : redirect(returnTo);
+		if (flow.refresh) return fail(redirect, returnTo, "refreshed");
+		// From the home page or a plain sign-in link: the member's home for their level.
+		const home = returnTo === "/" && member.status !== "disabled" ? memberHome(who.tags, config.levels) : null;
+		return redirect(home ?? returnTo);
 	} catch (e) {
 		const code = e instanceof ShopifyError ? e.code : e instanceof OAuthError ? "signup_not_allowed" : "sign_in_failed";
 		console.error("[redeemid] sign-in failed:", (e as Error).message);

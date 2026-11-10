@@ -11,7 +11,7 @@
  * Everything shown comes from the mirrored Shopify customer; Refresh
  * membership reads it from the store again.
  */
-import { accountUrl, membership, meterUsage, refreshUrl, signInUrl, signOutUrl, viewer } from "../access.js";
+import { accountUrl, badgeColor, membership, meterUsage, refreshUrl, signInUrl, signOutUrl, viewer } from "../access.js";
 import { featuresFor } from "../features.js";
 import { siteConfig } from "../site-config.js";
 import { text, textParts } from "../text.js";
@@ -29,6 +29,7 @@ const m = v.member;
 const disabled = m?.status === "disabled";
 const { current, past } = m && !disabled ? membership(m, config?.levels) : { current: [], past: [] };
 const meter = v.signedIn ? await meterUsage(Astro) : null;
+const color = (slug: string) => badgeColor(config?.levels?.find((l) => l.slug === slug));
 const held = m ? featuresFor(m, config?.features, config?.levels) : [];
 const features = (config?.features ?? []).filter((f) => held.includes(f.slug));
 const date = (iso: string | null) => {
@@ -59,8 +60,8 @@ const join = config?.join;
 				<p class="redeemid-member__disabled">{text(config, "Your account is turned off. Contact the store for help.")}</p>
 			) : current.length > 0 ? (
 				<ul class="redeemid-member__levels">
-					{current.map((l) => (
-						<li data-redeemid-level={l.slug}>
+					{current.filter((l) => !l.via).map((l) => (
+						<li data-redeemid-level={l.slug} style={color(l.slug) ? `--redeemid-level-color: ${color(l.slug)}` : undefined}>
 							<strong>{l.name}</strong>
 							{(dates.since ? day(dates.since) : date(l.since)) && <> {textParts(config, "since {date}", { date: <time datetime={dates.since ?? l.since ?? undefined}>{dates.since ? day(dates.since) : date(l.since)}</time> })}</>}
 						</li>

@@ -16,6 +16,8 @@ const config = {
 	levels: [
 		{ slug: "member", name: "Member", tags: ["member"] },
 		{ slug: "pro", name: "Pro", tags: ["pro"], wall: "PRO-WALL: Pro members read every report." },
+		// "gold", or "silver" with "annual". Gold reads everything Pro does and lands on a Pro post after sign-in.
+		{ slug: "gold", name: "Gold", tags: ["gold"], groups: [{ tags: ["silver", "annual"], match: "all" }], includes: ["pro"], home: "/posts/pro-only", badge: "#c9a227" },
 	],
 	join: { href: "/join", label: "Join" },
 	rules: [

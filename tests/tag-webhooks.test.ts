@@ -74,3 +74,30 @@ describe("tag webhooks", () => {
 		expect(store.members.get("7")?.tags).toEqual(["gold", "pro"]);
 	});
 });
+
+describe("customers/merge", () => {
+	const merge = { admin_graphql_api_customer_kept_id: "gid://shopify/Customer/8", admin_graphql_api_customer_deleted_id: "gid://shopify/Customer/7" };
+
+	it("reads the survivor's tags from Shopify after moving the link", async () => {
+		store.members.set("7", { ...emptyMember("7"), userId: "u1", tags: ["member"] });
+		shopify.tags = ["member", "gold"];
+		const res = await deliver("customers/merge", merge);
+		expect(await res.text()).toBe("processed");
+		expect(store.members.get("7")).toBeUndefined();
+		expect(store.members.get("8")).toMatchObject({ userId: "u1", tags: ["member", "gold"] });
+		expect(shopify.calls).toBe(1);
+	});
+
+	it("keeps the merge when the read fails, and skips it without the app", async () => {
+		store.members.set("7", { ...emptyMember("7"), userId: "u1" });
+		shopify.fail = true;
+		vi.spyOn(console, "error").mockImplementation(() => undefined);
+		await deliver("customers/merge", merge);
+		expect(store.members.get("8")).toMatchObject({ userId: "u1", tags: [] });
+		store.members.clear();
+		store.members.set("7", { ...emptyMember("7"), userId: "u2" });
+		Object.assign(shopify, { configured: false, fail: false, calls: 0 });
+		await deliver("customers/merge", merge);
+		expect(shopify.calls).toBe(0);
+	});
+});

@@ -82,22 +82,25 @@ export async function eraseMember(config: RedeemIDConfig | null, s: Stores, cust
 	return Boolean(member);
 }
 
-/** shop/redact: erase every member and meter record. */
+/**
+ * shop/redact: erase every member and meter record. Deletes a page of 100 at
+ * a time in one statement, so even a large shop stays well inside a Workers
+ * Free request's query limit (a few queries per hundred members).
+ */
 export async function eraseAll(config: RedeemIDConfig | null, s: Stores): Promise<number> {
 	let n = 0;
 	for (;;) {
 		const page = await s.members.query({ limit: 100 });
 		if (page.items.length === 0) break;
-		for (const r of page.items) {
-			for (const m of await meterFor(s, r.data.userId)) await s.meter.delete(m.id);
-			await s.members.delete(r.id);
-			n++;
-		}
+		const deleted = await s.members.deleteMany(page.items.map((r) => r.id));
+		n += page.items.length;
+		// A store that deletes nothing would loop forever.
+		if (deleted === 0) throw new Error("shop/redact: members could not be deleted");
 	}
 	for (;;) {
 		const page = await s.meter.query({ limit: 100 });
 		if (page.items.length === 0) break;
-		for (const r of page.items) await s.meter.delete(r.id);
+		if ((await s.meter.deleteMany(page.items.map((r) => r.id))) === 0) throw new Error("shop/redact: meter records could not be deleted");
 	}
 	await log(s, { kind: "erase", source: "shopify", customerId: null, status: "done", note: `Shop redacted: ${n} members` });
 	return n;

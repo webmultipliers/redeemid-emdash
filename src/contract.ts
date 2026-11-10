@@ -16,7 +16,7 @@ export { API_VERSION } from "./api-version.js";
 /** Stable exports, by import path. */
 export const MODULES = {
 	"@redeemid/emdash": ["redeemid", "redeemidGuard", "redeemidPlugin"],
-	"@redeemid/emdash/access": ["siteConfig", "viewer", "canRead", "readEntry", "entryRequirement", "meterUsage", "membership", "levelsFor", "signInUrl", "signOutUrl", "accountUrl", "cartUrl", "refreshUrl", "safeReturn"],
+	"@redeemid/emdash/access": ["siteConfig", "viewer", "canRead", "readEntry", "entryRequirement", "meterUsage", "membership", "levelsFor", "topLevels", "closure", "simplify", "signInUrl", "signOutUrl", "accountUrl", "cartUrl", "refreshUrl", "safeReturn"],
 	"@redeemid/emdash/features": ["hasFeature", "viewerFeatures", "featuresFor"],
 	"@redeemid/emdash/preferences": ["readPreferences", "savePreferences", "preferenceFields"],
 	"@redeemid/emdash/storefront": ["plan", "product", "collection", "money", "realOptions", "variantFor", "storeContext", "cartDetails", "addToCart", "updateLines", "removeLines", "setDiscountCodes"],

@@ -6,11 +6,16 @@
  *
  *   <Plan handle="gold-membership" levels={["gold"]} />
  *
- * With `levels`, members who hold one of them see "You're on this plan"
- * in place of the button, and a member who held one before (Shopify removed
- * its tag) sees "Renew" instead of "Join".
+ * `levels` are the levels the plan gives; left out, they are the levels
+ * whose `products` list the handle. Then the card fits the member:
+ *
+ * - held: they hold one of them through its own tags: "You're on this plan."
+ * - included: a level they hold includes it: "Included in your Gold membership."
+ * - upgrade: the plan's level includes one they hold: the button says "Upgrade".
+ * - renew: they held one before (Shopify removed its tag): "Renew".
+ * - join: anyone else.
  */
-import { membership, viewer } from "../access.js";
+import { closure, directLevels, membership, topLevels, viewer } from "../access.js";
 import { siteConfig } from "../site-config.js";
 import { money, plan as loadPlan, storeContext, type Plan } from "../storefront.js";
 import { text } from "../text.js";
@@ -21,15 +26,19 @@ interface Props {
 	label?: string;
 	/** Heading override; defaults to the Shopify product title. */
 	title?: string;
-	/** The levels this plan gives. Members holding one see `heldLabel`, not the button. */
+	/** The levels this plan gives. Defaults to the levels whose `products` list `handle`. */
 	levels?: string[];
 	heldLabel?: string;
 	/** Button text for a member whose plan lapsed. */
 	renewLabel?: string;
+	/** Button text for a member this plan would move up. */
+	upgradeLabel?: string;
 }
 
 const config = await siteConfig(Astro.locals);
-const { handle, label = text(config, "Join"), title, levels = [], heldLabel = text(config, "You're on this plan."), renewLabel = text(config, "Renew") } = Astro.props;
+const { handle, label = text(config, "Join"), title, heldLabel = text(config, "You're on this plan."), renewLabel = text(config, "Renew"), upgradeLabel = text(config, "Upgrade") } = Astro.props;
+const all = config?.levels ?? [];
+const levels = Astro.props.levels?.length ? Astro.props.levels : all.filter((l) => l.products?.some((h) => h.toLowerCase() === handle.toLowerCase())).map((l) => l.slug);
 let p: Plan | null = null;
 if (config) {
 	try {
@@ -42,23 +51,34 @@ if (config) {
 const price = money(p?.price);
 const here = Astro.url.pathname + Astro.url.search;
 const v = levels.length > 0 ? await viewer(Astro) : null;
-const held = Boolean(v?.levels.some((l) => levels.includes(l)));
+const live = v?.member && v.member.status !== "disabled" ? v.member : null;
+const direct = live ? directLevels(live.tags, all) : [];
+const top = topLevels(v?.levels ?? [], all);
+const held = levels.some((l) => direct.includes(l));
+// Held only through a bigger level: name that one.
+const via = held ? undefined : top.find((t) => levels.some((l) => t !== l && closure(t, all).includes(l)));
+const viaName = via ? (all.find((l) => l.slug === via)?.name ?? via) : null;
+// The plan's level includes one the member holds: it moves them up.
+const upgrade = !held && !via && top.length > 0 && levels.some((l) => top.some((t) => t !== l && closure(l, all).includes(t)));
 // Lapsed: held one of these levels before. Offered their plan back, not "Join" as if new.
-const lapsed = Boolean(!held && v?.member && v.member.status !== "disabled" && membership(v.member, config?.levels).past.some((p) => levels.includes(p.slug)));
+const lapsed = Boolean(!held && !via && live && membership(live, all).past.some((p) => levels.includes(p.slug)));
+const state = held ? "held" : via ? "included" : upgrade ? "upgrade" : lapsed ? "renew" : "join";
 ---
 
 {p ? (
-	<div class:list={["redeemid-plan", { "is-held": held, "is-lapsed": lapsed }]} data-redeemid-plan={p.handle} data-redeemid-state={held ? "held" : lapsed ? "renew" : "join"}>
+	<div class:list={["redeemid-plan", { "is-held": held || Boolean(via), "is-lapsed": lapsed }]} data-redeemid-plan={p.handle} data-redeemid-state={state}>
 		<h2 class="redeemid-plan__title">{title ?? p.title}</h2>
 		{price && <p class="redeemid-plan__price">{price}</p>}
 		{p.description && <p class="redeemid-plan__description">{p.description}</p>}
 		{held ? (
 			<p class="redeemid-plan__held">{heldLabel}</p>
+		) : viaName ? (
+			<p class="redeemid-plan__held">{text(config, "Included in your {level} membership.", { level: viaName })}</p>
 		) : p.availableForSale ? (
 			<form method="post" action="/_emdash/api/auth/redeemid/buy">
 				<input type="hidden" name="plan" value={p.handle} />
 				<input type="hidden" name="return" value={here} />
-				<button type="submit">{lapsed ? renewLabel : label}</button>
+				<button type="submit">{upgrade ? upgradeLabel : lapsed ? renewLabel : label}</button>
 			</form>
 		) : (
 			<p class="redeemid-plan__unavailable">{text(config, "Not available right now.")}</p>

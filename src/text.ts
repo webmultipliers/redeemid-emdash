@@ -118,7 +118,7 @@ export const STRINGS = {
 		"I understand",
 		"Delete my data",
 	],
-	plan: ["Join", "Renew", "You're on this plan.", "Not available right now."],
+	plan: ["Join", "Renew", "Upgrade", "You're on this plan.", "Included in your {level} membership.", "Not available right now."],
 	preferences: ["Your preferences", "Save preferences", "Your preferences can't be loaded right now. Try again in a few minutes.", "Not set", "Yes", "No", "One per line."],
 	product: [
 		"Add to cart",

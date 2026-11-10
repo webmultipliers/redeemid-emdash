@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { resetAdminToken } from "../src/admin-api.js";
-import { eraseMember, exportMember, exportRequest, requestShopifyErasure } from "../src/privacy.js";
+import { eraseAll, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "../src/privacy.js";
 import { emptyMember } from "../src/storage.js";
 import { apply } from "../src/webhooks.js";
 import { memoryStores } from "./memory-store.js";
@@ -46,6 +46,27 @@ describe("privacy", () => {
 		await apply(m.stores, "shop/redact", { shop_domain: "s.myshopify.com" });
 		expect(m.members.size + m.meter.size).toBe(0);
 		expect([...m.requests.values()].map((r) => r.note ?? r.kind)).toEqual(["export", "erase", "Shop redacted: 1 members"]);
+	});
+});
+
+describe("shop/redact", () => {
+	it("erases a large shop in a few queries per hundred members", async () => {
+		const m = memoryStores();
+		for (let i = 0; i < 450; i++) {
+			m.members.set(String(i), { ...emptyMember(String(i)), userId: `u${i}` });
+			m.meter.set(`u${i}:2026-11`, { userId: `u${i}`, period: "2026-11", items: ["posts:1"] });
+		}
+		let calls = 0;
+		for (const c of [m.stores.members, m.stores.meter] as unknown as Array<Record<string, (...a: unknown[]) => unknown>>) {
+			for (const k of ["get", "delete", "query", "deleteMany"]) {
+				const f = c[k]!.bind(c);
+				c[k] = (...a: unknown[]) => (calls++, f(...a));
+			}
+		}
+		expect(await eraseAll(null, m.stores)).toBe(450);
+		expect(m.members.size + m.meter.size).toBe(0);
+		// 5 pages of members and meter (query + delete each) plus the two empty reads.
+		expect(calls).toBeLessThanOrEqual(22);
 	});
 });
 
