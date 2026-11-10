@@ -80,4 +80,17 @@ describe("mirror", () => {
 		expect(m.members.size).toBe(0);
 		expect(await apply(m.stores, "orders/create", { id: 1 })).toBe("ignored");
 	});
+
+	it("reports a deleted customer's levels as gone", async () => {
+		const m = memoryStores();
+		m.members.set("7", { ...emptyMember("7"), tags: ["gold"] });
+		const seen: Array<{ before: string[] | null; after: string[] }> = [];
+		await apply(m.stores, "customers/delete", { id: 7 }, (before, after) => {
+			seen.push({ before, after: after.tags });
+		});
+		expect(seen).toEqual([{ before: ["gold"], after: [] }]);
+		await apply(m.stores, "customers/delete", { id: 9 }, () => {
+			throw new Error("no write for an unknown customer");
+		});
+	});
 });

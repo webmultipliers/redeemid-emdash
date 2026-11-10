@@ -139,6 +139,21 @@ try {
 		const r = await visitor.go(path);
 		check(`visitors get no locked text from ${path}`, !r.text.includes("PRO-BODY") && !r.text.includes("MEMBER-BODY") && !r.text.includes("BREAK-BODY") && !r.text.includes("MS-INSIDE"), `${r.res.status} ${r.text.slice(0, 160)}`);
 	}
+	const searchItems = async (b, q) => {
+		const r = await b.go(`/_emdash/api/search?q=${encodeURIComponent(q)}`);
+		try {
+			return { status: r.res.status, items: JSON.parse(r.text).data?.items ?? [] };
+		} catch {
+			return { status: r.res.status, items: [] };
+		}
+	};
+	const bodyHit = await searchItems(visitor, "PRO-BODY");
+	check("site search doesn't tell visitors which locked post holds a word", bodyHit.status === 200 && !bodyHit.items.some((i) => i.slug === "pro-only"), JSON.stringify(bodyHit.items));
+	const titleHit = await searchItems(visitor, "Pro only");
+	const proTitle = titleHit.items.find((i) => i.slug === "pro-only");
+	check("site search still finds a locked post by its title, without a snippet", Boolean(proTitle) && !("snippet" in proTitle), JSON.stringify(titleHit.items));
+	const openHit = await searchItems(visitor, "starter");
+	check("site search keeps open posts and their snippets", openHit.items.some((i) => i.slug === "welcome" && typeof i.snippet === "string"), JSON.stringify(openHit.items));
 	const section = await visitor.go("/posts/members-section");
 	check("Members only: visitors read around the part but not inside it", section.text.includes("MS-BEFORE") && section.text.includes("MS-AFTER") && !section.text.includes("MS-INSIDE"));
 	check("Members only: the wall shows the level's text and the join link", section.text.includes("PRO-WALL") && section.text.includes('href="/join"'));
@@ -164,10 +179,14 @@ try {
 	check("token request used Basic auth and PKCE", shop.tokenRequests.at(-1)?.form.code_verifier?.length >= 43);
 	check("token request sent the site origin", shop.tokenRequests.at(-1)?.origin === SITE);
 	check("account box shows the member level", signIn.text.includes("redeemid-account__levels") && signIn.text.includes("Member"));
-	for (const path of ["/_emdash/api/content/posts", "/_emdash/api/content/posts/pro-only", "/_emdash/api/search?q=PRO-BODY"]) {
+	for (const path of ["/_emdash/api/content/posts", "/_emdash/api/content/posts/pro-only"]) {
 		const r = await member.go(path);
 		check(`member can't read ${path}`, r.res.status === 403 && !r.text.includes("PRO-BODY"), `${r.res.status} ${r.text.slice(0, 120)}`);
 	}
+	const memberSearch = await searchItems(member, "MEMBER-BODY");
+	check("site search works for members and finds what they can read", memberSearch.status === 200 && memberSearch.items.some((i) => i.slug === "members-only" && typeof i.snippet === "string"), `${memberSearch.status} ${JSON.stringify(memberSearch.items)}`);
+	const memberPro = await searchItems(member, "PRO-BODY");
+	check("site search hides a level's posts from members without it", memberPro.status === 200 && !memberPro.items.some((i) => i.slug === "pro-only"), JSON.stringify(memberPro.items));
 	const adminUi = await member.go("/_emdash/admin");
 	check("member is sent home from the admin", adminUi.url.pathname === "/", adminUi.url.href);
 	const staffApi = await admin.go("/_emdash/api/content/posts");
@@ -539,7 +558,7 @@ try {
 	});
 	check("api/cart answers 422 for a sold-out choice", jsonUnavailable.res.status === 422 && JSON.parse(jsonUnavailable.text).notice === "plan_unavailable");
 	const guestState = JSON.parse((await shopper.go("/_emdash/api/auth/redeemid/api/state")).text);
-	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.1.0", JSON.stringify(guestState));
+	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.2.0", JSON.stringify(guestState));
 	const guestCheckout = JSON.parse(
 		(await shopper.go("/_emdash/api/auth/redeemid/api/cart", { method: "POST", headers: { "content-type": "application/json", origin: SITE }, body: JSON.stringify({ action: "checkout" }) })).text,
 	);

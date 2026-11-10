@@ -1,6 +1,6 @@
 {
 	"name": "@redeemid/emdash",
-	"version": "0.0.21",
+	"version": "0.0.22",
 	"description": "Shopify customer accounts, member levels and paywalls for EmDash sites. Shopify runs commerce; EmDash runs content.",
 	"type": "module",
 	"license": "MIT",
@@ -13,6 +13,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./access": "./src/access.ts",
+		"./search": "./src/search-guard.ts",
 		"./guard.ts": "./src/guard.ts",
 		"./rate-limit-cloudflare.ts": "./src/rate-limit-cloudflare.ts",
 		"./templates.ts": "./src/templates.ts",

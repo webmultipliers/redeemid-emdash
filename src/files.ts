@@ -16,7 +16,7 @@
  * match case-insensitively. Access still comes only from Shopify tags.
  */
 
-import { readEntry, viewer, type AstroLike, type Terms } from "./access.js";
+import { readEntry, SIGNED_IN, viewer, type AstroLike, type Terms } from "./access.js";
 import { holdsItem, ITEM_BLOCK, PAYWALL_BLOCK, sections, soldItem, splitAtPaywall } from "./blocks-names.js";
 import type { FileRule, RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
@@ -78,18 +78,22 @@ async function entriesUsing(db: unknown, mediaId: string): Promise<Array<{ colle
 		.filter((e) => !seen.has(`${e.collection}:${e.id}`) && Boolean(seen.add(`${e.collection}:${e.id}`)));
 }
 
-/** The levels picked on an entry body's breaks and members-only parts: readers must hold one from each. */
+/**
+ * The levels picked on an entry body's breaks and members-only parts: readers
+ * must hold one from each. A members-only part with none picked needs a
+ * signed-in reader (on top of the entry's rule, which the caller checks).
+ */
 export function bodyClauses(body: unknown): string[][] {
 	const blocks = Array.isArray(body) ? body : [];
 	const out: string[][] = [];
 	const split = splitAtPaywall(blocks);
 	if (split.paywall && split.levels.length) out.push(split.levels);
-	for (const s of sections(blocks)) if (s.members && s.levels.length) out.push(s.levels);
+	for (const s of sections(blocks)) if (s.members) out.push(s.levels.length ? s.levels : [SIGNED_IN]);
 	return out;
 }
 
 /** May this reader read the whole entry: its rule, drip, and every part with levels picked? */
-async function readsWhole(astro: AstroLike, entry: { collection: string; id: string }): Promise<boolean> {
+export async function readsWhole(astro: AstroLike, entry: { collection: string; id: string }): Promise<boolean> {
 	const { getEmDashEntry } = await import("emdash");
 	const result = (await getEmDashEntry(entry.collection, entry.id)) as { entry?: { data?: Record<string, unknown> } | null } | null;
 	const data = result?.entry?.data;
@@ -104,7 +108,7 @@ async function readsWhole(astro: AstroLike, entry: { collection: string; id: str
 	const verdict = await readEntry(astro, { collection: entry.collection, terms, ruleId: entry.id });
 	if (!verdict.allowed) return false;
 	const clauses = bodyClauses(body);
-	return clauses.every((clause) => clause.some((l) => verdict.viewer.levels.includes(l) || (l === "signed-in" && verdict.viewer.signedIn)));
+	return clauses.every((clause) => clause.some((l) => verdict.viewer.levels.includes(l) || (l === SIGNED_IN && verdict.viewer.signedIn)));
 }
 
 export function ruleFor(config: RedeemIDConfig | null, folder: string | null): FileRule | null {

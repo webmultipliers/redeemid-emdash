@@ -72,7 +72,7 @@ export async function explainAccess(config: RedeemIDConfig, s: Stores, input: Ex
 	const required: Requirement = applyEntryRule(requirement(config.rules, collection, terms, { combine: config.combine, tree }), own);
 	const owned = !disabled && holdsItem(item, tags);
 	const canReadRule = owned || required === null || (signedIn && !disabled && passes(held, required));
-	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
+	const name = (slug: string) => (slug === "signed-in" ? "Signed in" : (levels.find((l) => l.slug === slug)?.name ?? slug));
 	const partResults = parts.map((clause) => ({
 		needs: clause.map(name),
 		canRead: owned || (signedIn && !disabled && (clause.includes("signed-in") || clause.some((l) => held.includes(l)))),

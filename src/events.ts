@@ -7,7 +7,7 @@
  * Headers: X-RedeemID-Event (the name), X-RedeemID-Delivery (a fresh id) and
  * X-RedeemID-Signature: sha256=<hex HMAC of the raw body>. Events:
  * member.signed_in, member.levels_changed, meter.used, meter.exhausted,
- * preferences.saved.
+ * preferences.saved, member.erased.
  * Sending never blocks or breaks the page: events go out after the response
  * (waitUntil on Workers), are tried three times, and one that fails every
  * try is kept under App events → Failed events, where staff can send it

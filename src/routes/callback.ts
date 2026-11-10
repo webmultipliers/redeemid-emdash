@@ -139,7 +139,8 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 		await emit(config, "member.signed_in", { customerId: who.customerId, levels, first: !member.linkedAt, refresh: Boolean(flow.refresh) });
 		await levelChange(config, found ? found.tags : null, { customerId: who.customerId, tags: who.tags, status: member.status }, "sign-in");
 
-		session.regenerate?.();
+		// A new session id for the signed-in session (it keeps the data so far).
+		await session.regenerate?.();
 		session.set("user", { id: user.id });
 		session.set(SESSION_ID_TOKEN, tokens.idToken);
 		// Kept only for signed-in checkout, and sealed (see token-vault.ts).

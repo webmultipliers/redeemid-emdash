@@ -62,7 +62,8 @@ type TextNode = { _type?: unknown; children?: Array<{ text?: unknown }> };
 /**
  * The text blocks within the first `words` words of a body:
  * a block is never cut in half, so a block that would pass the count ends the
- * teaser. Images and custom blocks are left out. 0 gives nothing.
+ * teaser. Images and custom blocks are left out. A "Members only" part ends
+ * it too: its text is never teaser. 0 gives nothing.
  */
 export function teaser<T>(value: T[] | null | undefined, words: number): T[] {
 	if (!Array.isArray(value) || !(words > 0)) return [];
@@ -70,6 +71,7 @@ export function teaser<T>(value: T[] | null | undefined, words: number): T[] {
 	let count = 0;
 	for (const b of value) {
 		const node = b as TextNode;
+		if (node?._type === MEMBERS_BLOCK) break;
 		if (node?._type !== "block") continue;
 		const text = (node.children ?? []).map((c) => (typeof c.text === "string" ? c.text : "")).join("");
 		count += text.split(/\s+/).filter(Boolean).length;
