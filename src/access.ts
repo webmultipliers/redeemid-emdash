@@ -15,6 +15,9 @@ import { UNAVAILABLE, type EntryRule } from "./settings.js";
 import { siteConfig } from "./site-config.js";
 import { memberForUser, stores, type MemberRecord, type MeterRecord } from "./storage.js";
 
+/** The site's config for a request: the code's config with the admin's saved settings laid over it. */
+export { siteConfig };
+
 /** The parts of Astro's global that access checks read. */
 export interface AstroLike {
 	locals: unknown;

@@ -1,6 +1,6 @@
 # Developer API
 
-What site code, other plugins and AI agents can rely on in `@redeemid/emdash`. API version **1.0.0** (`API_VERSION` in `@redeemid/emdash/contract`, also in `api/state` and `window.redeemid.apiVersion`).
+What site code, other plugins and AI agents can rely on in `@redeemid/emdash`. API version **1.1.0** (`API_VERSION` in `@redeemid/emdash/contract`, also in `api/state` and `window.redeemid.apiVersion`).
 
 Everything on this page is stable: it changes only with a changelog entry and an API version bump (minor when something is added, major when something changes or goes). Anything not listed is internal, even when a module exports it. `src/contract.ts` is the same list as code, and a test fails when the code, that list and this page disagree.
 
@@ -17,7 +17,7 @@ Import these in Astro pages, components and endpoints.
 | Import | Stable exports |
 | --- | --- |
 | `@redeemid/emdash` | `redeemid`, `redeemidGuard`, `redeemidPlugin` |
-| `@redeemid/emdash/access` | `viewer`, `canRead`, `readEntry`, `entryRequirement`, `meterUsage`, `membership`, `levelsFor`, `signInUrl`, `signOutUrl`, `accountUrl`, `cartUrl`, `refreshUrl`, `safeReturn` |
+| `@redeemid/emdash/access` | `siteConfig`, `viewer`, `canRead`, `readEntry`, `entryRequirement`, `meterUsage`, `membership`, `levelsFor`, `signInUrl`, `signOutUrl`, `accountUrl`, `cartUrl`, `refreshUrl`, `safeReturn` |
 | `@redeemid/emdash/features` | `hasFeature`, `viewerFeatures`, `featuresFor` |
 | `@redeemid/emdash/preferences` | `readPreferences`, `savePreferences`, `preferenceFields` |
 | `@redeemid/emdash/storefront` | `plan`, `product`, `collection`, `money`, `realOptions`, `variantFor`, `storeContext`, `cartDetails`, `addToCart`, `updateLines`, `removeLines`, `setDiscountCodes` |
@@ -25,16 +25,19 @@ Import these in Astro pages, components and endpoints.
 | `@redeemid/emdash/events` | `signBody` |
 | `@redeemid/emdash/text` | `STRINGS`, `text`, `textParts` |
 
-The site's config for a request comes from `siteConfig(Astro.locals)` (code config with the admin's saved settings laid over it). A few examples:
+Functions that take a `config` want the site's config for the request: `await siteConfig(Astro.locals)`, which is the code's config with the admin's saved settings laid over it. Passing the object from `astro.config.mjs` instead skips what staff saved on the Access page. A few examples:
 
 ```astro
 ---
-import { canRead, viewer } from "@redeemid/emdash/access";
+import { canRead, siteConfig } from "@redeemid/emdash/access";
 import { hasFeature } from "@redeemid/emdash/features";
 import { searchProducts } from "@redeemid/emdash/catalog";
+import { storeContext } from "@redeemid/emdash/storefront";
 
 const verdict = await canRead(Astro, { collection: "posts", terms: post.data.terms, id: post.id });
 const adFree = await hasFeature(Astro, "ad-free");
+const config = await siteConfig(Astro.locals);
+const totes = config && (await searchProducts(config, "tote", {}, { context: storeContext(config, Astro.request) }));
 ---
 ```
 
@@ -47,7 +50,7 @@ Under `/_emdash/api/auth/redeemid/`. Same-origin only: EmDash checks `Origin` on
 - `api/state` (GET): the visitor's own state.
 
   ```json
-  { "apiVersion": "1.0.0", "version": "0.0.20", "signedIn": true, "linked": true,
+  { "apiVersion": "1.1.0", "version": "0.0.21", "signedIn": true, "linked": true,
     "levels": ["gold"], "features": ["ad-free"], "cart": { "count": 2 },
     "meter": { "used": 1, "limit": 3, "period": "month" } }
   ```
@@ -57,16 +60,16 @@ Under `/_emdash/api/auth/redeemid/`. Same-origin only: EmDash checks `Origin` on
   - `update`: `line`, `quantity` (0 removes); `remove`: `line`; `discount`: `code` (`""` clears);
   - `checkout`: answers `{ checkoutUrl }`, signed in for members.
 
-  Other actions answer `{ notice, cart, added? }`. An add Shopify can't fill answers 422 with `notice: "plan_unavailable"`. Over the rate limit (with `redeemidGuard({ rateLimit: true })`) POST answers 429.
+  Other actions answer `{ notice, cart, added? }`. An add Shopify can't fill answers 422 with `notice: "plan_unavailable"`. Over the rate limit (with `redeemidGuard({ rateLimit: true })`) POST answers 429 with `{ "error": "too_many_requests" }`.
 - `api/search` (GET): public catalog data, `Cache-Control: public, max-age=60` (private when `market.country` is `"visitor"`).
   - `?q=tote&suggest=1[&limit=6]`: `{ queries, products, collections }`, for search-as-you-type;
   - `?q=tote`: `{ products, filters, pageInfo, total }`;
   - `?collection=shop`: the collection's page, `{ handle, title, description, products, filters, pageInfo }`.
 
-  Both take `first` (1 to 50), `sort`, `after` or `before` (cursors from `pageInfo`), `filter` (repeatable: a filter value's `input` exactly as Shopify gave it), `price_min` and `price_max`. Sorts are `relevance`, `best-selling`, `newest`, `price-asc`, `price-desc`, `title-asc`, `title-desc` (search: relevance and price only).
+  Both take `first` (1 to 50), `sort`, `after` or `before` (cursors from `pageInfo`), `filter` (repeatable: a filter value's `input` exactly as Shopify gave it), `price_min` and `price_max`. Sorts are `relevance`, `best-selling`, `newest`, `price-asc`, `price-desc`, `title-asc`, `title-desc` (search: relevance and price only). Over the rate limit a search answers 429, as `api/cart` does.
 - `preferences` (GET, POST) and `privacy` (GET export, POST erase): see the README.
 
-Form routes, which redirect back with `?redeemid_notice=<code>`: `login`, `callback`, `logout`, `webhook`, `buy`, `cart`, `cart-edit`, `account`.
+Form routes, which redirect back with `?redeemid_notice=<code>` when something needs saying: `login`, `callback`, `logout`, `buy`, `cart`, `cart-edit`, `account`. `webhook` is for Shopify only and answers with a status code.
 
 ## Browser client
 
@@ -114,13 +117,13 @@ Signed outbound webhooks to config `events.url` (see the README): `member.signed
 
 ## MCP and the command line
 
-RedeemID's tools join EmDash's MCP server once staff turn them on for RedeemID under Plugins. They need a staff token (permission `users:read`). Always offered, read-only:
+RedeemID's tools join EmDash's MCP server once staff turn them on for RedeemID under Plugins. They need an administrator's API token (the routes ask for `users:read`, which only Admins hold) with the `mcp:tools` or `mcp:tools:redeemid` scope. Always offered, read-only:
 
 - `explain_access`, `list_levels`, `get_rules`, `get_member`, `site_health`, `level_changes`
 - `find_products`, `get_product`, `get_collection`: the Shopify catalog the site sells, so an agent writing content can find the right product and collection handles.
 
 Only with config `agents: { actions: true }`: `resync_member`, `resync_batch`, `edit_member_tags`.
 
-The `redeemid-emdash` command line calls the same routes (`npx redeemid-emdash --help`).
+The `redeemid-emdash` command line calls the same routes (`npx -p @redeemid/emdash redeemid-emdash --help`).
 
 For shoppers' own agents (browsing products, building a cart, checking out), point them at Shopify's Storefront MCP server for the store, `https://<store domain>/api/mcp`. It runs on Shopify, where checkout and prices already live, so RedeemID doesn't repeat it.

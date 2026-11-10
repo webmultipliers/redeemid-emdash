@@ -2,7 +2,7 @@
 
 RedeemID never grants access itself. A member's levels come from tags on their Shopify customer, and something in Shopify has to put those tags on and take them off. That is usually [Shopify Flow](https://help.shopify.com/manual/shopify-flow), which comes free with every Shopify plan, or a subscription app.
 
-When a tag changes, Shopify sends `customers/update` and RedeemID reads the customer again. Access follows within seconds, and nobody has to sign in again.
+When a tag changes, Shopify sends a `customer.tags_added` or `customer.tags_removed` webhook. With the Admin API app's client ID set, RedeemID reads the customer's tags as they are now; without it, it applies the change the webhook carries. Access follows within seconds, and nobody has to sign in again.
 
 Each recipe below is one Flow workflow. In Flow, open **Create workflow**, pick the trigger, add the condition, then add the action. The trigger and action names here are the ones Flow shows in English. The field paths in conditions can read slightly differently in Flow's picker. Subscription triggers come from your subscription app, so their names depend on the app.
 
@@ -28,7 +28,7 @@ A partial refund of something else in the same order matches nothing, so the tag
 
 ## 3. A cancelled subscription removes it
 
-Subscription apps that work with Flow add their own triggers, such as "Subscription contract cancelled" or "Subscription contract status updated". Most subscription apps add triggers like these, each with its own names. Check your app's Flow listing.
+Subscription apps that work with Flow add their own triggers, such as "Subscription contract cancelled" or "Subscription contract status updated". The names vary by app, so check your app's Flow listing.
 
 - **Trigger:** your app's cancel trigger. If the app only offers a status-changed trigger, add the condition status is `CANCELLED`, and treat `EXPIRED` the same way.
 - **Action:** Remove customer tags, with `member`.
@@ -63,7 +63,7 @@ After a purchase, **Refresh membership** on the member card reads their tags aga
 
 ## Check a recipe
 
-1. Under **Plugins → RedeemID → Webhooks**, make sure `customers/update` is registered. The Setup page does this for you.
+1. Under **Plugins → RedeemID → Webhooks → Setup**, make sure `customer.tags_added` and `customer.tags_removed` show as Registered. The Setup page registers them for you.
 2. Buy the product with a test customer, using Shopify's Bogus Gateway or a 100% discount code.
 3. In Flow, open the workflow's **Recent runs**. The run should show the tag added.
 4. Open **Plugins → RedeemID → Members**, then the customer. The tag and level should be there.
