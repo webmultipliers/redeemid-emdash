@@ -15,6 +15,7 @@ export const PAGES = [
 	{ path: "/events", label: "App events", icon: "list" },
 	{ path: "/reports", label: "Reports", icon: "chart" },
 	{ path: "/status", label: "Status", icon: "pulse" },
+	{ path: "/setup", label: "Setup", icon: "settings" },
 	{ path: "/test", label: "Access test", icon: "search" },
 	{ path: "/privacy", label: "Privacy", icon: "lock" },
 ];
