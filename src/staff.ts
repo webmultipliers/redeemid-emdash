@@ -25,6 +25,13 @@ type Blocks = { blocks: unknown[]; toast?: { message: string; type: "success" | 
 
 const date = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "—");
 
+/** Shopify's marketing state in words: SUBSCRIBED → "Subscribed". */
+function consentLabel(state: string | null | undefined): string {
+	if (!state) return "—";
+	const t = state.toLowerCase().replace(/_/g, " ");
+	return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Blocks["toast"]): Blocks {
 	const levels = config.levels ?? [];
 	const { current, past } = membership(m, levels);
@@ -46,6 +53,12 @@ export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Bl
 					{ label: "Levels", value: current.map((l) => `${l.name} (since ${date(l.since)})`).join(", ") || "—" },
 					{ label: "Levels before", value: past.map((l) => `${l.name} (${date(l.from)} to ${date(l.to)})`).join(", ") || "—" },
 					{ label: "Features", value: featureNames.join(", ") || "—" },
+					{ label: "Member since (Shopify)", value: m.dates?.since ?? "—" },
+					{ label: m.dates?.ends ? "Ends on (Shopify)" : "Renews on (Shopify)", value: m.dates?.ends ?? m.dates?.renews ?? "—" },
+					{ label: "Gift until (Shopify)", value: m.dates?.gift ?? "—" },
+					{ label: "Email verified", value: m.emailVerified === undefined ? "—" : m.emailVerified ? "Yes" : "No" },
+					{ label: "Email marketing", value: consentLabel(m.emailMarketing) },
+					{ label: "SMS marketing", value: consentLabel(m.smsMarketing) },
 					{ label: "Last synced", value: `${m.syncedAt} (${m.source || "unknown"})` },
 				],
 			},

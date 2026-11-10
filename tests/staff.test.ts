@@ -102,7 +102,7 @@ describe("events", () => {
 });
 
 describe("Admin API", () => {
-	const customer = { id: "gid://shopify/Customer/7", firstName: "Mia", lastName: null, tags: ["Pro", "member"], updatedAt: "2026-11-01T00:00:00Z", defaultEmailAddress: { emailAddress: "Mia@Example.test" } };
+	const customer = { id: "gid://shopify/Customer/7", firstName: "Mia", lastName: null, tags: ["Pro", "member"], updatedAt: "2026-11-01T00:00:00Z", defaultEmailAddress: { emailAddress: "Mia@Example.test", marketingState: "SUBSCRIBED" }, renews: { value: "2027-01-15" }, gift: { value: "2026-12-31T00:00:00Z" }, ends: { value: "not a date" } };
 	function shop() {
 		return fakeFetch((url, body) => {
 			if (url.endsWith("/admin/oauth/access_token")) {
@@ -124,7 +124,19 @@ describe("Admin API", () => {
 		const { calls, fetcher } = shop();
 		const found = await customers(config, ["7", "8"], fetcher);
 		await customers(config, ["7"], fetcher);
-		expect(found).toEqual([{ customerId: "7", email: "mia@example.test", firstName: "Mia", lastName: null, tags: ["Pro", "member"], updatedAt: Date.parse("2026-11-01T00:00:00Z") }]);
+		expect(found).toEqual([
+			{
+				customerId: "7",
+				email: "mia@example.test",
+				firstName: "Mia",
+				lastName: null,
+				tags: ["Pro", "member"],
+				updatedAt: Date.parse("2026-11-01T00:00:00Z"),
+				emailMarketing: "SUBSCRIBED",
+				dates: { since: null, renews: "2027-01-15", ends: null, gift: "2026-12-31" },
+			},
+		]);
+		expect(String(calls[1]!.init.body)).toContain('metafield(namespace: \\"membership\\", key: \\"renews_on\\")');
 		expect(calls.filter((c) => c.url.endsWith("/access_token"))).toHaveLength(1);
 		expect((calls[1]!.init.headers as Record<string, string>)["X-Shopify-Access-Token"]).toBe("tok");
 	});

@@ -12,9 +12,11 @@ import type { APIRoute } from "astro";
 import { env, ENV } from "../config.js";
 import { siteConfig } from "../site-config.js";
 import { levelChange } from "../events.js";
-import { stores } from "../storage.js";
+import { stores, type Stores } from "../storage.js";
+import { adminConfigured, resync } from "../admin-api.js";
+import type { RedeemIDConfig } from "../config.js";
 import { record } from "../log.js";
-import { apply, customerOf, kindOf, verifyHmac } from "../webhooks.js";
+import { apply, customerOf, kindOf, verifyHmac, type Outcome } from "../webhooks.js";
 
 export const prerender = false;
 
@@ -78,7 +80,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	try {
 		const config = await siteConfig(locals);
-		const outcome = await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic), config);
+		const outcome = (await currentTags(config, s, topic, customerId)) ?? (await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic), config));
 		if (delivery) await s.deliveries.put(delivery, { topic, receivedAt, outcome, customerId }).catch(() => undefined);
 		await record({ event: "webhook.received", label: topic, status: outcome, origin: "webhook", customerId, ms: Date.now() - started });
 		return new Response(outcome, { status: 200 });
@@ -89,3 +91,24 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		return new Response("Retry", { status: 500 });
 	}
 };
+
+/**
+ * Tag webhooks carry only the change, and can arrive out of order. With the
+ * Admin API app set up, read the customer's tags as they are now instead of
+ * applying the change. Null (apply the change) without the app, or when the
+ * read fails.
+ */
+async function currentTags(config: RedeemIDConfig | null, s: Stores, topic: string, customerId: string | null): Promise<Outcome | null> {
+	if (!config || !customerId || kindOf(topic) !== "tags" || !adminConfigured()) return null;
+	try {
+		const before = await s.members.get(customerId);
+		const { updated } = await resync(config, s, [customerId], topic);
+		const m = updated[0];
+		if (!m) return "skipped";
+		await levelChange(config, before?.tags ?? null, m, topic);
+		return "processed";
+	} catch (e) {
+		console.error("[redeemid] tag webhook resync failed, applying the change:", (e as Error).message);
+		return null;
+	}
+}

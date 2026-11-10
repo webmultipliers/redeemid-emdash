@@ -36,7 +36,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 **For members**
 - Sign in, Account (orders, profile and addresses on the store) and Sign out, which ends the store session too. Members never see the word "Shopify".
-- A member card with their levels and when each started, past levels, the meter, and Refresh membership to read their tags again after a purchase.
+- A member card with their levels and when each started, when the membership renews or ends and any gift membership (from Shopify), past levels, the meter, and Refresh membership to read their tags again after a purchase.
 - Preferences they can change, such as topics or a newsletter choice, saved on the Shopify customer.
 - Download or delete what the site keeps about them.
 
@@ -188,9 +188,9 @@ Pass `id` on the entry's own page. It lets the meter count the read, and a locke
 
 **`<Notices />`** goes near the top of the layout. It shows the message for a `?redeemid_notice=` code (see [notices](#notices)) and nothing otherwise.
 
-**`<MemberCard />`** is for an account page: levels with start dates, past levels, the meter, and links to the store account, Refresh membership and Sign out. Refresh membership sends a member to the store with no sign-in form; one still signed in there comes straight back with their tags read again. Add `<Preferences />` and `<YourData />` beside it.
+**`<MemberCard />`** is for an account page: levels with start dates, the renewal or end date and any gift membership that Shopify keeps (see [membership dates](#membership-dates)), past levels, the meter, and links to the store account, Refresh membership and Sign out. Refresh membership sends a member to the store with no sign-in form; one still signed in there comes straight back with their tags read again. Add `<Preferences />` and `<YourData />` beside it.
 
-**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). With `levels`, members who already hold one see "You're on this plan." in place of the button.
+**`<Plan>`** sells a membership: a Shopify product's title and price with a button that starts checkout (members check out with their email). With `levels`, members who already hold one see "You're on this plan." in place of the button, and a member who held one before (Shopify has since removed its tag) gets **Renew** (`renewLabel`) instead of `label`. The wall does the same: a lapsed member reads "Your Pro membership has ended." with **Renew Pro** and **Already renewed? Refresh**, not the newcomer's join link.
 
 ```astro
 <Plan handle="gold-membership" label="Join Gold" levels={["gold"]}>
@@ -383,7 +383,7 @@ Limits: only EmDash's file route is checked, so don't give the storage bucket a 
 
 ### Privacy requests
 
-What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, first sign-in, last sync) and their meter. Preference answers stay on the Shopify customer, and webhook deliveries keep only a topic and a time. Erasing on the site never erases Shopify data; it can only ask Shopify to.
+What RedeemID keeps about a member: the synced record (Shopify customer ID, email, name, tags and when each started, account status, first sign-in, last sync, whether the email was verified, email and SMS marketing consent, and the membership dates) and their meter. Preference answers stay on the Shopify customer, and webhook deliveries keep only a topic and a time. Erasing on the site never erases Shopify data; it can only ask Shopify to.
 
 | Started by | What happens |
 | --- | --- |
@@ -404,7 +404,20 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API toke
 - **Webhook subscriptions.** Webhooks → Setup lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
 - **Access test.** A collection, an entry, terms and a reader's tags in; the verdict out.
 
-Resync updates email, name and tags. Enabled or disabled status comes only from the enable and disable webhooks.
+Resync updates email, name, tags, email marketing consent and the membership dates. Enabled or disabled status comes only from the enable and disable webhooks. With the app set up, two more things read the customer from the Admin API as it is now: every sign-in (and Refresh membership), and every `customer.tags_added` or `customer.tags_removed` webhook. Those topics carry only the change and can arrive out of order, so reading the current tags keeps the mirror right. Without the app, or when the read fails, the webhook's change is applied as sent.
+
+#### Membership dates
+
+A subscription app or Shopify Flow can keep these customer metafields, as dates (`YYYY-MM-DD`):
+
+| Metafield | Shown |
+| --- | --- |
+| `membership.member_since` | As the start date on the member card, in place of when the tag arrived |
+| `membership.renews_on` | "Renews on ..." |
+| `membership.ends_on` | "Ends on ...", for a pass that doesn't renew |
+| `membership.gift_until` | "Gift membership until ...", while it's in the future |
+
+RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they need the Admin API app. They're for display only: access still comes from tags alone, and nothing on the site ends access on these dates. Time-boxed access is a Flow that waits and removes the tag.
 
 ### Webhooks, app events and reports
 
@@ -553,12 +566,12 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `LockedPanel` | `reason`, `required`, … | The wall on its own |
 | `AccessBadge` | `collection`, `terms`, `content`, `id`, `free`, `class` | What an entry needs, with a lock for readers kept out |
 | `Account` | | Sign in, or the member's name, levels, Account and Sign out |
-| `MemberCard` | `title` | Levels, past levels, meter, features, Refresh membership |
+| `MemberCard` | `title` | Levels, renewal, end and gift dates, past levels, meter, features, Refresh membership |
 | `Preferences` | `title`, `heading`, `label`; slot `signed-out` | The member's preference form |
 | `YourData` | `title`, `heading` | Download or delete my data |
 | `Feature` | `slug`; slot `else` | Shows its content to members holding the feature |
 | `Notices` | `messages` | The message for `?redeemid_notice=` |
-| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel` | A product with a buy button |
+| `Plan` | `handle`, `label`, `title`, `levels`, `heldLabel`, `renewLabel` | A product with a buy button |
 | `Product` | `handle`, `heading`, `compact`, `html`, `schema`, `addLabel`, `buyLabel` | A product page |
 | `Collection` | `handle`, `limit`, `productHref`, `showTitle`, `browse`, `quickAdd` | A grid of products, with filters and pages |
 | `ProductSearch` | `productHref`, `limit`, `boxOnly`, `action`, `label`, `quickAdd` | Product search |
