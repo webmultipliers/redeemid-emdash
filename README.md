@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.19, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
+**Status: 0.0.20, early.** Runs on Node and Cloudflare Workers. Every feature below is covered by unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store. Expect changes before 1.0.
 
 ## Contents
 
@@ -30,7 +30,7 @@ Readers sign in with the store's own customer account. Their Shopify customer ta
 4. **Rules.** You say which content types or terms need which levels, in the admin (Plugins → RedeemID → Access) or in code. Each entry can have its own rule in the editor's Access panel, and editors can drop a Paywall break or a Members only block into any body.
 5. **Render.** Templates render bodies with `<Content>`. Readers who pass see everything. Everyone else gets a teaser and the wall, and the locked part never reaches the page.
 
-Selling a membership is ordinary Shopify: a product, a checkout, and a Flow workflow that tags the customer when the order is paid. RedeemID shows the product and starts checkout, and access follows the tag.
+Selling a membership is ordinary Shopify: a product, a checkout, and a Flow workflow that tags the customer when the order is paid. RedeemID shows the product and starts checkout, and access follows the tag. [docs/shopify-flow.md](docs/shopify-flow.md) has the workflows: paid order, refund, cancelled subscription, and a pass that ends.
 
 ## What you get
 
@@ -418,7 +418,7 @@ A subscription app or Shopify Flow can keep these customer metafields, as dates 
 | `membership.ends_on` | "Ends on ...", for a pass that doesn't renew |
 | `membership.gift_until` | "Gift membership until ...", while it's in the future |
 
-RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they need the Admin API app. They're for display only: access still comes from tags alone, and nothing on the site ends access on these dates. Time-boxed access is a Flow that waits and removes the tag.
+RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they need the Admin API app. They're for display only: access still comes from tags alone, and nothing on the site ends access on these dates. Time-boxed access is a Flow that waits and removes the tag (see [Shopify Flow recipes](docs/shopify-flow.md)).
 
 ### Webhooks, app events and reports
 
