@@ -88,13 +88,15 @@ export async function timed<T>(event: string, label: string, run: () => Promise<
 	}
 }
 
+type Where<T> = NonNullable<NonNullable<Parameters<StorageCollection<T>["query"]>[0]>["where"]>;
+
 /** Delete entries (and other dated records) older than `days`, a page at a time. */
-export async function prune<T>(store: StorageCollection<T>, field: string, days = LOG_DAYS): Promise<number> {
+export async function prune<T>(store: StorageCollection<T>, field: string, days = LOG_DAYS, where: Record<string, string | number | boolean> = {}): Promise<number> {
 	const before = new Date(Date.now() - days * 86_400_000).toISOString();
 	let gone = 0;
 	// A few pages a run: enough to keep up with a busy site, few enough queries for one request.
 	for (let page = 0; page < PRUNE_PAGES; page++) {
-		const { items } = await store.query({ where: { [field]: { lt: before } }, limit: 100 });
+		const { items } = await store.query({ where: { ...where, [field]: { lt: before } } as Where<T>, limit: 100 });
 		if (items.length === 0) break;
 		gone += await store.deleteMany(items.map((i) => i.id));
 		if (items.length < 100) break;

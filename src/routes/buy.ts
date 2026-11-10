@@ -16,7 +16,7 @@ import { memberForUser, stores } from "../storage.js";
 import { saveCart, readCart } from "../cart.js";
 import { checkoutFor } from "../checkout.js";
 import { addToCart, plan, storeContext } from "../storefront.js";
-import { fail } from "./shared.js";
+import { fail, sessionUser } from "./shared.js";
 
 export const prerender = false;
 
@@ -33,8 +33,8 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 		const p = await plan(config, handle);
 		if (!p?.variantId || !p.availableForSale) return fail(redirect, returnTo, "plan_unavailable");
 		// Provider routes are public, so read the member from the session.
-		const user = (await session?.get("user")) as { id?: string } | undefined;
-		const member = user?.id && emdash?.db ? await memberForUser(stores(emdash.db), user.id) : null;
+		const user = await sessionUser(session, emdash?.db);
+		const member = user && emdash?.db ? await memberForUser(stores(emdash.db), user.id) : null;
 		const current = await readCart(session);
 		const cart = await addToCart(
 			config,

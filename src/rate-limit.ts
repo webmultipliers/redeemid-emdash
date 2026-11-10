@@ -1,6 +1,6 @@
 /**
  * Optional per-visitor rate limits on the routes that start work at Shopify:
- * Sign in, Buy and cart changes. On Cloudflare Workers they use a Rate
+ * Sign in, Buy, cart changes and catalog search. On Cloudflare Workers they use a Rate
  * Limiting binding named REDEEMID_RATE_LIMIT (see rate-limit-cloudflare.ts);
  * nothing is limited without one.
  */
@@ -18,6 +18,8 @@ const LIMITED: Record<string, string> = {
 	[`POST ${BASE}/buy`]: "buy",
 	[`POST ${BASE}/cart-edit`]: "cart",
 	[`POST ${BASE}/api/cart`]: "cart",
+	// Each new query is a Storefront API call.
+	[`GET ${BASE}/api/search`]: "search",
 };
 
 /** Which limited action a request is, or null. */

@@ -112,6 +112,14 @@ describe("readEntry", () => {
 		expect([...store.meter.values()][0]?.items).toEqual(["posts:1", "posts:2"]);
 	});
 
+	it("never opens more than the limit to parallel requests", async () => {
+		store.members.set("1", { ...emptyMember("1"), userId: "u1", tags: ["member"] });
+		const read = (id: string) => readEntry(astro("u1"), { collection: "posts", terms: { category: ["reports"] }, id });
+		const verdicts = await Promise.all(["1", "2", "3", "4"].map(read));
+		expect(verdicts.filter((v) => v.allowed)).toHaveLength(2);
+		expect([...store.meter.values()][0]?.items).toHaveLength(2);
+	});
+
 	it("never meters guests, meter: false rules, other collections, drip, or entries without an id", async () => {
 		store.members.set("1", { ...emptyMember("1"), userId: "u1", tags: ["member"], tagsSince: { member: days(1) } });
 		expect((await readEntry(astro(), { collection: "posts", terms: { category: ["reports"] }, id: "1" })).reason).toBe("sign_in");
