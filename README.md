@@ -54,7 +54,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 - App events: webhooks, sign-ins and refusals, Admin API calls, staff actions and settings saves, filterable, kept 30 days.
 - Reports: members by level, who joined and left by week, sign-ins and metered reads.
 - Setup page: connecting a store step by step, with the exact values to paste into Shopify, the command for each secret, a Register button for the webhooks and a form for the first level. Each step checks the site as it is.
-- Status page: every setting, store discovery, levels and rules.
+- Status page: every setting, store discovery, levels and rules, and any template that would show a locked body in full.
 - Access test, Privacy page, and a dashboard widget.
 
 **For developers**
@@ -148,7 +148,7 @@ import Notices from "@redeemid/emdash/components/Notices.astro";
 <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title} />
 ```
 
-Use `<Content>` in place of `<PortableText>` for every body that may be locked. Plain `<PortableText>` shows everything.
+Use `<Content>` in place of `<PortableText>` for every body that may be locked. Plain `<PortableText>` shows everything. The Status page checks: `redeemidGuard()` scans the site's `.astro` files at build time, and Status names any template that renders a gated collection's body with EmDash's `<PortableText>`, with its line. A template whose collection it can't see (a component given the body as a prop) is listed to check while any rule is on.
 
 ### 6. Check it
 
@@ -642,7 +642,7 @@ Reword one with `messages={{ cart_empty: "…" }}`, or for every page with `text
 - Shopify is the only source of entitlements. Nothing on the site grants access.
 - Levels read the mirrored tags as they are, however old. They change only when Shopify sends new ones.
 - Enabled or disabled status comes only from the `customers/enable` and `customers/disable` webhooks.
-- Locked content never reaches the page, the content API, search, feeds or the sitemap for readers kept out. Members are refused EmDash's own APIs except what they need.
+- Locked content never reaches the content API, search, feeds or the sitemap for readers kept out, nor a page that renders bodies with `<Content>` (the Status page flags templates that use `<PortableText>` for a gated collection). The end-to-end test checks each of these. Members are refused EmDash's own APIs except what they need.
 - Staff accounts (any EmDash role above Subscriber) can't sign in through the store, even with a matching email. When that happens, the store session ends too, so the next sign-in attempt starts fresh.
 - Customers can't create the first (admin) account on a new site.
 - Webhooks are checked against the app's signature before anything changes.
