@@ -53,6 +53,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 - Webhooks page: what Shopify sent and what became of it, delivery health with a daily check and email warnings, and the subscriptions with a Register button.
 - App events: webhooks, sign-ins and refusals, Admin API calls, staff actions and settings saves, filterable, kept 30 days.
 - Reports: members by level, who joined and left by week, sign-ins and metered reads.
+- Setup page: connecting a store step by step, with the exact values to paste into Shopify, the command for each secret, a Register button for the webhooks and a form for the first level. Each step checks the site as it is.
 - Status page: every setting, store discovery, levels and rules.
 - Access test, Privacy page, and a dashboard widget.
 
@@ -75,7 +76,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 ### 1. Set up Shopify
 
-Follow [docs/shopify-setup.md](docs/shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and a webhook app.
+Follow [docs/shopify-setup.md](docs/shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and a webhook app. Once the package is installed, **Plugins → RedeemID → Setup** walks through the same steps for your site, with its own callback URI filled in, and says which are done.
 
 ### 2. Install
 
@@ -152,7 +153,7 @@ Use `<Content>` in place of `<PortableText>` for every body that may be locked. 
 ### 6. Check it
 
 1. Finish EmDash setup as staff first. Store customers can't create the first account.
-2. Open **Plugins → RedeemID → Status**. Every setting should say Set. Then open **Webhooks → Setup** and press **Register**.
+2. Open **Plugins → RedeemID → Setup**. Work down the steps until it says RedeemID is set up (it registers the webhooks for you). **Status** lists every setting as Set or Missing.
 3. Tag a test customer `member` in Shopify, open a locked post, and sign in as that customer. The post opens.
 4. Remove the tag in Shopify. The post locks again once the webhook arrives.
 
