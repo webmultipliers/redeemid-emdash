@@ -30,7 +30,7 @@ import { definePlugin } from "emdash";
 
 import { levelsFor, SIGNED_IN, type Terms } from "./access.js";
 import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, isAccessAction, type AccessEnv, type PanelEntry } from "./access-admin.js";
-import { entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
+import { deleteAccess, entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
 import { env, ENV, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
@@ -239,8 +239,15 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 				await entrySlugChanged((await memberStores()).access, event.collection, id, slug).catch(() => undefined);
 			},
 			"content:afterDelete": async (event) => {
-				if (!event.permanent) return;
-				await (await memberStores()).access.delete(entryKey(event.id)).catch(() => undefined);
+				const store = (await memberStores()).access;
+				// Trashed: the rule waits (by id) for a restore, without the slug.
+				if (!event.permanent) return entrySlugChanged(store, null, event.id, null).catch(() => undefined);
+				if (await store.get(entryKey(event.id)).catch(() => null)) await deleteAccess(store, entryKey(event.id)).catch(() => undefined);
+			},
+			"content:afterRestore": async (event) => {
+				const id = typeof event.content.id === "string" ? event.content.id : null;
+				const slug = typeof event.content.slug === "string" ? event.content.slug : null;
+				if (id) await entrySlugChanged((await memberStores()).access, event.collection, id, slug).catch(() => undefined);
 			},
 		},
 		routes: {

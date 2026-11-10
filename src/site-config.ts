@@ -36,7 +36,11 @@ export function siteConfig(locals?: unknown): Promise<RedeemIDConfig | null> {
 	const known = key ? loaded.get(key) : undefined;
 	if (known) return known;
 	const code = codeConfig(locals);
-	const fresh = code ? database(locals as Locals).then((db) => withSaved(code, db), () => code) : Promise.resolve(null);
+	const fresh = code ? database(locals as Locals).then(
+				(db) => withSaved(code, db),
+				// No database: the same as storage that can't be read.
+				() => withSaved(code, null),
+			) : Promise.resolve(null);
 	if (key) loaded.set(key, fresh);
 	return fresh;
 }

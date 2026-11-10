@@ -63,7 +63,16 @@ export interface EntryRule {
 	updatedAt?: string;
 }
 
-export type AccessRecord = SiteAccess | EntryRule;
+/**
+ * Bumped on every write to the collection, so a request can tell with one
+ * small read whether the settings it holds are still current.
+ */
+export interface AccessStamp {
+	kind: "stamp";
+	version: string;
+}
+
+export type AccessRecord = SiteAccess | EntryRule | AccessStamp;
 
 export interface LoadedAccess {
 	site: SiteAccess | null;
@@ -71,6 +80,7 @@ export interface LoadedAccess {
 }
 
 export const SITE_ID = "site";
+export const STAMP_ID = "stamp";
 export const entryKey = (entryId: string) => `entry:${entryId}`;
 
 /** Read everything saved, in one query. */
@@ -118,18 +128,96 @@ export function overridden(site: SiteAccess | null): Set<ManagedKey> {
 	return new Set(MANAGED.filter((k) => site && k in site));
 }
 
-/** Code config plus the admin's settings, read with `db`. */
+/**
+ * A level slug no level can have (slugs can't hold a colon), so nobody
+ * passes a requirement that names it: what every entry needs while the
+ * saved settings can't be read.
+ */
+export const UNAVAILABLE = "redeemid:unavailable";
+
+/**
+ * The settings while the saved ones can't be read and none were read before:
+ * every entry locked (see UNAVAILABLE), no meter to open one, and files in
+ * any folder refused. Failing open would show what the admin locked.
+ */
+export function lockdown(code: RedeemIDConfig): RedeemIDConfig {
+	const out: RedeemIDConfig = { ...code, unavailable: true };
+	delete out.meter;
+	return out;
+}
+
+/** What this server last read, and the stamp it was read at. */
+interface Held {
+	version: string | null;
+	saved: LoadedAccess;
+}
+const HELD = Symbol.for("redeemid:access-held");
+const held = () => globalThis as unknown as Record<symbol, Held | undefined>;
+
+/** Forget the settings held in memory (tests, and after a write here). */
+export function forgetAccess(): void {
+	held()[HELD] = undefined;
+}
+
+/** Record that the settings changed, so every server reads them again. */
+export async function touchAccess(store: StorageCollection<AccessRecord>): Promise<void> {
+	forgetAccess();
+	await store.put(STAMP_ID, { kind: "stamp", version: crypto.randomUUID() });
+}
+
+/** Save one record and bump the stamp. */
+export async function putAccess(store: StorageCollection<AccessRecord>, id: string, data: SiteAccess | EntryRule): Promise<void> {
+	await store.put(id, data);
+	await touchAccess(store);
+}
+
+/** Delete one record and bump the stamp. */
+export async function deleteAccess(store: StorageCollection<AccessRecord>, id: string): Promise<void> {
+	await store.delete(id);
+	await touchAccess(store);
+}
+
+/**
+ * The saved settings, read again only when the stamp has moved: one small
+ * read per request instead of the whole collection.
+ */
+async function savedAccess(store: StorageCollection<AccessRecord>): Promise<LoadedAccess> {
+	const stamp = (await store.get(STAMP_ID)) as AccessStamp | null;
+	const version = stamp?.kind === "stamp" ? stamp.version : null;
+	const known = held()[HELD];
+	if (known && version !== null && known.version === version) return known.saved;
+	const saved = await loadAccess(store);
+	if (version === null) {
+		// Saved before stamps existed: start one, so the next request can skip the read.
+		const fresh = crypto.randomUUID();
+		await store.put(STAMP_ID, { kind: "stamp", version: fresh }).catch(() => undefined);
+		held()[HELD] = { version: fresh, saved };
+	} else {
+		held()[HELD] = { version, saved };
+	}
+	return saved;
+}
+
+/**
+ * Code config plus the admin's settings, read with `db`. When storage can't
+ * be read, the settings last read stand; with none, every entry is locked
+ * (see lockdown). Never the code's settings alone: a rule saved only in the
+ * admin would open its entries for as long as the error lasts.
+ */
 export async function withSaved(code: RedeemIDConfig | null, db: unknown): Promise<RedeemIDConfig | null> {
 	if (!code) return null;
+	let saved: LoadedAccess;
 	try {
-		const merged = mergeAccess(code, await loadAccess(stores(db).access));
-		announceLevels(merged?.levels);
-		return merged;
+		saved = await savedAccess(stores(db).access);
 	} catch (e) {
-		// No storage yet (or it can't be read): the code's settings stand.
-		console.error("[redeemid] couldn't read saved access settings:", (e as Error).message);
-		return code;
+		const last = held()[HELD];
+		console.error("[redeemid] couldn't read saved access settings:", (e as Error).message, last ? "(using the last ones read)" : "(locking entries)");
+		if (!last) return lockdown(code);
+		saved = last.saved;
 	}
+	const merged = mergeAccess(code, saved);
+	announceLevels(merged?.levels);
+	return merged;
 }
 
 // ---------------------------------------------------------------- level pickers

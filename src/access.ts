@@ -11,7 +11,7 @@
  */
 
 import type { LevelConfig, RedeemIDConfig, RuleConfig } from "./config.js";
-import type { EntryRule } from "./settings.js";
+import { UNAVAILABLE, type EntryRule } from "./settings.js";
 import { siteConfig } from "./site-config.js";
 import { memberForUser, stores, type MemberRecord } from "./storage.js";
 
@@ -336,7 +336,7 @@ export function passes(held: string[], required: string[][]): boolean {
  */
 export function describe(required: Requirement, levels: LevelConfig[] = [], open = "Free", signedIn = "Signed in"): string {
 	if (required === null) return open;
-	const name = (slug: string) => levels.find((l) => l.slug === slug)?.name ?? slug;
+	const name = (slug: string) => (slug === UNAVAILABLE ? "Members" : (levels.find((l) => l.slug === slug)?.name ?? slug));
 	const parts = reduce(required).filter((c) => c.length > 0).map((c) => c.map(name).join(" or "));
 	return parts.length ? parts.join(" + ") : signedIn;
 }
@@ -384,6 +384,8 @@ export async function entryRequirement(
 	id?: string | null,
 ): Promise<Requirement> {
 	if (!config) return null;
+	// Saved settings can't be read: nobody passes this.
+	if (config.unavailable) return [[UNAVAILABLE]];
 	const own = entryRuleFor(config, collection, id);
 	if (own && (own.mode === "open" || own.mode === "levels") && !own.openUntil && !own.lockedUntil) return applyEntryRule(null, own);
 	const tree = await termTree(config.rules, collection, terms);
@@ -445,7 +447,7 @@ export async function canRead(
 	const v = await viewer(astro);
 
 	if (required === null) return { allowed: true, reason: "open", required: [], viewer: v };
-	if (!config) return { allowed: false, reason: "unconfigured", required, viewer: v };
+	if (!config || config.unavailable) return { allowed: false, reason: "unconfigured", required, viewer: v };
 	if (!v.signedIn) return { allowed: false, reason: "sign_in", required, viewer: v };
 	if (v.member?.status === "disabled") return { allowed: false, reason: "disabled", required, viewer: v };
 	if (!v.member) return { allowed: false, reason: "upgrade", required, viewer: v };

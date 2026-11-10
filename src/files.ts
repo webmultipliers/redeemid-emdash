@@ -115,16 +115,22 @@ export function ruleFor(config: RedeemIDConfig | null, folder: string | null): F
 
 /** Decide one download. `key` is the storage key from the file URL. */
 export async function fileAccess(astro: AstroLike, config: RedeemIDConfig | null, key: string): Promise<FileVerdict> {
-	if (!config?.files?.length) return { protected: false };
+	if (!config?.files?.length && !config?.unavailable) return { protected: false };
 	const locals = astro.locals as { user?: { role?: number } | null; emdash?: { db?: unknown } | null };
 	const db = locals.emdash?.db;
 	// No database to look the file up in: the caller fails closed.
 	if (!db) throw new Error("no database for the file check");
 	const media = await mediaByKey(db, key);
+	const role = locals.user?.role ?? 0;
+	// Saved settings can't be read: any file in a folder might be protected.
+	if (config.unavailable) {
+		if (!media?.folder) return { protected: false };
+		if (role > SUBSCRIBER) return { protected: true, allowed: true };
+		return { protected: true, allowed: false, reason: (await viewer(astro)).signedIn ? "denied" : "sign_in" };
+	}
 	const rule = ruleFor(config, media?.folder ?? null);
 	if (!media || !rule) return { protected: false };
 
-	const role = locals.user?.role ?? 0;
 	if (role > SUBSCRIBER) return { protected: true, allowed: true };
 	const v = await viewer(astro);
 	if (!v.signedIn) return { protected: true, allowed: false, reason: "sign_in" };
