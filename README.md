@@ -132,7 +132,7 @@ REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET=…          # verifies webhooks
 REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN=…         # only to sell on the site: plans, shop and checkout
 ```
 
-The [secrets reference](#secrets) lists the rest, and the Setup page prints the command for each one.
+The [secrets reference](#secrets) lists the rest. The Setup page prints the command for each secret its steps need.
 
 ### 5. Render content through RedeemID
 
