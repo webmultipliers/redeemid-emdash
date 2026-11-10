@@ -15,6 +15,7 @@
 		"./access": "./src/access.ts",
 		"./guard.ts": "./src/guard.ts",
 		"./rate-limit-cloudflare.ts": "./src/rate-limit-cloudflare.ts",
+		"./templates.ts": "./src/templates.ts",
 		"./storefront": "./src/storefront.ts",
 		"./catalog": "./src/catalog.ts",
 		"./features": "./src/features.ts",

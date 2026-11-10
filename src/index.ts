@@ -28,11 +28,16 @@
  * (the client secret of the Shopify app whose webhooks the site receives).
  */
 
+import { readdirSync, readFileSync, type Dirent } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type { AstroIntegration } from "astro";
 import type { AuthProviderDescriptor } from "emdash";
 
 import { PROVIDER_ID, type RedeemIDConfig } from "./config.js";
 import { STORAGE_CONFIG } from "./storage.js";
+import { scanTemplate, type TemplateFinding } from "./template-scan.js";
 
 export type { LevelConfig, RedeemIDConfig, RuleConfig } from "./config.js";
 export type { MemberRecord } from "./storage.js";
@@ -77,12 +82,53 @@ export function redeemidGuard(options: { rateLimit?: boolean } = {}): AstroInteg
 	return {
 		name: "@redeemid/emdash/guard",
 		hooks: {
-			"astro:config:setup": ({ addMiddleware }) => {
+			"astro:config:setup": ({ addMiddleware, updateConfig, config }) => {
+				// Finds templates that render a body with EmDash's <PortableText>
+				// instead of <Content>, for the Status page.
+				updateConfig({ vite: { plugins: [templateScan(config.root, config.srcDir)] } });
+				addMiddleware({ entrypoint: "@redeemid/emdash/templates.ts", order: "pre" });
 				// Cloudflare Workers only: limits Sign in, Buy and cart changes per
 				// visitor with the REDEEMID_RATE_LIMIT Rate Limiting binding.
 				if (options.rateLimit) addMiddleware({ entrypoint: "@redeemid/emdash/rate-limit-cloudflare.ts", order: "pre" });
 				addMiddleware({ entrypoint: "@redeemid/emdash/guard.ts", order: "post" });
 			},
+		},
+	};
+}
+
+const TEMPLATES_MARK = "const FINDINGS: TemplateFinding[] | null = null; // redeemid:templates";
+
+/** Vite plugin: fills templates.ts with the scan of the site's .astro files. */
+function templateScan(root: URL, srcDir: URL) {
+	return {
+		name: "redeemid:templates",
+		// Before TypeScript is stripped, so the marker line is still there.
+		enforce: "pre" as const,
+		transform(code: string, id: string) {
+			if (!id.split("?")[0]!.endsWith("/templates.ts") || !code.includes(TEMPLATES_MARK)) return undefined;
+			const base = fileURLToPath(root);
+			const out: TemplateFinding[] = [];
+			// Static node: imports only: astro.config's module runner is closed by
+			// the time this runs, so a dynamic import() here fails.
+			const walk = (dir: string): void => {
+				let items: Dirent[] = [];
+				try {
+					items = readdirSync(dir, { withFileTypes: true });
+				} catch {
+					return;
+				}
+				for (const d of items) {
+					const path = join(dir, d.name);
+					if (d.isDirectory() && d.name !== "node_modules") walk(path);
+					else if (d.isFile() && d.name.endsWith(".astro")) {
+						const found = scanTemplate(relative(base, path).split("\\").join("/"), readFileSync(path, "utf8"));
+						if (found) out.push(found);
+					}
+				}
+			};
+			walk(fileURLToPath(srcDir));
+			out.sort((a, b) => a.file.localeCompare(b.file));
+			return { code: code.replace(TEMPLATES_MARK, `const FINDINGS = ${JSON.stringify(out)};`), map: null };
 		},
 	};
 }

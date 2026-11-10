@@ -215,6 +215,7 @@ try {
 	const statusPage = await adminPage("/status");
 	check("Status page lists the ignored replacement", statusPage.text.includes("1 in use, 1 ignored") && statusPage.text.includes("text_problems"));
 	check("an ignored replacement leaves the original", signIn.text.includes(">Sign out</button>") && !signIn.text.includes("Leave,"));
+	check("Status finds no template showing a gated body in full", statusPage.text.includes("Templates: none renders a gated collection") && !statusPage.text.includes("template_findings"), statusPage.text.slice(0, 300));
 	check("Status page reports sign-in ready", statusPage.text.includes("Sign-in is ready") && statusPage.text.includes("/_emdash/api/auth/redeemid/webhook"), statusPage.text.slice(0, 300));
 	const memberAdmin = await member.go("/_emdash/api/plugins/redeemid/admin", {
 		method: "POST",
@@ -257,6 +258,8 @@ try {
 	check("back to the site rules, the entry is open again", backOpen.text.includes("starter post"));
 	const typeRule = await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "signed-in", drip: 0, no_meter: false, teaser: 0 } });
 	check("staff set a rule for a whole content type", typeRule.text.includes("Saved."), typeRule.text.slice(0, 200));
+	const statusTemplates = await adminPage("/status");
+	check("with a Pages rule, Status names the template that renders Pages with PortableText", statusTemplates.text.includes("A template shows locked bodies in full") && statusTemplates.text.includes("src/pages/[slug].astro") && statusTemplates.text.includes('"collections":"pages"'), statusTemplates.text.slice(0, 300));
 	await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "none", drip: 0, no_meter: false, teaser: 0 } });
 	const levelGone = await accessCall({ type: "block_action", action_id: "level_menu", value: "remove:patrons-of-the-arts" });
 	check("an unused level can be removed", levelGone.text.includes("Level removed."), levelGone.text.slice(0, 200));

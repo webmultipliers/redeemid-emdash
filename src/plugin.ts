@@ -40,6 +40,7 @@ import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
 import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
+import { gatedFindings, templateFindings } from "./template-scan.js";
 import { record } from "./log.js";
 import { eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, WEBHOOK_TABS, webhooksPage, type MonitorEnv, type WebhookTab } from "./monitor.js";
 import { z } from "astro/zod";
@@ -757,6 +758,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 						},
 					]
 				: []),
+			...templateBlocks(config),
 			{ type: "context", text: "Deliveries, their health and the webhook subscriptions are under Webhooks; everything RedeemID did is under App events." },
 			{ type: "divider" },
 			{ type: "header", text: "Shopify settings" },
@@ -773,6 +775,30 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 			{ type: "context", text: "Levels, rules and the meter are under Access." },
 		],
 	};
+}
+
+/** Status: templates that would show a gated body in full (see template-scan.ts). */
+function templateBlocks(config: RedeemIDConfig): unknown[] {
+	const found = templateFindings();
+	if (!found) return [{ type: "banner", variant: "alert", title: "Templates weren't checked", description: "Add redeemidGuard() to the integrations in astro.config.mjs. It gates pages and keeps members out of EmDash's own APIs, and checks the templates." }];
+	const risky = gatedFindings(found, config);
+	if (!risky.length) return [{ type: "context", text: "Templates: none renders a gated collection's body with EmDash's PortableText. Bodies go through RedeemID's Content." }];
+	const sure = risky.filter((f) => f.gated.length);
+	return [
+		sure.length
+			? { type: "banner", variant: "error", title: "A template shows locked bodies in full", description: "These templates render a gated collection's body with EmDash's <PortableText>, which skips every rule, Paywall break and Members only part. Use RedeemID's <Content value={entry.data.content} collection=\"…\" terms={entry.data.terms} id={entry.id} /> instead." }
+			: { type: "banner", variant: "alert", title: "Check these templates", description: "They render a body with EmDash's <PortableText> and RedeemID couldn't see which collection. If it's one with a rule, use RedeemID's <Content> instead." },
+		{
+			type: "table",
+			page_action_id: "template_findings",
+			columns: [
+				{ key: "file", label: "Template" },
+				{ key: "lines", label: "Line" },
+				{ key: "collections", label: "Gated collection" },
+			],
+			rows: risky.map((f) => ({ file: f.file, lines: f.lines.join(", "), collections: f.gated.join(", ") || "Not found in the file" })),
+		},
+	];
 }
 
 async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
