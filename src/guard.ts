@@ -87,7 +87,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 	const config = await siteConfig(locals);
 
 	// Protected files: checked for everyone, on every download.
-	const keys = config?.files?.length ? keysFromUrl(url) : null;
+	const keys = config?.files?.length || config?.unavailable ? keysFromUrl(url) : null;
 	if (keys) {
 		let verdict;
 		try {
