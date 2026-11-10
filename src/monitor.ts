@@ -16,6 +16,7 @@ import { levelsFor, membership } from "./access.js";
 import { adminConfigured, registerWebhooks } from "./admin-api.js";
 import { env, ENV, type RedeemIDConfig } from "./config.js";
 import { LOG_DAYS, LOG_EVENTS, prune, record, type LogEntry } from "./log.js";
+import { RETRY_DELAYS_MS, type FailedEvent } from "./events.js";
 import type { DeliveryRecord, MemberRecord, Stores } from "./storage.js";
 import { webhooksSection } from "./staff.js";
 
@@ -185,6 +186,7 @@ async function alert(env_: MonitorEnv, settings: MonitorSettings, result: Health
 export async function tidy(s: Stores): Promise<void> {
 	await prune(s.log, "at").catch(() => 0);
 	await prune(s.deliveries, "receivedAt").catch(() => 0);
+	await prune(s.failedEvents, "at").catch(() => 0);
 }
 
 /** WEBHOOK_TOPICS name → the topic Shopify shows: CUSTOMER_TAGS_ADDED → customer.tags_added. */
@@ -379,6 +381,7 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 	if (filter.event && filter.event in LOG_EVENTS) where.event = filter.event;
 	if (filter.problems) where.level = { in: ["warn", "error"] };
 	const page = await s.log.query({ where: where as never, orderBy: { at: "desc" }, limit: 50, ...(cursor ? { cursor } : {}) });
+	const failed = cursor ? null : await s.failedEvents.query({ orderBy: { at: "desc" }, limit: 50 }).catch(() => null);
 	return {
 		blocks: [
 			{ type: "header", text: "App events" },
@@ -386,6 +389,7 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 				type: "context",
 				text: `What RedeemID did and what came of it: webhooks, sign-ins, calls to Shopify, staff actions, settings saves and outbound events. Kept ${LOG_DAYS} days. Never bodies, tokens or emails.`,
 			},
+			...(failed?.items.length ? failedBlocks(failed.items.map((r) => r.data)) : []),
 			{
 				type: "form",
 				block_id: "events_filter",
@@ -422,6 +426,60 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 		],
 		...(toast ? { toast } : {}),
 	};
+}
+
+/** Outbound events that failed every try: send again or clear. */
+function failedBlocks(list: FailedEvent[]): unknown[] {
+	return [
+		{ type: "header", text: "Failed events" },
+		{
+			type: "context",
+			text: `Outbound events your receiver didn't take after ${RETRY_DELAYS_MS.length + 1} tries. Send again keeps each one's delivery id, so a receiver that got it after all can drop the copy. Cleared after ${LOG_DAYS} days.`,
+		},
+		{
+			type: "table",
+			page_action_id: "failed_page",
+			columns: [
+				{ key: "event", label: "Event" },
+				{ key: "customer", label: "Customer" },
+				{ key: "error", label: "Last error" },
+				{ key: "tries", label: "Tries" },
+				{ key: "at", label: "When", format: "relative_time" },
+				{ key: "resend", label: "", format: "element" },
+				{ key: "clear", label: "", format: "element" },
+			],
+			rows: list.map((f) => ({
+				event: f.event,
+				customer: customerOfBody(f.body),
+				error: f.error,
+				tries: String(f.attempts),
+				at: f.at,
+				resend: { type: "button", action_id: "failed_resend", label: "Send again", style: "primary", value: f.id },
+				clear: { type: "button", action_id: "failed_clear", label: "Clear", style: "secondary", value: f.id },
+			})),
+		},
+		{
+			type: "actions",
+			elements: [
+				{
+					type: "button",
+					action_id: "failed_clear_all",
+					label: "Clear all",
+					style: "danger",
+					confirm: { title: "Clear every failed event?", text: "They won't be sent. App events keeps the record that they failed.", confirm: "Clear all", deny: "Cancel", style: "danger" },
+				},
+			],
+		},
+	];
+}
+
+function customerOfBody(body: string): string {
+	try {
+		const id = (JSON.parse(body) as { data?: { customerId?: unknown } }).data?.customerId;
+		return typeof id === "string" ? id : "";
+	} catch {
+		return "";
+	}
 }
 
 function eventRow(e: LogEntry) {

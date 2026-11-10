@@ -383,6 +383,12 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				return json(400, { errors: [{ message: "unknown query" }] });
 			}
 			case "/events":
+				// A slow or broken receiver, for the retry and after-the-response checks.
+				if (shop.eventsDelayMs) await new Promise((r) => setTimeout(r, shop.eventsDelayMs));
+				if (shop.eventsDown) {
+					shop.eventsRefused = (shop.eventsRefused ?? 0) + 1;
+					return json(503, { error: "down" });
+				}
 				shop.events.push({ headers: req.headers, body });
 				return json(200, { ok: true });
 			case "/":

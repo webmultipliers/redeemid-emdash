@@ -467,7 +467,7 @@ A replacement may use its original's placeholders (such as `{level}`, or `{signI
 events: { url: "https://hooks.example.com/redeemid", only: ["member.signed_in", "member.levels_changed"] },
 ```
 
-With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to the URL with the headers `X-RedeemID-Event`, `X-RedeemID-Delivery` (the `id`) and `X-RedeemID-Signature: sha256=<hex HMAC-SHA256 of the raw body>`. Check the signature before you trust a body. A send waits at most 3 seconds and never breaks the page; a failed send is logged, not retried.
+With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to the URL with the headers `X-RedeemID-Event`, `X-RedeemID-Delivery` (the `id`) and `X-RedeemID-Signature: sha256=<hex HMAC-SHA256 of the raw body>`. Check the signature before you trust a body. Events go out after the response (with `waitUntil` on Workers), so sign-in, webhooks and pages never wait for your receiver. Each try waits at most 3 seconds; a send that fails is tried again after 1 second and after 5 seconds. One that fails all three tries is kept under **App events → Failed events**, where staff can **Send again** (same `id`, so drop duplicates by it) or **Clear** it; failed events are deleted after 30 days.
 
 | Event | `data` |
 | --- | --- |
