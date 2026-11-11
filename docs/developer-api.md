@@ -70,7 +70,7 @@ Under `/_emdash/api/auth/redeemid/`. Same-origin only: EmDash checks `Origin` on
   - `?collection=shop`: the collection's page, `{ handle, title, description, products, filters, pageInfo }`.
 
   Both take `first` (1 to 50), `sort`, `after` or `before` (cursors from `pageInfo`), `filter` (repeatable: a filter value's `input` exactly as Shopify gave it), `price_min` and `price_max`. Sorts are `relevance`, `best-selling`, `newest`, `price-asc`, `price-desc`, `title-asc`, `title-desc` (search: relevance and price only). Over the rate limit a search answers 429, as `api/cart` does.
-- `preferences` (GET, POST) and `privacy` (GET export, POST erase): see the README.
+- `preferences` (GET, POST) and `privacy` (GET export, POST erase): see [preferences](shop.md#preferences) and [privacy requests](staff.md#privacy-requests).
 
 Form routes, which redirect back with `?redeemid_notice=<code>` when something needs saying: `login`, `callback`, `logout`, `buy`, `cart`, `cart-edit`, `account`. `webhook` is for Shopify only and answers with a status code.
 
@@ -116,7 +116,24 @@ The client also enhances RedeemID's markup: with `<CartDrawer />` on the page, A
 
 ## Server events
 
-Signed outbound webhooks to config `events.url` (see the README): `member.signed_in`, `member.levels_changed`, `meter.used`, `meter.exhausted`, `preferences.saved`, `member.erased`. Verify `X-RedeemID-Signature` with `signBody(rawBody, secret)`.
+Signed outbound webhooks for a CRM or email tool. Verify `X-RedeemID-Signature` with `signBody(rawBody, secret)` from `@redeemid/emdash/events`.
+
+```ts
+events: { url: "https://hooks.example.com/redeemid", only: ["member.signed_in", "member.levels_changed"] },
+```
+
+With `REDEEMID_EVENTS_SECRET` set, RedeemID POSTs `{ id, event, at, data }` to the URL with the headers `X-RedeemID-Event`, `X-RedeemID-Delivery` (the `id`) and `X-RedeemID-Signature: sha256=<hex HMAC-SHA256 of the raw body>`. Check the signature before you trust a body. Events go out after the response (with `waitUntil` on Workers), so sign-in, webhooks and pages never wait for your receiver. Each try waits at most 3 seconds; a send that fails is tried again after 1 second and after 5 seconds. One that fails all three tries is kept under **App events → Failed events**, where staff can **Send again** (same `id`, so drop duplicates by it) or **Clear** it; failed events are deleted after 30 days.
+
+| Event | `data` |
+| --- | --- |
+| `member.signed_in` | `customerId`, `levels`, `first` (first sign-in), `refresh` |
+| `member.levels_changed` | `customerId`, `levels`, `added`, `removed`, `source` (`sign-in`, the webhook topic, or a staff resync or tag edit) |
+| `meter.used` | `userId` (EmDash), `entry` (`collection:id`), `used`, `limit`, `period` (`2026-11`, or `2026-W45` by week) |
+| `meter.exhausted` | The same, sent with the last free read |
+| `preferences.saved` | `customerId`, `fields` (the names changed, never the answers) |
+| `member.erased` | `customerId`, `source` (`member`, `staff` or `shopify`) |
+
+No event carries an email address or a name; match people by `customerId`. Leave `only` out to send every event.
 
 ## MCP and the command line
 

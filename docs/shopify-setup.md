@@ -33,13 +33,13 @@ Give the app the `read_customers` and `write_customers` Admin API scopes, plus `
 
 Without the client ID, subscribe them to that URL yourself. If the app already sends webhooks to another site, add this URL as extra subscriptions.
 
-The client ID and those scopes also run the staff tools (member resync and tag edits written to Shopify), member preferences, and the reads that keep tags in order (see the README). RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization. For the **Also request erasure in Shopify** button on a member's page, add the optional `write_customer_data_erasure` scope.
+The client ID and those scopes also run the staff tools (member resync and tag edits written to Shopify), member preferences, and the reads that keep tags in order (see [staff tools](staff.md#staff-tools)). RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization. For the **Also request erasure in Shopify** button on a member's page, add the optional `write_customer_data_erasure` scope.
 
-Shopify's compliance topics (`customers/data_request`, `customers/redact`, `shop/redact`) can't be registered by the button: they reach only apps that declare them in the app's configuration, under `[webhooks.privacy_compliance]`. Point all three at the same webhook URL. RedeemID logs each one on the Privacy page and acts on it (see the README's privacy requests).
+Shopify's compliance topics (`customers/data_request`, `customers/redact`, `shop/redact`) can't be registered by the button: they reach only apps that declare them in the app's configuration, under `[webhooks.privacy_compliance]`. Point all three at the same webhook URL. RedeemID logs each one on the Privacy page and acts on it (see [privacy requests](staff.md#privacy-requests)).
 
 ## 3. The site
 
-Add the package and config as in the [README](../README.md#quick-start), with `shop` set to the store's domain. A custom customer-account domain works as well as `*.myshopify.com`.
+Add the package and config as in [getting started](getting-started.md#3-configure), with `shop` set to the store's domain. A custom customer-account domain works as well as `*.myshopify.com`.
 
 Set the secrets. On Cloudflare Workers:
 
@@ -65,4 +65,4 @@ On Workers, also add a Cron Trigger to the site's Worker, as EmDash's deployment
 3. Click **Sign in**, sign in with that customer's email, and you come back to the post, unlocked.
 4. Add or remove the tag in Shopify; the post opens or locks again once the webhook arrives.
 
-If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` means the client ID or `shop` is missing, and `sign_in_unavailable` means store discovery failed, usually a wrong `shop`. The README lists [every notice](../README.md#notices).
+If sign-in sends you back with `?redeemid_notice=…`, the code says why: `not_configured` means the client ID or `shop` is missing, and `sign_in_unavailable` means store discovery failed, usually a wrong `shop`. The reference lists [every notice](reference.md#notices).
