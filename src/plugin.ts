@@ -39,7 +39,7 @@ import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, requestShopifyErasure } from "./privacy.js";
 import { accessTest, bulkResync, BULK_BATCH, exportBlocks, memberDetail, privacyPage, registerWebhooks, resyncOne, staffLink, staffUnlink, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
-import { gatedFindings, templateFindings } from "./template-scan.js";
+import { cacheFindings, gatedFindings, templateFindings } from "./template-scan.js";
 import { setupFacts, setupPage, WEBHOOK } from "./setup.js";
 import { record } from "./log.js";
 import { resend } from "./events.js";
@@ -867,7 +867,23 @@ function templateBlocks(config: RedeemIDConfig): unknown[] {
 	const found = templateFindings();
 	if (!found) return [{ type: "banner", variant: "alert", title: "Templates weren't checked", description: "Add redeemidGuard() to the integrations in astro.config.mjs. It gates pages and keeps members out of EmDash's own APIs, and checks the templates." }];
 	const risky = gatedFindings(found, config);
-	if (!risky.length) return [{ type: "context", text: "Templates: none renders a gated collection's body with EmDash's PortableText. Bodies go through RedeemID's Content." }];
+	const caching = cacheFindings(found, config);
+	const cacheRows = caching.length
+		? [
+				{ type: "banner", variant: "alert", title: "A template caches gated pages itself", description: "These templates call Astro.cache.set() on pages of a gated collection. With the route cache on, one reader's copy then reaches everyone, and pages keep old rules after an Access save. Use cacheEntry(Astro, collection, entry, cacheHint) on entry pages and cachePage(Astro, cacheHint) on lists, from @redeemid/emdash/cache." },
+				{
+					type: "table",
+					page_action_id: "template_cache_findings",
+					columns: [
+						{ key: "file", label: "Template" },
+						{ key: "lines", label: "Line" },
+						{ key: "collections", label: "Gated collection" },
+					],
+					rows: caching.map((f) => ({ file: f.file, lines: (f.cache ?? []).join(", "), collections: f.gated.join(", ") })),
+				},
+			]
+		: [];
+	if (!risky.length) return [{ type: "context", text: "Templates: none renders a gated collection's body with EmDash's PortableText. Bodies go through RedeemID's Content." }, ...cacheRows];
 	const sure = risky.filter((f) => f.gated.length);
 	return [
 		sure.length
@@ -883,6 +899,7 @@ function templateBlocks(config: RedeemIDConfig): unknown[] {
 			],
 			rows: risky.map((f) => ({ file: f.file, lines: f.lines.join(", "), collections: f.gated.join(", ") || "Not found in the file" })),
 		},
+		...cacheRows,
 	];
 }
 

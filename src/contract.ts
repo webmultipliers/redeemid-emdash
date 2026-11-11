@@ -24,6 +24,7 @@ export const MODULES = {
 	"@redeemid/emdash/events": ["signBody"],
 	"@redeemid/emdash/text": ["STRINGS", "text", "textParts"],
 	"@redeemid/emdash/search": ["readableResults"],
+	"@redeemid/emdash/cache": ["cacheEntry", "cachePage", "noRouteCache", "CACHE_TAG"],
 } as const;
 
 /** Public JSON routes under /_emdash/api/auth/redeemid/. */

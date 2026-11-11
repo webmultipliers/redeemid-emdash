@@ -17,6 +17,12 @@
  * text included) could be stored and served to anyone. A later
  * `Astro.cache.set(hint)` turns caching back on, and the route cache reads its
  * options only after the page has rendered, so the opt-out runs after `next()`.
+ * Pages that called noRouteCache() or cacheEntry() for a gated entry get the
+ * same opt-out, for every visitor.
+ *
+ * A request that saves access settings (the Access page, an entry's Access
+ * panel) purges the pages cacheEntry() and cachePage() let in, by their
+ * `redeemid` tag, so they follow the new rules.
  */
 
 import { defineMiddleware } from "astro:middleware";
@@ -24,7 +30,9 @@ import { defineMiddleware } from "astro:middleware";
 import { signInUrl } from "./access.js";
 import { readCart } from "./cart.js";
 import { keysFromUrl, pathAccess, refusal } from "./files.js";
+import { keptOut, purgeRouteCache } from "./route-cache.js";
 import { guardSearch, SEARCH_PATH, SUGGEST_PATH } from "./search-guard.js";
+import { accessWrites } from "./settings.js";
 import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
 import { shareConfig, siteConfig } from "./site-config.js";
 
@@ -86,7 +94,17 @@ export function keepPrivate(context: { cache?: { set(options: false): void } }, 
 	}
 }
 
+type Next = Parameters<Parameters<typeof defineMiddleware>[0]>[1];
+type Context = Parameters<Parameters<typeof defineMiddleware>[0]>[0];
+
 export const onRequest = defineMiddleware(async (context, next) => {
+	const writes = accessWrites();
+	const res = await guard(context, next);
+	if (accessWrites() !== writes) await purgeRouteCache(context.cache);
+	return res;
+});
+
+async function guard(context: Context, next: Next): Promise<Response> {
 	const { locals, url } = context;
 	const user = (locals as { user?: { role?: number } | null }).user;
 	const config = await siteConfig(locals);
@@ -125,7 +143,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
 	if (!url.pathname.startsWith("/_emdash")) {
 		const own = Boolean(user) || Boolean(await readCart(context.session as never).catch(() => null));
-		return own ? keepPrivate(context, await next()) : next();
+		if (own) return keepPrivate(context, await next());
+		const res = await next();
+		if (keptOut(locals)) context.cache?.set(false);
+		return res;
 	}
 
 	// Site search answers visitors and members only with what they may read.
@@ -149,4 +170,4 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		status: 403,
 		headers: { "content-type": "application/json", "cache-control": "private, no-store" },
 	});
-});
+}

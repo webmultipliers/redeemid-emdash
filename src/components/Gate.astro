@@ -11,6 +11,7 @@
  * Pass `levels` to lock a part of a page to specific levels instead.
  */
 import { canRead, type Terms } from "../access.js";
+import { noRouteCache } from "../route-cache.js";
 import LockedPanel from "./LockedPanel.astro";
 
 interface Props {
@@ -23,6 +24,8 @@ interface Props {
 
 const { collection = "", terms, levels, id } = Astro.props;
 const verdict = await canRead(Astro, { collection, terms, id }, levels ? { levels } : undefined);
+// What shows depends on the reader: never in the route cache.
+if (verdict.reason !== "open") noRouteCache(Astro);
 ---
 
 {verdict.allowed ? (

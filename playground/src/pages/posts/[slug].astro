@@ -8,6 +8,7 @@ import {
 import { Image, PortableText, WidgetArea } from "emdash/ui";
 import AccessBadge from "@redeemid/emdash/components/AccessBadge.astro";
 import Content from "@redeemid/emdash/components/Content.astro";
+import { cacheEntry } from "@redeemid/emdash/cache";
 import Base from "../../layouts/Base.astro";
 import { resolveStarterSiteIdentity } from "../../utils/site-identity";
 
@@ -23,7 +24,8 @@ if (!post) {
 	return Astro.rewrite("/404");
 }
 
-if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+// Cached only when it reads the same for everyone; gated posts stay out.
+await cacheEntry(Astro, "posts", post, cacheHint);
 const { siteTitle } = resolveStarterSiteIdentity(await getSiteSettings());
 
 // SEO meta from content fields

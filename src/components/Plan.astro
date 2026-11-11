@@ -16,6 +16,7 @@
  * - join: anyone else.
  */
 import { closure, directLevels, membership, topLevels, viewer } from "../access.js";
+import { noRouteCache } from "../route-cache.js";
 import { siteConfig } from "../site-config.js";
 import { money, plan as loadPlan, storeContext, type Plan } from "../storefront.js";
 import { text } from "../text.js";
@@ -51,6 +52,8 @@ if (config) {
 const price = money(p?.price);
 const here = Astro.url.pathname + Astro.url.search;
 const v = levels.length > 0 ? await viewer(Astro) : null;
+// Held, upgrade, renew or join depends on the reader: never in the route cache.
+if (levels.length > 0) noRouteCache(Astro);
 const live = v?.member && v.member.status !== "disabled" ? v.member : null;
 const direct = live ? directLevels(live.tags, all) : [];
 const top = topLevels(v?.levels ?? [], all);

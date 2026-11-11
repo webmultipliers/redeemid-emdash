@@ -1,6 +1,7 @@
 ---
 import { getEmDashCollection, getSiteSettings } from "emdash";
 import { Image } from "emdash/ui";
+import { cachePage } from "@redeemid/emdash/cache";
 import Base from "../layouts/Base.astro";
 import { resolveStarterSiteIdentity } from "../utils/site-identity";
 
@@ -11,7 +12,7 @@ const { entries: posts, cacheHint } = await getEmDashCollection("posts", {
 const { siteTitle, siteTagline } = resolveStarterSiteIdentity(
 	await getSiteSettings(),
 );
-if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+cachePage(Astro, cacheHint);
 ---
 
 <Base title={siteTitle} description={siteTagline}>
