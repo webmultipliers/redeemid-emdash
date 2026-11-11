@@ -159,9 +159,18 @@ export function forgetAccess(): void {
 	held()[HELD] = undefined;
 }
 
+const WRITES = Symbol.for("redeemid:access-writes");
+
+/** How many times this server has saved access settings. redeemidGuard() purges the route cache when a request moves it. */
+export function accessWrites(): number {
+	return (globalThis as unknown as Record<symbol, number | undefined>)[WRITES] ?? 0;
+}
+
 /** Record that the settings changed, so every server reads them again. */
 export async function touchAccess(store: StorageCollection<AccessRecord>): Promise<void> {
 	forgetAccess();
+	const g = globalThis as unknown as Record<symbol, number | undefined>;
+	g[WRITES] = (g[WRITES] ?? 0) + 1;
 	await store.put(STAMP_ID, { kind: "stamp", version: crypto.randomUUID() });
 }
 

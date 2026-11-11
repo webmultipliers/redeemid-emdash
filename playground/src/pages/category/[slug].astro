@@ -5,6 +5,7 @@ import {
 	decodeSlug,
 } from "emdash";
 import { Image } from "emdash/ui";
+import { cachePage } from "@redeemid/emdash/cache";
 import Base from "../../layouts/Base.astro";
 
 const slug = decodeSlug(Astro.params.slug);
@@ -28,10 +29,8 @@ const {
 	limit: 20,
 	cursor,
 });
-if (Astro.cache?.enabled) {
-	Astro.cache.set(termsResult.cacheHint);
-	Astro.cache.set(cacheHint);
-}
+cachePage(Astro, termsResult.cacheHint);
+cachePage(Astro, cacheHint);
 ---
 
 <Base title={`${term.label} posts`} description={`Posts in ${term.label}`}>

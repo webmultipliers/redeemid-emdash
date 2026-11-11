@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RedeemIDConfig } from "../src/config.js";
-import { gatedFindings, scanTemplate } from "../src/template-scan.js";
+import { cacheFindings, gatedFindings, scanTemplate } from "../src/template-scan.js";
 
 const page = `---
 import { getEmDashEntry } from "emdash";
@@ -58,5 +58,34 @@ describe("gated findings", () => {
 		const entries = { "pages:1": { kind: "entry" as const, collection: "pages", entryId: "1", mode: "levels" as const, levels: ["member"] } };
 		expect(gatedFindings(found, { ...base, entries })[0]?.gated).toEqual(["pages"]);
 		expect(gatedFindings(found, { ...base, entries: { "pages:1": { ...entries["pages:1"], mode: "open" as const } } })).toEqual([]);
+	});
+});
+
+describe("route cache hints in templates", () => {
+	const cached = `---
+import { getEmDashEntry } from "emdash";
+const { entry, cacheHint } = await getEmDashEntry("posts", slug);
+if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+---
+<Content value={entry.data.content} collection="posts" />`;
+	const layout = `---
+if (Astro.cache?.enabled) Astro.cache.set(menu.cacheHint);
+---`;
+	const rules = { ...base, rules: [{ collection: "posts", levels: ["member"] }] } as RedeemIDConfig;
+
+	it("records the lines that set a hint", () => {
+		expect(scanTemplate("src/pages/posts/[slug].astro", cached)).toEqual({ file: "src/pages/posts/[slug].astro", lines: [], cache: [4], collections: ["posts"] });
+	});
+
+	it("lists only files that load a gated collection", () => {
+		const found = [scanTemplate("p.astro", cached)!, scanTemplate("src/layouts/Base.astro", layout)!];
+		expect(cacheFindings(found, rules).map((f) => f.file)).toEqual(["p.astro"]);
+		expect(cacheFindings(found, base)).toEqual([]);
+		// Not a PortableText problem.
+		expect(gatedFindings(found, rules)).toEqual([]);
+	});
+
+	it("leaves pages that use the helpers alone", () => {
+		expect(scanTemplate("q.astro", cached.replace("if (Astro.cache?.enabled) Astro.cache.set(cacheHint);", 'await cacheEntry(Astro, "posts", entry, cacheHint);'))).toBeNull();
 	});
 });

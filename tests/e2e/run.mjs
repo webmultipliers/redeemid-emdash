@@ -559,7 +559,7 @@ try {
 	});
 	check("api/cart answers 422 for a sold-out choice", jsonUnavailable.res.status === 422 && JSON.parse(jsonUnavailable.text).notice === "plan_unavailable");
 	const guestState = JSON.parse((await shopper.go("/_emdash/api/auth/redeemid/api/state")).text);
-	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.3.0", JSON.stringify(guestState));
+	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.4.0", JSON.stringify(guestState));
 	const guestCheckout = JSON.parse(
 		(await shopper.go("/_emdash/api/auth/redeemid/api/cart", { method: "POST", headers: { "content-type": "application/json", origin: SITE }, body: JSON.stringify({ action: "checkout" }) })).text,
 	);

@@ -12,6 +12,7 @@
  * membership reads it from the store again.
  */
 import { accountUrl, badgeColor, membership, meterUsage, refreshUrl, signInUrl, signOutUrl, viewer } from "../access.js";
+import { noRouteCache } from "../route-cache.js";
 import { featuresFor } from "../features.js";
 import { siteConfig } from "../site-config.js";
 import { text, textParts } from "../text.js";
@@ -24,6 +25,8 @@ interface Props {
 const config = await siteConfig(Astro.locals);
 const { title = text(config, "Your membership") } = Astro.props;
 const v = await viewer(Astro);
+// One member's own details: never in the route cache.
+noRouteCache(Astro);
 const here = Astro.url.pathname + Astro.url.search;
 const m = v.member;
 const disabled = m?.status === "disabled";

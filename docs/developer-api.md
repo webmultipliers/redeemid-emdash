@@ -1,6 +1,6 @@
 # Developer API
 
-What site code, other plugins and AI agents can rely on in `@redeemid/emdash`. API version **1.3.0** (`API_VERSION` in `@redeemid/emdash/contract`, also in `api/state` and `window.redeemid.apiVersion`).
+What site code, other plugins and AI agents can rely on in `@redeemid/emdash`. API version **1.4.0** (`API_VERSION` in `@redeemid/emdash/contract`, also in `api/state` and `window.redeemid.apiVersion`).
 
 Everything on this page is stable: it changes only with a changelog entry and an API version bump (minor when something is added, major when something changes or goes). Anything not listed is internal, even when a module exports it. `src/contract.ts` is the same list as code, and a test fails when the code, that list and this page disagree.
 
@@ -25,6 +25,7 @@ Import these in Astro pages, components and endpoints.
 | `@redeemid/emdash/events` | `signBody` |
 | `@redeemid/emdash/text` | `STRINGS`, `text`, `textParts` |
 | `@redeemid/emdash/search` | `readableResults` |
+| `@redeemid/emdash/cache` | `cacheEntry`, `cachePage`, `noRouteCache`, `CACHE_TAG` |
 
 Levels: `levelsFor(tags, levels)` answers every level the tags hold, including the ones a held level `includes` (so `levels` in `api/state`, `Viewer.levels` and `member.levels_changed` list Silver for a Gold member whose Gold includes Silver). `topLevels(held, levels)` keeps the ones no other held level includes, for showing ("Gold"). `closure(slug, levels)` is every level holding `slug` opens, itself first. `simplify(required, levels)` drops what inclusion already covers from a requirement (`[["silver"], ["gold"]]` becomes `[["gold"]]`); `entryRequirement` already does it. `membership()` marks a level held only through another with `via` (that level's slug).
 
@@ -44,6 +45,8 @@ const totes = config && (await searchProducts(config, "tote", {}, { context: sto
 ---
 ```
 
+Route cache: call `await cacheEntry(Astro, collection, entry, cacheHint)` on an entry's page and `cachePage(Astro, cacheHint)` on lists in place of `Astro.cache.set()`. See [caching](production.md#caching).
+
 Catalog reads (`product`, `collection`, `searchProducts`, `collectionPage`, `suggest`, `recommendations`) are cached for five minutes per Worker isolate. Pass `storeContext(config, Astro.request)` as `context` for local prices when config `market` is set.
 
 ## JSON routes
@@ -53,7 +56,7 @@ Under `/_emdash/api/auth/redeemid/`. Same-origin only: EmDash checks `Origin` on
 - `api/state` (GET): the visitor's own state.
 
   ```json
-  { "apiVersion": "1.3.0", "version": "0.0.24", "signedIn": true, "linked": true,
+  { "apiVersion": "1.4.0", "version": "0.0.25", "signedIn": true, "linked": true,
     "levels": ["gold"], "features": ["ad-free"], "cart": { "count": 2 },
     "meter": { "used": 1, "limit": 3, "period": "month" } }
   ```

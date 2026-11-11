@@ -4,7 +4,34 @@
 
 `redeemidGuard()` keeps every page private for a signed-in visitor or a visitor with a cart: `Cache-Control: private, no-store`, and out of Astro's route cache (it calls `cache.set(false)` after the page sets its own hint). Other visitors all get the same page, so their pages stay cacheable.
 
-A route cache keys pages by URL alone and serves stored pages without running any code. If you turn on Astro's route cache, don't cache pages that render `<Content>` or `<Gate>` for locked entries, or a member would get the visitor's copy, wall included. Call `Astro.cache.set(hint)` only on pages whose entries no rule covers. Saving on the Access page or an entry's Access panel doesn't purge the route cache either, so a page cached before the change keeps its old copy until it expires.
+Astro's route cache keys pages by URL and serves a stored page without running any code, so whoever asks next gets the same copy. Don't call `Astro.cache.set()` yourself on pages that show entries. Use RedeemID's helpers in the page's frontmatter instead:
+
+```astro
+---
+import { getEmDashEntry, getEmDashCollection } from "emdash";
+import { cacheEntry, cachePage } from "@redeemid/emdash/cache";
+
+// An entry's page: cached only when it reads the same for everyone.
+const { entry: post, cacheHint } = await getEmDashEntry("posts", slug);
+await cacheEntry(Astro, "posts", post, cacheHint);
+
+// A list, or any page without a gated body.
+const { entries, cacheHint: listHint } = await getEmDashCollection("posts");
+cachePage(Astro, listHint);
+---
+```
+
+- **`cacheEntry(Astro, collection, entry, cacheHint)`** caches the page only when no rule covers the entry (content type, terms or its Access panel), it isn't free just until a date, and its body has no Members only part, Sold on its own, Plan or Preferences block. Any other page stays out of the route cache, even if a layout sets a hint afterwards: `redeemidGuard()` takes it out again once the page has rendered. It returns whether the page was cached. `Cache-Control` is left as it was, since a visitor's copy is the same for every visitor.
+- **`cachePage(Astro, cacheHint)`** caches a page as the hint says. Use it for lists and pages that show no gated body.
+- **`noRouteCache(Astro)`** keeps any page out of the route cache.
+
+RedeemID's own components also keep their page out when what they show depends on the reader, so a route rule (`routeRules` in `astro.config.mjs`) or an old `Astro.cache.set()` can't store one reader's copy: `<Content>` for a locked entry, a Members only part, a Sold on its own block or a free-until window; `<Gate>` with a rule; `<Plan>`; `<MemberCard>`, `<Preferences>` and `<YourData>`. `<AccessBadge>` and `<Account>` don't, so lists and other pages stay cacheable; on a cached page a member sees the visitor's badges and header. Still use the helpers in page frontmatter: they decide before anything renders, and they tag the page for purging.
+
+Both caching helpers add the tag `redeemid` (`CACHE_TAG`). Saving on the Access page or an entry's Access panel purges that tag, so cached pages follow the new rules at once. EmDash purges an entry's own pages when the entry is saved. A page cached by a route rule alone has no `redeemid` tag; add it to the rule (`routeRules: { "/posts/[slug]": { maxAge: 300, tags: ["redeemid"] } }`). A deploy that changes the rules in `astro.config.mjs` purges nothing: purge the tag with your cache provider, or wait for `maxAge`.
+
+A cached page is the same for everyone, signed-in members included, since nothing runs on a hit. Keep member-aware parts of cached pages, such as the header's Account link or a cart count, in the browser with [`window.redeemid`](developer-api.md), or leave those pages out of the cache.
+
+The Status page lists templates that call `Astro.cache.set()` on pages of a gated collection.
 
 ## Rate limits
 

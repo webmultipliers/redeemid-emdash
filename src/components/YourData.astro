@@ -8,6 +8,7 @@
  *   <YourData />
  */
 import { viewer } from "../access.js";
+import { noRouteCache } from "../route-cache.js";
 import { siteConfig } from "../site-config.js";
 import { text } from "../text.js";
 
@@ -19,6 +20,8 @@ interface Props {
 const config = await siteConfig(Astro.locals);
 const { title = text(config, "Your data"), heading = "h2" } = Astro.props;
 const v = await viewer(Astro);
+// One member's own details: never in the route cache.
+noRouteCache(Astro);
 const route = "/_emdash/api/auth/redeemid/privacy";
 const here = Astro.url.pathname;
 const H = heading;

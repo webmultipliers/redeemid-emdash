@@ -36,7 +36,8 @@
  */
 import { PortableText } from "emdash/ui";
 
-import { canRead, entryRequirement, readEntry, viewer, type Terms, type Verdict } from "../access.js";
+import { canRead, entryRequirement, entryRuleFor, readEntry, viewer, type Terms, type Verdict } from "../access.js";
+import { noRouteCache } from "../route-cache.js";
 import { holdsItem, sections, soldItem, splitAtPaywall, teaser } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 import { text } from "../text.js";
@@ -101,6 +102,11 @@ const schema =
 				hasPart: { "@type": "WebPageElement", isAccessibleForFree: false, cssSelector: ".redeemid-locked" },
 			}).replace(/</g, "\\u003c")
 		: null;
+// A body that reads differently for members, or is free only until a date,
+// never goes into the route cache, whatever the page's hint or the site's
+// route rules say.
+const freeUntil = entryRuleFor(config, collection, id)?.openUntil;
+if (lockedEntry || item || (freeUntil && Date.now() < Date.parse(freeUntil))) noRouteCache(Astro);
 const metered = verdict.reason === "metered" ? (verdict as Verdict) : null;
 const week = metered?.meter?.period === "week";
 const left = metered?.meterLeft ?? 0;
