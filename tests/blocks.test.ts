@@ -10,13 +10,13 @@ const p = (k: string) => ({ _type: "block", _key: k });
 describe("splitAtPaywall", () => {
 	it("keeps a body with no break open", () => {
 		const r = splitAtPaywall([p("a"), p("b")]);
-		expect(r).toEqual({ open: [p("a"), p("b")], locked: [], levels: [], paywall: false });
+		expect(r).toEqual({ open: [p("a"), p("b")], locked: [], paywall: false });
 	});
-	it("splits at the first break and reads its levels", () => {
+	it("splits at the first break and ignores levels an older break stored", () => {
 		const r = splitAtPaywall([p("a"), { _type: PAYWALL_BLOCK, _key: "x", levels: ["gold", "", 3] }, p("b"), { _type: PAYWALL_BLOCK, _key: "y" }, p("c")]);
 		expect(r.open).toEqual([p("a")]);
 		expect(r.locked.map((b) => b._key)).toEqual(["b", "y", "c"]);
-		expect(r.levels).toEqual(["gold"]);
+		expect(r).not.toHaveProperty("levels");
 		expect(r.paywall).toBe(true);
 	});
 	it("treats a missing body as empty", () => {

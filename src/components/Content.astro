@@ -5,9 +5,9 @@
  *   <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} />
  *
  * - "Paywall break": everything before the first one is shown to everyone.
- *   What follows reaches the page only for readers who may read it: the
- *   levels picked on the break, or when none are picked the entry's rule
- *   (with no rule, the break changes nothing).
+ *   What follows reaches the page only for readers the entry's rule lets in
+ *   (with no rule, the break changes nothing). The break says where the
+ *   rule starts; the rule itself comes from the entry's settings.
  * - "Members only" … "Members only: end": the part between is for the levels
  *   picked on the start block, or the entry's rule, or any signed-in member.
  *   Readers who can't read it see the wall in its place, and the body goes on.
@@ -60,9 +60,9 @@ const entryRule = await entryRequirement(config, collection, terms, id);
 const item = soldItem(value);
 const reader = item ? (await viewer(Astro)).member : null;
 const owned = Boolean(reader && reader.status !== "disabled" && holdsItem(item, reader.tags));
-// A break with levels picked locks the rest to them; with none picked it
-// follows the entry's rule, and does nothing when no rule covers the entry.
-const required = split.paywall ? (split.levels.length ? [split.levels] : entryRule) : undefined;
+// The rest after a break follows the entry's rule, and the break does
+// nothing when no rule covers the entry.
+const required = split.paywall ? entryRule : undefined;
 const verdict: Verdict | { allowed: true; reason: "open" } =
 	owned || (split.paywall && required === null)
 		? { allowed: true, reason: "open" }

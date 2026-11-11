@@ -17,7 +17,7 @@
  */
 
 import { readEntry, SIGNED_IN, viewer, type AstroLike, type Terms } from "./access.js";
-import { holdsItem, ITEM_BLOCK, PAYWALL_BLOCK, sections, soldItem, splitAtPaywall } from "./blocks-names.js";
+import { holdsItem, ITEM_BLOCK, PAYWALL_BLOCK, sections, soldItem } from "./blocks-names.js";
 import type { FileRule, RedeemIDConfig } from "./config.js";
 import { featuresFor } from "./features.js";
 import { text } from "./text.js";
@@ -79,15 +79,14 @@ async function entriesUsing(db: unknown, mediaId: string): Promise<Array<{ colle
 }
 
 /**
- * The levels picked on an entry body's breaks and members-only parts: readers
- * must hold one from each. A members-only part with none picked needs a
+ * The levels picked on an entry body's members-only parts: readers must
+ * hold one from each. A members-only part with none picked needs a
  * signed-in reader (on top of the entry's rule, which the caller checks).
+ * A paywall break adds nothing: what follows it is under the entry's rule.
  */
 export function bodyClauses(body: unknown): string[][] {
 	const blocks = Array.isArray(body) ? body : [];
 	const out: string[][] = [];
-	const split = splitAtPaywall(blocks);
-	if (split.paywall && split.levels.length) out.push(split.levels);
 	for (const s of sections(blocks)) if (s.members) out.push(s.levels.length ? s.levels : [SIGNED_IN]);
 	return out;
 }

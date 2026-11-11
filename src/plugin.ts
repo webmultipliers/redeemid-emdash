@@ -11,10 +11,9 @@
  * test, Privacy), a daily webhook health check and a dashboard widget. Sign-in, webhooks and checkout stay on the
  * auth provider's routes.
  *
- * - "Paywall break" (`redeemid-paywall`): everything after it in the body is
- *   for members. Pick the levels that may read on ("Signed in" for any
- *   member); none picked means the entry's rule, and nothing is locked when
- *   no rule covers the entry.
+ * - "Paywall break" (`redeemid-paywall`): marks where the entry's rule starts.
+ *   Everything before it is for everyone; everything after it follows the
+ *   entry's rule, and nothing is locked when no rule covers the entry.
  * - "Members only" (`redeemid-members`) and "Members only: end"
  *   (`redeemid-members-end`): the part between is for the levels picked on
  *   the start block; everyone else sees the wall there and reads on after.
@@ -84,15 +83,8 @@ function blocks(config: RedeemIDConfig) {
 			type: PAYWALL_BLOCK,
 			label: "Paywall break",
 			icon: "lock",
-			description: "Everything after this is for members",
-			fields: [
-				{
-					type: "checkbox" as const,
-					action_id: "levels",
-					label: "Who can read on (none = the entry's rule)",
-					options: levelOptions,
-				},
-			],
+			description: "Everyone reads up to here; the rest follows this entry's access rule",
+			fields: [],
 		},
 		{
 			type: MEMBERS_BLOCK,

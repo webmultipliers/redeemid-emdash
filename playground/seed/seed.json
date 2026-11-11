@@ -347,7 +347,7 @@
 							"_type": "redeemid-paywall",
 							"_key": "b1",
 							"levels": [
-								"pro"
+								"member"
 							]
 						},
 						{
@@ -362,6 +362,11 @@
 							],
 							"_key": "b2"
 						}
+					]
+				},
+				"taxonomies": {
+					"category": [
+						"pro"
 					]
 				}
 			},
@@ -464,8 +469,7 @@
 						},
 						{
 							"_type": "redeemid-paywall",
-							"_key": "ob1",
-							"levels": []
+							"_key": "ob1"
 						},
 						{
 							"_type": "block",

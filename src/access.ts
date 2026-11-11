@@ -533,7 +533,7 @@ async function readViewer(astro: AstroLike): Promise<Viewer> {
 
 /**
  * May this visitor read the entry? `override` replaces the entry's rule, for a
- * part of a page locked to its own levels (a paywall break with levels).
+ * part of a page locked to its own levels (a Members only part with levels).
  */
 export async function canRead(
 	astro: AstroLike,
