@@ -16,7 +16,7 @@ The examples use a product called "Membership" and the tag `member`. Use your ow
 
 Use **Order paid** rather than Order created, so an unpaid order (for example, a payment that's still pending) doesn't open anything. Also add `order.customer` exists to the condition. A checkout always has an email, but a draft order may not have a customer.
 
-If the plan is meant to show as a gift, also add an **Update customer metafield** action that sets `membership.gift_until` (type date). See [membership dates](../README.md#membership-dates).
+If the plan is meant to show as a gift, also add an **Update customer metafield** action that sets `membership.gift_until` (type date). See [membership dates](staff.md#membership-dates).
 
 ## 2. A refund removes it
 
