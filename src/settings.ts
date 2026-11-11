@@ -226,7 +226,7 @@ type LevelListener = (levels: LevelConfig[]) => void;
 const LISTENERS = Symbol.for("redeemid:level-listeners");
 
 /**
- * The editor's level pickers (on the Paywall break and other blocks) are
+ * The editor's level pickers (on the Members only block and others) are
  * declared when the plugin starts. The plugin registers a listener here so
  * they follow levels saved in the admin.
  */

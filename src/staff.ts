@@ -398,7 +398,7 @@ export async function accessTest(config: RedeemIDConfig, values: Record<string, 
 				type: "banner",
 				variant: ok ? "default" : "alert",
 				title: ok ? "This reader can read it" : "This reader is kept out",
-				description: "A Paywall break with levels picked, a Members only part, drip and the meter can still change what a page shows.",
+				description: "A Members only part with levels picked, drip and the meter can still change what a page shows.",
 			},
 		);
 	}

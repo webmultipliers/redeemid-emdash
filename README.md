@@ -7,7 +7,7 @@ Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) site
 
 Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
 
-**Status: 0.0.23, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover the features below. Expect changes before 1.0.
+**Status: 0.0.24, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover the features below. Expect changes before 1.0.
 
 ## Contents
 
@@ -161,7 +161,7 @@ Use `<Content>` in place of `<PortableText>` for every body that may be locked, 
 
 EmDash has no content filter hook, so templates decide what to render.
 
-**`<Content>`** renders an entry body. Everything before the first Paywall break block is shown to everyone. What follows reaches the page only for readers the break allows: the levels picked on it ("Signed in" for any member) or, with none picked, the entry's rule. With none picked and no rule covering the entry, the break changes nothing. A body with no break follows the entry's rule as a whole, and readers it keeps out see the collection's `teaser` if one is set (whole paragraphs, never half of one).
+**`<Content>`** renders an entry body. Levels come from the entry's rule (its content type, its terms, or its own Access panel); a Paywall break only says where that rule starts. Everything before the first Paywall break block is shown to everyone, and what follows reaches the page only for readers the rule lets in. With no rule covering the entry, the break changes nothing. A body with no break follows the entry's rule as a whole, and readers it keeps out see the collection's `teaser` if one is set (whole paragraphs, never half of one).
 
 ```astro
 <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title}>
@@ -632,7 +632,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 
 | Block | Type | Does |
 | --- | --- | --- |
-| Paywall break | `redeemid-paywall` | Members-only content starts here, for the levels picked or the entry's rule |
+| Paywall break | `redeemid-paywall` | Everyone reads up to here; the rest follows the entry's rule |
 | Members only / Members only: end | `redeemid-members`, `redeemid-members-end` | A members-only part in the middle of a body |
 | Sold on its own | `redeemid-item` | Sells the entry by itself to holders of a tag |
 | Plan | `redeemid-plan` | A product with a buy button |

@@ -1,7 +1,6 @@
 ---
 /**
- * The level an entry needs, read from its rules (and from a paywall break
- * with levels):
+ * The level an entry needs, read from its rules:
  *
  *   <AccessBadge collection="posts" terms={post.data.terms} content={post.data.content} id={post.id} />
  *
@@ -10,14 +9,14 @@
  * `is-locked` with a lock for readers who can't read the members part.
  */
 import { badgeColor, canRead, describe, entryRequirement, simplify, viewer, type Terms } from "../access.js";
-import { holdsItem, soldItem, splitAtPaywall } from "../blocks-names.js";
+import { holdsItem, soldItem } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 import { text } from "../text.js";
 
 interface Props {
 	collection: string;
 	terms?: Terms;
-	/** The entry's body, so a paywall break's levels count. */
+	/** The entry's body, for its "Sold on its own" block. */
 	content?: unknown[] | null;
 	/** The entry's id or slug, so its own rule from the editor counts. */
 	id?: string;
@@ -27,10 +26,7 @@ interface Props {
 
 const config = await siteConfig(Astro.locals);
 const { collection, terms, content, id, free = text(config, "Free"), class: className } = Astro.props;
-const split = splitAtPaywall(content);
-const required = split.paywall && split.levels.length
-	? [split.levels]
-	: await entryRequirement(config, collection, terms, id);
+const required = await entryRequirement(config, collection, terms, id);
 const label = describe(required, config?.levels, free, text(config, "Signed in"));
 const item = soldItem(content);
 const owner = item ? (await viewer(Astro)).member : null;

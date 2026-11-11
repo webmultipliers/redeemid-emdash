@@ -780,7 +780,7 @@ export async function entryPanel(env: AccessEnv, entry: PanelEntry, toast?: Toas
 				],
 				submit: { label: "Save access", action_id: "entry_save" },
 			},
-			{ type: "context", text: "Paywall break and Members only blocks can still lock parts of the body." },
+			{ type: "context", text: "With a Paywall break in the body, everyone reads up to it and this rule covers the rest. Members only blocks can lock parts to their own levels." },
 		],
 	};
 }

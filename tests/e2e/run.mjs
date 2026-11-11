@@ -160,7 +160,7 @@ try {
 	const notice = await visitor.go("/?redeemid_notice=cart_empty");
 	check("Notices shows the notice for its code", notice.text.includes('data-redeemid-notice="cart_empty"') && notice.text.includes("Your cart is empty."));
 	const openBreak = await visitor.go("/posts/open-break");
-	check("a break with no levels changes nothing when no rule covers the post", openBreak.text.includes("OB-INTRO") && openBreak.text.includes("OB-REST"));
+	check("a break changes nothing when no rule covers the post", openBreak.text.includes("OB-INTRO") && openBreak.text.includes("OB-REST"));
 	const ld = (t) => [...t.matchAll(/<script type="application\/ld\+json">([^<]*)<\/script>/g)].map((m) => JSON.parse(m[1])).find((d) => "isAccessibleForFree" in d);
 	const lockedLd = ld(locked.text);
 	check("a locked post carries the paywall markup pointing at the wall", lockedLd?.isAccessibleForFree === false && lockedLd?.hasPart?.cssSelector === ".redeemid-locked" && typeof lockedLd?.headline === "string" && lockedLd.url.endsWith("/posts/members-only"), JSON.stringify(lockedLd));
@@ -213,12 +213,13 @@ try {
 	const drip = await member.go("/posts/drip-update");
 	check("drip holds a post until the member has been in long enough", !drip.text.includes("DRIP-BODY") && drip.text.includes('data-redeemid-reason="drip"') && drip.text.includes("This opens for you on"), drip.text.slice(0, 200));
 
-	// One body with a Paywall break block (levels: Pro): the opening is open, the rest isn't.
+	// One body with a Paywall break block in a Pro post: the opening is open, the rest follows the post's rule.
+	// The break still carries levels from before 0.0.24 (Member); they're ignored.
 	const breakVisitor = await visitor.go("/posts/paywall-break");
 	check("paywall break: visitors read the opening", breakVisitor.text.includes("OPEN-INTRO"));
 	check("paywall break: visitors don't get the rest", !breakVisitor.text.includes("BREAK-BODY") && breakVisitor.text.includes('data-redeemid-reason="sign_in"'));
 	const breakMember = await member.go("/posts/paywall-break");
-	check("paywall break: the break's levels apply (Member asked to upgrade)", breakMember.text.includes("OPEN-INTRO") && !breakMember.text.includes("BREAK-BODY") && breakMember.text.includes('data-redeemid-reason="upgrade"'));
+	check("paywall break: the post's rule applies after it, not old levels on the break (Member asked to upgrade)", breakMember.text.includes("OPEN-INTRO") && !breakMember.text.includes("BREAK-BODY") && breakMember.text.includes('data-redeemid-reason="upgrade"'));
 
 	// RedeemID is a registered EmDash plugin with its admin pages and blocks.
 	const manifest = await admin.go("/_emdash/api/manifest");

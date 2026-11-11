@@ -64,3 +64,20 @@ describe("refusal", () => {
 		expect(refusal("denied", "/").status).toBe(403);
 	});
 });
+
+describe("bodyClauses", () => {
+	it("takes levels from Members only parts, never from a paywall break", async () => {
+		const { bodyClauses } = await import("../src/files.js");
+		const body = [
+			{ _type: "block" },
+			{ _type: "redeemid-paywall", levels: ["gold"] },
+			{ _type: "redeemid-members", levels: ["pro"] },
+			{ _type: "block" },
+			{ _type: "redeemid-members-end" },
+			{ _type: "redeemid-members" },
+			{ _type: "block" },
+		];
+		expect(bodyClauses(body)).toEqual([["pro"], ["signed-in"]]);
+		expect(bodyClauses([{ _type: "redeemid-paywall", levels: ["gold"] }, { _type: "block" }])).toEqual([]);
+	});
+});
