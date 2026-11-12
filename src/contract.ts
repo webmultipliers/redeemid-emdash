@@ -20,7 +20,7 @@ export const MODULES = {
 	"@redeemid/emdash/features": ["hasFeature", "viewerFeatures", "featuresFor"],
 	"@redeemid/emdash/preferences": ["readPreferences", "savePreferences", "preferenceFields"],
 	"@redeemid/emdash/storefront": ["plan", "product", "collection", "money", "realOptions", "variantFor", "storeContext", "cartDetails", "addToCart", "updateLines", "removeLines", "setDiscountCodes"],
-	"@redeemid/emdash/catalog": ["searchProducts", "collectionPage", "suggest", "recommendations", "browseFromUrl", "browseHref", "parseFilters", "priceFilter", "SORTS"],
+	"@redeemid/emdash/catalog": ["searchProducts", "collectionPage", "suggest", "recommendations", "browseFromUrl", "browseHref", "parseFilters", "priceFilter", "SORTS", "productSitemap"],
 	"@redeemid/emdash/events": ["signBody"],
 	"@redeemid/emdash/text": ["STRINGS", "text", "textParts"],
 	"@redeemid/emdash/search": ["readableResults"],

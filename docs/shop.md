@@ -37,6 +37,35 @@ Everything works without JavaScript: the forms post to `/_emdash/api/auth/redeem
 
 **Local prices.** Set `market: { country: "visitor" }` to show each visitor prices in their own market (from Cloudflare's `CF-IPCountry`), or a fixed `country` and `language`. Markets are set up in Shopify.
 
+**Product pages in search.** `<Product heading="h1">` prints Product structured data. Give the page the product's own title and description, and answer 404 for a handle Shopify doesn't have, by reading the product in the page (the same cached read `<Product>` makes):
+
+```astro
+---
+// src/pages/shop/[handle].astro
+import { siteConfig } from "@redeemid/emdash/access";
+import { product, storeContext } from "@redeemid/emdash/storefront";
+
+const config = await siteConfig(Astro.locals);
+const p = config ? await product(config, Astro.params.handle, undefined, storeContext(config, Astro.request)).catch(() => null) : null;
+if (!p) Astro.response.status = 404;
+const title = p?.seo?.title || p?.title;
+const description = p?.seo?.description || p?.description.slice(0, 160);
+---
+```
+
+EmDash's sitemap lists content entries only, so add one for products. `productSitemap()` lists every product the Headless channel sells (up to 5,000), newest change first, linked with the same pattern as the cards:
+
+```ts
+// src/pages/sitemap-products.xml.ts
+import { siteConfig } from "@redeemid/emdash/access";
+import { productSitemap } from "@redeemid/emdash/catalog";
+import type { APIRoute } from "astro";
+
+export const GET: APIRoute = async ({ locals, url }) => productSitemap(await siteConfig(locals), url, { productHref: "/shop/{handle}/" });
+```
+
+Then submit it to search engines, or list it in robots.txt. A custom robots.txt in EmDash's SEO settings replaces the generated one, so keep both lines in it: `Sitemap: https://<your site>/sitemap.xml` and `Sitemap: https://<your site>/sitemap-products.xml`. If the store's Online Store channel is open too, search engines find two pages for each product; headless stores usually password-protect the Online Store or redirect it to the site.
+
 **Shoppers' agents.** Shopify runs a Storefront MCP server for every store at `https://<store domain>/api/mcp`, for AI agents that browse, build a cart and check out. Point shopping agents there; RedeemID's own tools are for staff.
 
 ## Preferences

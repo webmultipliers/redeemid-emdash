@@ -4,13 +4,13 @@
 [![Release](https://github.com/webmultipliers/redeemid-emdash/actions/workflows/release.yml/badge.svg)](https://github.com/webmultipliers/redeemid-emdash/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Memberships and paywalls for [EmDash](https://github.com/emdash-cms/emdash) sites, run by Shopify.
+Shopify commerce for [EmDash](https://github.com/emdash-cms/emdash) sites: a storefront, a cart, Shopify checkout, customer accounts, and memberships and paywalls that Shopify decides.
 
-Readers sign in with the store's own customer account. Their Shopify customer tags decide what they can read. Shopify keeps the store, checkout, orders and subscriptions, and EmDash keeps the content. Nothing on the site grants access by itself, so there is one source of truth for who paid for what.
+Shopify keeps the store, checkout, orders, subscriptions and customer accounts. EmDash keeps the content. RedeemID joins them: shoppers browse products and fill a cart on your EmDash site, check out with Shopify, and sign in with the store's own customer account. What a reader can read comes from their Shopify customer tags, so there is one source of truth for who paid for what.
 
 ![The RedeemID Access page in the EmDash admin: three levels, Member, Pro and Gold, each mapped to Shopify customer tags, with Gold including Pro](.github/images/access-levels.png)
 
-> **Status: 0.0.24, early.** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover every feature. Expect changes before 1.0.
+> **Status: early (0.0.x).** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover every feature. Expect changes before 1.0.
 
 ## How it works
 
@@ -24,6 +24,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 ## Features
 
+- **For shoppers:** product pages with options, subscriptions and Product structured data, a product sitemap, collections with Shopify's filters and sorting, product search, recommendations, a cart page and cart drawer, discount codes, local prices by market, and a checkout that opens signed in for members. It all works without JavaScript.
 - **For members:** sign in, Account and Sign out without ever seeing the word "Shopify"; a member card with levels, renewal and end dates; preferences saved on their customer record; download or delete what the site keeps about them.
 - **For editors:** Paywall break, Members only, Sold on its own, Plan, Product, Collection, Product search, Contribution and Preferences blocks; an Access panel on every entry; teasers, a monthly or weekly meter, drip, badges and protected file downloads.
 - **For staff:** Access, Members, Webhooks, App events, Reports, Setup, Status, Access test and Privacy pages in the EmDash admin. New content types and taxonomies appear on their own, so access never needs a code change.

@@ -1,6 +1,6 @@
 # Developer API
 
-What site code, other plugins and AI agents can rely on in `@redeemid/emdash`. API version **1.4.0** (`API_VERSION` in `@redeemid/emdash/contract`, also in `api/state` and `window.redeemid.apiVersion`).
+What site code, other plugins and AI agents can rely on in `@redeemid/emdash`. API version **1.5.0** (`API_VERSION` in `@redeemid/emdash/contract`, also in `api/state` and `window.redeemid.apiVersion`).
 
 Everything on this page is stable: it changes only with a changelog entry and an API version bump (minor when something is added, major when something changes or goes). Anything not listed is internal, even when a module exports it. `src/contract.ts` is the same list as code, and a test fails when the code, that list and this page disagree.
 
@@ -21,7 +21,7 @@ Import these in Astro pages, components and endpoints.
 | `@redeemid/emdash/features` | `hasFeature`, `viewerFeatures`, `featuresFor` |
 | `@redeemid/emdash/preferences` | `readPreferences`, `savePreferences`, `preferenceFields` |
 | `@redeemid/emdash/storefront` | `plan`, `product`, `collection`, `money`, `realOptions`, `variantFor`, `storeContext`, `cartDetails`, `addToCart`, `updateLines`, `removeLines`, `setDiscountCodes` |
-| `@redeemid/emdash/catalog` | `searchProducts`, `collectionPage`, `suggest`, `recommendations`, `browseFromUrl`, `browseHref`, `parseFilters`, `priceFilter`, `SORTS` |
+| `@redeemid/emdash/catalog` | `searchProducts`, `collectionPage`, `suggest`, `recommendations`, `browseFromUrl`, `browseHref`, `parseFilters`, `priceFilter`, `SORTS`, `productSitemap` |
 | `@redeemid/emdash/events` | `signBody` |
 | `@redeemid/emdash/text` | `STRINGS`, `text`, `textParts` |
 | `@redeemid/emdash/search` | `readableResults` |
@@ -56,7 +56,7 @@ Under `/_emdash/api/auth/redeemid/`. Same-origin only: EmDash checks `Origin` on
 - `api/state` (GET): the visitor's own state.
 
   ```json
-  { "apiVersion": "1.4.0", "version": "0.0.25", "signedIn": true, "linked": true,
+  { "apiVersion": "1.5.0", "version": "0.0.26", "signedIn": true, "linked": true,
     "levels": ["gold"], "features": ["ad-free"], "cart": { "count": 2 },
     "meter": { "used": 1, "limit": 3, "period": "month" } }
   ```
