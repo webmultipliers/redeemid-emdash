@@ -492,6 +492,11 @@ try {
 	const tote = await shopper.go("/shop/harbor-tote/");
 	check("product page offers its options and marks sold-out ones", tote.text.includes('name="option.Color"') && /<option[^>]*disabled[^>]*>\s*Sand/.test(tote.text) && tote.text.includes("$20.00") && tote.text.includes("Add to cart"));
 	check("a product's own page has Product structured data", /"@type":"Product".*"priceCurrency":"USD"/.test(tote.text));
+	check("a product's own page is titled with the product", /<title>[^<]*Harbor tote/i.test(tote.text), (tote.text.match(/<title>[^<]*/) ?? [""])[0]);
+	const noProduct = await shopper.go("/shop/no-such-product/");
+	check("an unknown product answers 404 with the fallback", noProduct.res.status === 404 && noProduct.text.includes("PRODUCT-FALLBACK"), String(noProduct.res.status));
+	const productMap = await shopper.go("/sitemap-products.xml");
+	check("the product sitemap lists each product page", productMap.res.status === 200 && productMap.text.includes("<urlset") && productMap.text.includes("/shop/harbor-tote/</loc>") && productMap.text.includes("<lastmod>2026-11-01"), productMap.text.slice(0, 300));
 	check("product page shows Shopify's recommendations", tote.text.includes("You may also like") && tote.text.includes('href="/shop/support/"'));
 	check("the layout loads the browser client and the cart drawer", tote.text.includes('id="redeemid-client-config"') && tote.text.includes("data-redeemid-cart-drawer") && tote.text.includes("data-redeemid-cart-link"));
 	const edit = (fields) =>
@@ -559,7 +564,7 @@ try {
 	});
 	check("api/cart answers 422 for a sold-out choice", jsonUnavailable.res.status === 422 && JSON.parse(jsonUnavailable.text).notice === "plan_unavailable");
 	const guestState = JSON.parse((await shopper.go("/_emdash/api/auth/redeemid/api/state")).text);
-	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.4.0", JSON.stringify(guestState));
+	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.5.0", JSON.stringify(guestState));
 	const guestCheckout = JSON.parse(
 		(await shopper.go("/_emdash/api/auth/redeemid/api/cart", { method: "POST", headers: { "content-type": "application/json", origin: SITE }, body: JSON.stringify({ action: "checkout" }) })).text,
 	);

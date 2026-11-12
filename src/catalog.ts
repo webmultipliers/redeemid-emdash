@@ -285,3 +285,81 @@ export function browseHref(current: URL, change: Record<string, string | null>):
 }
 
 export type { Money };
+
+const SITEMAP_QUERY = `query SitemapProducts($first: Int!, $after: String) {
+  products(first: $first, after: $after, sortKey: UPDATED_AT, reverse: true) {
+    pageInfo { hasNextPage endCursor }
+    nodes { handle updatedAt }
+  }
+}`;
+
+/** One product in the sitemap: its handle and when Shopify last changed it. */
+export interface SitemapProduct {
+	handle: string;
+	updatedAt: string;
+}
+
+/** The most products one sitemap lists (20 Storefront API pages of 250). */
+export const SITEMAP_LIMIT = 5000;
+
+function escapeXml(s: string): string {
+	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+/**
+ * Every product the site's sales channel can sell, newest change first, up
+ * to SITEMAP_LIMIT. Cached for five minutes.
+ */
+export async function sitemapProducts(config: RedeemIDConfig, opts: { fetcher?: typeof fetch } = {}): Promise<SitemapProduct[]> {
+	return cachedRead(`${shopOrigin(config)}|sitemap`, async () => {
+		const out: SitemapProduct[] = [];
+		let after: string | null = null;
+		while (out.length < SITEMAP_LIMIT) {
+			type Data = { products: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: SitemapProduct[] } };
+			const data: Data = await storefront<Data>(config, SITEMAP_QUERY, { first: 250, after }, opts);
+			out.push(...data.products.nodes.filter((n) => typeof n.handle === "string" && n.handle));
+			if (!data.products.pageInfo.hasNextPage || !data.products.pageInfo.endCursor) break;
+			after = data.products.pageInfo.endCursor;
+		}
+		return out.slice(0, SITEMAP_LIMIT);
+	});
+}
+
+/**
+ * A sitemap of the site's product pages, for search engines. EmDash's own
+ * sitemap lists content entries only, so products need this one:
+ *
+ *   // src/pages/sitemap-products.xml.ts
+ *   export const GET: APIRoute = async ({ locals, url }) =>
+ *     productSitemap(await siteConfig(locals), url, { productHref: "/shop/{handle}/" });
+ *
+ * `productHref` is the same pattern the product cards link with. Answers an
+ * empty sitemap (not an error) when the store can't be read, so a crawler
+ * never caches a broken page.
+ */
+export async function productSitemap(
+	config: RedeemIDConfig | null,
+	url: URL,
+	opts: { productHref: string; fetcher?: typeof fetch },
+): Promise<Response> {
+	let products: SitemapProduct[] = [];
+	if (config) {
+		try {
+			products = await sitemapProducts(config, { fetcher: opts.fetcher });
+		} catch {
+			products = [];
+		}
+	}
+	const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'];
+	for (const p of products) {
+		const loc = new URL(opts.productHref.replace("{handle}", encodeURIComponent(p.handle)), url).href;
+		lines.push("  <url>", `    <loc>${escapeXml(loc)}</loc>`);
+		if (p.updatedAt) lines.push(`    <lastmod>${escapeXml(p.updatedAt)}</lastmod>`);
+		lines.push("  </url>");
+	}
+	lines.push("</urlset>");
+	return new Response(lines.join("\n"), {
+		status: 200,
+		headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" },
+	});
+}

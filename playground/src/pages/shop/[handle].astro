@@ -1,12 +1,19 @@
 ---
+import { siteConfig } from "@redeemid/emdash/access";
 import Product from "@redeemid/emdash/components/Product.astro";
 import Recommendations from "@redeemid/emdash/components/Recommendations.astro";
+import { product, storeContext } from "@redeemid/emdash/storefront";
 import Base from "../../layouts/Base.astro";
 
 const { handle = "" } = Astro.params;
+// The same cached read <Product> makes, so the page has the product's own
+// title and description, and an unknown handle answers 404.
+const config = await siteConfig(Astro.locals);
+const p = config ? await product(config, handle, undefined, storeContext(config, Astro.request)).catch(() => null) : null;
+if (!p) Astro.response.status = 404;
 ---
 
-<Base title="Product">
+<Base title={p?.seo?.title || p?.title || "Product"} description={p?.seo?.description || p?.description.slice(0, 160) || null} image={p?.image?.url ?? null}>
 	<Product handle={handle} heading="h1"><p>PRODUCT-FALLBACK</p></Product>
-	<Recommendations handle={handle} productHref="/shop/{handle}/" />
+	{p && <Recommendations handle={handle} productHref="/shop/{handle}/" />}
 </Base>

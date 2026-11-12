@@ -1,7 +1,7 @@
 {
 	"name": "@redeemid/emdash",
-	"version": "0.0.25",
-	"description": "Shopify customer accounts, member levels and paywalls for EmDash sites. Shopify runs commerce; EmDash runs content.",
+	"version": "0.0.26",
+	"description": "Shopify commerce for EmDash sites: storefront, cart, checkout, customer accounts, memberships and paywalls. Shopify runs commerce; EmDash runs content.",
 	"type": "module",
 	"license": "MIT",
 	"author": "Vinny S. Green, LLC",
@@ -39,7 +39,15 @@
 	],
 	"keywords": [
 		"emdash",
+		"emdash-plugin",
 		"shopify",
+		"headless-commerce",
+		"ecommerce",
+		"storefront",
+		"cart",
+		"checkout",
+		"astro",
+		"cloudflare-workers",
 		"paywall",
 		"membership",
 		"customer-accounts"

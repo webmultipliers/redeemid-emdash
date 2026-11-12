@@ -98,7 +98,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `@redeemid/emdash/features` | `hasFeature()`, `viewerFeatures()` |
 | `@redeemid/emdash/preferences` | `readPreferences()`, `savePreferences()` |
 | `@redeemid/emdash/storefront` | `product()`, `collection()`, `plan()`, `money()` and the cart calls |
-| `@redeemid/emdash/catalog` | `searchProducts()`, `collectionPage()`, `suggest()`, `recommendations()` |
+| `@redeemid/emdash/catalog` | `searchProducts()`, `collectionPage()`, `suggest()`, `recommendations()`, `productSitemap()` |
 | `@redeemid/emdash/events` | `signBody(body, secret)`, the signature a receiver checks against `X-RedeemID-Signature` |
 | `@redeemid/emdash/text` | `STRINGS`, the list of every replaceable string |
 | `@redeemid/emdash/search` | `readableResults()`, for a search page that calls EmDash's `search()` |

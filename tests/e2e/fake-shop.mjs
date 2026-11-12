@@ -312,6 +312,10 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				if (query.includes("productRecommendations(")) {
 					return json(200, { data: { productRecommendations: listed().filter((p) => p.id !== variables.id).slice(0, 2).map(card) } });
 				}
+				if (query.includes("SitemapProducts")) {
+					const nodes = listed().map((p) => ({ handle: p.handle, updatedAt: "2026-11-01T00:00:00Z" }));
+					return json(200, { data: { products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } });
+				}
 				if (query.includes("collection(handle")) {
 					if (variables.handle !== "shop") return json(200, { data: { collection: null } });
 					const all = listed();

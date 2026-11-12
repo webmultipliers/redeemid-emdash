@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { browseFromUrl, browseHref, collectionPage, parseFilters, priceFilter, recommendations, searchProducts, suggest } from "../src/catalog.js";
+import { browseFromUrl, browseHref, collectionPage, parseFilters, priceFilter, productSitemap, recommendations, searchProducts, suggest } from "../src/catalog.js";
 import { pickSellingPlan, pickVariant } from "../src/cart-ops.js";
 import { addToCart, countryCode, product, realOptions, resetStorefrontCache, signInCart, storeContext, variantFor, withContext } from "../src/storefront.js";
 
@@ -187,5 +187,34 @@ describe("signed-in checkout", () => {
 		expect(calls[0]?.variables).toEqual({ id: "c1", identity: { customerAccessToken: "shcat_x" } });
 		const refused = fake({ cartBuyerIdentityUpdate: { cart: { checkoutUrl: "https://s/c" }, userErrors: [{ message: "bad token" }] } });
 		expect(await signInCart(config, "c1", "shcat_x", { fetcher: refused.fetcher })).toBeNull();
+	});
+});
+
+describe("product sitemap", () => {
+	it("pages through every product and links each page", async () => {
+		const pages = [
+			{ products: { pageInfo: { hasNextPage: true, endCursor: "c1" }, nodes: [{ handle: "tote", updatedAt: "2026-11-02T00:00:00Z" }] } },
+			{ products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ handle: "mug & cup", updatedAt: "2026-11-01T00:00:00Z" }] } },
+		];
+		const calls: Array<Record<string, unknown>> = [];
+		const fetcher = (async (_u: string, init: RequestInit) => {
+			calls.push(JSON.parse(String(init.body)).variables);
+			return new Response(JSON.stringify({ data: pages[calls.length - 1] }), { status: 200 });
+		}) as unknown as typeof fetch;
+		const res = await productSitemap(config, new URL("https://site.test/x"), { productHref: "/shop/{handle}/", fetcher });
+		const xml = await res.text();
+		expect(res.headers.get("content-type")).toContain("application/xml");
+		expect(calls).toEqual([{ first: 250, after: null }, { first: 250, after: "c1" }]);
+		expect(xml).toContain("<loc>https://site.test/shop/tote/</loc>");
+		expect(xml).toContain("<loc>https://site.test/shop/mug%20%26%20cup/</loc>");
+		expect(xml).toContain("<lastmod>2026-11-02T00:00:00Z</lastmod>");
+	});
+
+	it("answers an empty sitemap when the store can't be read", async () => {
+		const fetcher = (async () => new Response("no", { status: 500 })) as unknown as typeof fetch;
+		const res = await productSitemap(config, new URL("https://site.test/"), { productHref: "/p/{handle}", fetcher });
+		expect(res.status).toBe(200);
+		expect(await res.text()).toMatch(/<urlset[^>]*>\n<\/urlset>/);
+		expect(await (await productSitemap(null, new URL("https://site.test/"), { productHref: "/p/{handle}" })).text()).not.toContain("<url>");
 	});
 });
