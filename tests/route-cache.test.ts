@@ -58,6 +58,15 @@ describe("route cache helpers", () => {
 		expect(await cacheEntry(a, "posts", { id: "p4", data: { content: [{ _type: "redeemid-paywall" }] } }, {})).toBe(true);
 	});
 
+	it("takes entries typed by `emdash types` (interfaces, no index signature)", async () => {
+		interface Post {
+			title: string;
+			content: Array<{ _type: string }>;
+		}
+		const post: { id: string; data: Post } = { id: "p5", data: { title: "Typed", content: [{ _type: "block" }] } };
+		expect(await cacheEntry(astro().a, "posts", post, {})).toBe(true);
+	});
+
 	it("follows the entry's own rule, and never caches a free-until window", async () => {
 		const soon = new Date(Date.now() + 3600_000).toISOString();
 		config = { ...base, entries: { "posts:p1": { kind: "entry", collection: "posts", entryId: "p1", mode: "levels", levels: ["member"] } } } as RedeemIDConfig;

@@ -56,7 +56,7 @@ Under `/_emdash/api/auth/redeemid/`. Same-origin only: EmDash checks `Origin` on
 - `api/state` (GET): the visitor's own state.
 
   ```json
-  { "apiVersion": "1.5.0", "version": "0.0.26", "signedIn": true, "linked": true,
+  { "apiVersion": "1.5.0", "version": "0.0.27", "signedIn": true, "linked": true,
     "levels": ["gold"], "features": ["ad-free"], "cart": { "count": 2 },
     "meter": { "used": 1, "limit": 3, "period": "month" } }
   ```

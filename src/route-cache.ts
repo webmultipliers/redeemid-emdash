@@ -81,24 +81,34 @@ export function hasMemberBlocks(data: Record<string, unknown> | null | undefined
 }
 
 /**
+ * An entry as EmDash's queries return it. `data` is `object` so the
+ * interfaces `emdash types` generates for each collection fit.
+ */
+export interface CacheableEntry {
+	id?: string;
+	data?: object | null;
+}
+
+/**
  * May this entry's page be stored and served to everyone? Only when it reads
  * the same for every visitor, now and until the cache could expire.
  */
 export async function cacheable(
 	astro: AstroLike,
 	collection: string,
-	entry: { id?: string; data?: Record<string, unknown> | null } | null | undefined,
+	entry: CacheableEntry | null | undefined,
 ): Promise<boolean> {
 	if (!entry) return false;
+	const data = entry.data as Record<string, unknown> | null | undefined;
 	const config = await siteConfig(astro.locals);
-	if (!config) return !hasMemberBlocks(entry.data);
+	if (!config) return !hasMemberBlocks(data);
 	if (config.unavailable) return false;
-	const terms = entry.data?.terms as Terms | undefined;
+	const terms = data?.terms as Terms | undefined;
 	if ((await entryRequirement(config, collection, terms, entry.id)) !== null) return false;
 	// Free until a date: a stored copy would outlive the window.
 	const own = entryRuleFor(config, collection, entry.id);
 	if (own?.openUntil && Date.now() < Date.parse(own.openUntil)) return false;
-	return !hasMemberBlocks(entry.data);
+	return !hasMemberBlocks(data);
 }
 
 /**
@@ -108,7 +118,7 @@ export async function cacheable(
 export async function cacheEntry(
 	astro: CacheAstro,
 	collection: string,
-	entry: { id?: string; data?: Record<string, unknown> | null } | null | undefined,
+	entry: CacheableEntry | null | undefined,
 	hint?: Hint | null,
 ): Promise<boolean> {
 	if (keptOut(astro.locals)) return false;
