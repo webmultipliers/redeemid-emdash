@@ -8,16 +8,22 @@ import type { PluginDescriptor } from "emdash";
 import type { RedeemIDConfig } from "./config.js";
 import { VERSION } from "./version.js";
 
+/**
+ * Every page shares one sidebar folder, so RedeemID shows as a single
+ * RedeemID entry under Plugins (opening to these pages) instead of nine
+ * loose items mixed in with other plugins' pages.
+ */
+const GROUP = "RedeemID";
 export const PAGES = [
-	{ path: "/", label: "Members", icon: "users" },
-	{ path: "/access", label: "Access", icon: "lock" },
-	{ path: "/webhooks", label: "Webhooks", icon: "pulse" },
-	{ path: "/events", label: "App events", icon: "list" },
-	{ path: "/reports", label: "Reports", icon: "chart" },
-	{ path: "/status", label: "Status", icon: "pulse" },
-	{ path: "/setup", label: "Setup", icon: "settings" },
-	{ path: "/test", label: "Access test", icon: "search" },
-	{ path: "/privacy", label: "Privacy", icon: "lock" },
+	{ path: "/", label: "Members", icon: "users", group: GROUP },
+	{ path: "/access", label: "Access", icon: "lock", group: GROUP },
+	{ path: "/test", label: "Access test", icon: "search", group: GROUP },
+	{ path: "/reports", label: "Reports", icon: "chart", group: GROUP },
+	{ path: "/webhooks", label: "Webhooks", icon: "pulse", group: GROUP },
+	{ path: "/events", label: "App events", icon: "list", group: GROUP },
+	{ path: "/privacy", label: "Privacy", icon: "lock", group: GROUP },
+	{ path: "/status", label: "Status", icon: "pulse", group: GROUP },
+	{ path: "/setup", label: "Setup", icon: "settings", group: GROUP },
 ];
 /** The Access panel on every saved entry, in every collection (new ones too). */
 export const EDITOR_PANELS = [{ id: "access", title: "Access", route: "access-panel", order: 10 }];
