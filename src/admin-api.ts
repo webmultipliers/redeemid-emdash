@@ -28,6 +28,11 @@ export const WEBHOOK_TOPICS = [
 	"CUSTOMER_TAGS_REMOVED",
 ] as const;
 
+/** WEBHOOK_TOPICS name → the topic Shopify shows: CUSTOMER_TAGS_ADDED → customer.tags_added. */
+export function topicName(t: string): string {
+	return t.toLowerCase().replace("_", "/").replace("customer/tags", "customer.tags");
+}
+
 const MARGIN_MS = 5 * 60 * 1000;
 const tokens = new Map<string, { token: string; until: number; scope: string }>();
 
@@ -62,6 +67,17 @@ async function token(config: RedeemIDConfig, fetcher: typeof fetch): Promise<{ t
 	const value = { token: body.access_token, until: Date.now() + Math.max(60_000, life - MARGIN_MS), scope: body.scope ?? "" };
 	tokens.set(origin, value);
 	return value;
+}
+
+/**
+ * The scopes a token's `scope` string grants. Shopify lists only write_x
+ * when an app holds both, because a write scope includes its read scope.
+ */
+export function grantedScopes(scope: string): string[] {
+	const listed = scope.split(",").map((t) => t.trim()).filter(Boolean);
+	const out = new Set(listed);
+	for (const t of listed) if (t.startsWith("write_")) out.add(`read_${t.slice("write_".length)}`);
+	return [...out];
 }
 
 /** The scopes the Admin API token carries, or an error message. */

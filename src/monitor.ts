@@ -13,7 +13,7 @@
  */
 
 import { levelsFor, membership } from "./access.js";
-import { adminConfigured, registerWebhooks } from "./admin-api.js";
+import { adminConfigured, registerWebhooks, topicName } from "./admin-api.js";
 import { env, ENV, type RedeemIDConfig } from "./config.js";
 import { LOG_DAYS, LOG_EVENTS, prune, record, type LogEntry } from "./log.js";
 import { RETRY_DELAYS_MS, type FailedEvent } from "./events.js";
@@ -193,10 +193,7 @@ export async function tidy(s: Stores): Promise<void> {
 	await prune(s.requests, "at", REQUEST_DAYS, { status: "done" }).catch(() => 0);
 }
 
-/** WEBHOOK_TOPICS name → the topic Shopify shows: CUSTOMER_TAGS_ADDED → customer.tags_added. */
-export function topicName(t: string): string {
-	return t.toLowerCase().replace("_", "/").replace("customer/tags", "customer.tags");
-}
+export { topicName };
 
 // ---------------------------------------------------------------- Webhooks page
 

@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENV } from "../src/config.js";
-import { setupPage, setupSteps, type SetupFacts } from "../src/setup.js";
+import { grantedScopes, resetAdminToken, WEBHOOK_TOPICS } from "../src/admin-api.js";
+import { setupFacts, setupPage, setupSteps, WEBHOOK, type SetupFacts } from "../src/setup.js";
+import { memoryStores } from "./memory-store.js";
 
 const blank: SetupFacts = {
 	origin: "https://site.test",
@@ -50,6 +52,15 @@ describe("setup steps", () => {
 		expect(text(setupPage(f))).toContain("lacks write_customers");
 	});
 
+	it("write_customers alone covers read_customers, as Shopify reports it", () => {
+		expect(grantedScopes("write_customers,read_customer_merge").sort()).toEqual(["read_customer_merge", "read_customers", "write_customers"]);
+		expect(grantedScopes(" read_customers ")).toEqual(["read_customers"]);
+		expect(grantedScopes("")).toEqual([]);
+		const f = { ...ready, scopes: grantedScopes("write_customers") };
+		expect(state(f).app).toBe("done");
+		expect(state(f).webhooks).toBe("done");
+	});
+
 	it("missing webhooks get a Register button", () => {
 		const f = { ...ready, webhooksMissing: ["customers/update", "customers/delete"] };
 		expect(state(f).webhooks).toBe("todo");
@@ -85,5 +96,37 @@ describe("setup steps", () => {
 
 	it("counts the required steps only", () => {
 		expect(text(setupPage(blank))).toContain("0 of 6 steps done");
+	});
+});
+
+describe("setup facts", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		resetAdminToken();
+		delete process.env[ENV.adminClientId];
+		delete process.env[ENV.webhookSecret];
+	});
+
+	it("reads write_customers as both scopes and counts topics set in the app's configuration once delivered", async () => {
+		process.env[ENV.adminClientId] = "admin-client";
+		process.env[ENV.webhookSecret] = "admin-secret";
+		const origin = "https://site.test";
+		vi.stubGlobal("fetch", async (url: string) => {
+			if (url.endsWith("/admin/oauth/access_token")) return Response.json({ access_token: "t", expires_in: 86400, scope: "write_customers" });
+			if (url.includes("/graphql.json")) {
+				const nodes = WEBHOOK_TOPICS.filter((t) => t !== "CUSTOMERS_MERGE" && t !== "CUSTOMER_TAGS_ADDED").map((topic, i) => ({ id: `gid://${i}`, topic, uri: `${origin}${WEBHOOK}` }));
+				return Response.json({ data: { webhookSubscriptions: { nodes } } });
+			}
+			return new Response("no", { status: 404 });
+		});
+		const { stores: s } = memoryStores();
+		await s.deliveries.put("e1", { topic: "customer.tags_added", receivedAt: new Date().toISOString(), outcome: "processed" });
+		const f = await setupFacts({ shop: "shop.myshopify.com" }, s, origin);
+		expect(f.admin).toBe("ok");
+		expect(f.scopes).toContain("read_customers");
+		expect(f.webhooksMissing).toEqual(["CUSTOMERS_MERGE"]);
+		const page = text(setupPage({ ...f, discovery: "ok" }));
+		expect(page).toContain("Connect the webhook app: Done");
+		expect(page).toContain("customers/merge");
 	});
 });
