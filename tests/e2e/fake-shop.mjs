@@ -252,7 +252,7 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				if (query.includes("cartCreate")) {
 					shop.carts.push({ input: variables.input, privateToken: req.headers["shopify-storefront-private-token"] });
 					const id = `gid://shopify/Cart/${shop.carts.length}`;
-					const c = { lines: [], codes: [], attributes: variables.input.attributes ?? [] };
+					const c = { lines: [], codes: variables.input.discountCodes ?? [], attributes: variables.input.attributes ?? [] };
 					addLines(c, variables.input.lines);
 					shop.cartsById.set(id, c);
 					return json(200, { data: { cartCreate: { cart: view(id), userErrors: [] } } });

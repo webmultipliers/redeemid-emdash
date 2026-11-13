@@ -95,6 +95,12 @@ describe("shop", () => {
 		});
 	});
 
+	it("gives a new cart a discount link's code", async () => {
+		const { calls, fetcher } = fake({ cartCreate: { cart: { id: "c1", checkoutUrl: "https://x", totalQuantity: 1 }, userErrors: [] } });
+		await addToCart(config, null, { variantId: "v1" }, { discountCodes: ["SAVE10"], fetcher });
+		expect(calls[0]?.body.variables).toEqual({ input: { lines: [{ merchandiseId: "v1", quantity: 1 }], discountCodes: ["SAVE10"] } });
+	});
+
 	it("formats money", () => {
 		expect(money({ amount: "12.0", currencyCode: "USD" })).toBe("$12.00");
 		expect(money(null)).toBeNull();

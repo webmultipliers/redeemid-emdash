@@ -232,6 +232,8 @@ export async function addToCart(
 		fetcher?: typeof fetch;
 		/** A new cart's country, for local prices. */
 		context?: StoreContext;
+		/** Discount codes for a new cart. */
+		discountCodes?: string[];
 	} = {},
 ): Promise<Cart> {
 	const quantity = Math.max(1, Math.floor(line.quantity ?? 1));
@@ -248,6 +250,7 @@ export async function addToCart(
 	if (Object.keys(identity).length) input.buyerIdentity = identity;
 	const attributes = Object.entries(opts.attributes ?? {}).filter(([, v]) => v);
 	if (attributes.length) input.attributes = attributes.map(([key, value]) => ({ key, value }));
+	if (opts.discountCodes?.length) input.discountCodes = opts.discountCodes;
 	const data = await storefront<{ cartCreate: CartResult }>(config, CART_NEW, { input }, opts);
 	const cart = data.cartCreate.cart;
 	if (!cart) throw new Error(data.cartCreate.userErrors[0]?.message ?? "Shopify returned no cart.");

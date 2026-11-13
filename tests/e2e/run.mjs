@@ -592,6 +592,18 @@ try {
 	const gift = [...shop.cartsById.values()].at(-1);
 	check("a contribution of 15 checks out 15 units of the 1.00 product", gave.text === "CHECKOUT" && gift?.lines.some((l) => l.merchandiseId === "gid://shopify/ProductVariant/601" && l.quantity === 15), JSON.stringify(gift?.lines));
 
+	// From the store's redirect theme: a discount link's code waits for the first cart.
+	const linked = new Browser();
+	const linkLanded = await linked.go("/shop/harbor-tote/?discount=HARBOR10");
+	check("a discount link lands on the clean page", linkLanded.url.pathname === "/shop/harbor-tote/" && linkLanded.url.search === "" && linkLanded.res.status === 200, linkLanded.url.href);
+	const linkedEdit = (fields) =>
+		linked.go("/_emdash/api/auth/redeemid/cart-edit", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() });
+	await linkedEdit({ action: "add", product: "harbor-tote", variant: "gid://shopify/ProductVariant/501", quantity: "1", return: "/cart" });
+	const linkedCart = await linked.go("/cart");
+	check("the first cart carries the discount link's code", [...shop.cartsById.values()].at(-1)?.codes.includes("HARBOR10") && linkedCart.text.includes("$18.00"), JSON.stringify([...shop.cartsById.values()].at(-1)?.codes));
+	const quiet = await new Browser().go("/posts/welcome?logged_in=true", {}, 1);
+	check("a store-signed-in visitor is signed in without a form", (quiet.res.headers.get("location") ?? "").startsWith("/_emdash/api/auth/redeemid/login?quiet=1&return=%2Fposts%2Fwelcome"), quiet.res.headers.get("location"));
+
 	// Account goes to the member's Shopify customer account.
 	check("account box links to the Shopify account", cleared.text.includes("/_emdash/api/auth/redeemid/account"));
 	const acct = await member.go("/_emdash/api/auth/redeemid/account?return=%2Fjoin");

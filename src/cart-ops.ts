@@ -8,6 +8,7 @@
  * says the product or cart holds.
  */
 
+import { pendingDiscount, usedDiscount } from "./arrivals.js";
 import { readCart, saveCart } from "./cart.js";
 import type { RedeemIDConfig } from "./config.js";
 import { memberForUser, stores } from "./storage.js";
@@ -104,12 +105,14 @@ export async function editCart(input: CartInput, ctx: CartContext): Promise<Cart
 		const user = await sessionUser(session, ctx.db);
 		const member = user && ctx.db ? await memberForUser(stores(ctx.db), user.id) : null;
 		const current = await readCart(session);
+		const discount = await pendingDiscount(session);
 		const cart = await addToCart(
 			config,
 			current?.id ?? null,
 			{ variantId: variant.id, sellingPlanId: plan, quantity },
-			{ email: member?.email ?? null, attributes: input.page ? { _redeemid_page: input.page } : {}, buyerIp, context },
+			{ email: member?.email ?? null, attributes: input.page ? { _redeemid_page: input.page } : {}, buyerIp, context, discountCodes: discount ? [discount] : [] },
 		);
+		await usedDiscount(session, config, discount, cart, current, { buyerIp });
 		save(cart);
 		return { notice: "cart_added", cart: null, base: cart, added: { product: p.handle, variant: variant.id, quantity, sellingPlan: Boolean(plan) } };
 	}
