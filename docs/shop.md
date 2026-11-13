@@ -64,7 +64,14 @@ import type { APIRoute } from "astro";
 export const GET: APIRoute = async ({ locals, url }) => productSitemap(await siteConfig(locals), url, { productHref: "/shop/{handle}/" });
 ```
 
-Then submit it to search engines, or list it in robots.txt. A custom robots.txt in EmDash's SEO settings replaces the generated one, so keep both lines in it: `Sitemap: https://<your site>/sitemap.xml` and `Sitemap: https://<your site>/sitemap-products.xml`. If the store's Online Store channel is open too, search engines find two pages for each product; headless stores usually password-protect the Online Store or redirect it to the site.
+Then submit it to search engines, or list it in robots.txt. A custom robots.txt in EmDash's SEO settings replaces the generated one, so keep both lines in it: `Sitemap: https://<your site>/sitemap.xml` and `Sitemap: https://<your site>/sitemap-products.xml`. If the store's Online Store channel is open too, search engines find two pages for each product: publish the [redirect theme](https://github.com/webmultipliers/redeemid-emdash-shopify-redirect-theme) on the store to send its pages to the site (below).
+
+<a id="discount-links"></a>**The store's own pages and discount links.** The [RedeemID redirect theme](https://github.com/webmultipliers/redeemid-emdash-shopify-redirect-theme) is a Shopify theme that sends the store's online store pages to the site (`/products/gold` to `/shop/gold/`, with editable path rules), while checkout and customer accounts stay on Shopify. It passes two things along, and the guard middleware (`redeemidGuard()`) takes both off the URL before the page renders:
+
+- `?discount=CODE`, from Shopify's discount links (`https://<store>/discount/CODE?redirect=/products/gold`). The code goes on the visitor's cart straight away, or waits in their session for the first cart made for them (an Add to cart or a plan's Join button). Shopify decides at checkout whether it applies.
+- `?logged_in=true`, when the customer is signed in to the store. A visitor who isn't signed in on the site is sent through sign-in with `prompt=none` (`login?quiet=1`), so they come back signed in without a form, or still signed out if the store session has ended, with no notice either way.
+
+You can link to any site page with `?discount=CODE` yourself, too.
 
 **Shoppers' agents.** Shopify runs a Storefront MCP server for every store at `https://<store domain>/api/mcp`, for AI agents that browse, build a cart and check out. Point shopping agents there; RedeemID's own tools are for staff.
 

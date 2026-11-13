@@ -24,6 +24,8 @@ export interface Flow {
 	at: number;
 	/** Started by Refresh membership (prompt=none). */
 	refresh?: boolean;
+	/** Started because the store said the customer is signed in there: a refusal comes back with no notice and no form. */
+	quiet?: boolean;
 }
 
 export const CALLBACK_PATH = "/_emdash/api/auth/redeemid/callback";

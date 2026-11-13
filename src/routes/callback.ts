@@ -41,6 +41,8 @@ export const GET: APIRoute = async ({ request, locals, session, redirect }) => {
 	if (!config || !storeDomain(config) || !clientId || !emdash?.db || !session) return fail(redirect, returnTo, "not_configured");
 
 	if (url.searchParams.get("error")) {
+		// The store session had ended after all: back to the page, still signed out.
+		if (flow?.quiet) return redirect(returnTo);
 		// Refresh found no open store session: sign in as usual.
 		if (flow?.refresh) return redirect(`/_emdash/api/auth/redeemid/login?return=${encodeURIComponent(returnTo)}`);
 		await refused("sign_in_cancelled", "ok");

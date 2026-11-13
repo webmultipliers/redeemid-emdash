@@ -28,6 +28,7 @@
 import { defineMiddleware } from "astro:middleware";
 
 import { signInUrl } from "./access.js";
+import { arrival } from "./arrivals.js";
 import { readCart } from "./cart.js";
 import { keysFromUrl, pathAccess, refusal } from "./files.js";
 import { keptOut, purgeRouteCache } from "./route-cache.js";
@@ -142,6 +143,9 @@ async function guard(context: Context, next: Next): Promise<Response> {
 	}
 
 	if (!url.pathname.startsWith("/_emdash")) {
+		// Sent over from the store's own pages, with a discount code or a store sign-in.
+		const arrived = await arrival(context, config, user);
+		if (arrived) return arrived;
 		const own = Boolean(user) || Boolean(await readCart(context.session as never).catch(() => null));
 		if (own) return keepPrivate(context, await next());
 		const res = await next();

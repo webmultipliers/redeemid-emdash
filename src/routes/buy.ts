@@ -13,6 +13,7 @@ import type { APIRoute } from "astro";
 import { readConfig, storeDomain } from "../config.js";
 import { safeReturn } from "../access.js";
 import { memberForUser, stores } from "../storage.js";
+import { pendingDiscount, usedDiscount } from "../arrivals.js";
 import { saveCart, readCart } from "../cart.js";
 import { checkoutFor } from "../checkout.js";
 import { addToCart, plan, storeContext } from "../storefront.js";
@@ -37,12 +38,15 @@ export const POST: APIRoute = async ({ request, locals, session, redirect }) => 
 		const user = await sessionUser(session, emdash?.db);
 		const member = user && emdash?.db ? await memberForUser(stores(emdash.db), user.id) : null;
 		const current = await readCart(session);
+		const discount = await pendingDiscount(session);
+		const buyerIp = request.headers.get("cf-connecting-ip");
 		const cart = await addToCart(
 			config,
 			current?.id ?? null,
 			{ variantId: p.variantId, sellingPlanId: p.sellingPlanId },
-			{ email: member?.email ?? null, attributes: { _redeemid_page: returnTo }, buyerIp: request.headers.get("cf-connecting-ip"), context },
+			{ email: member?.email ?? null, attributes: { _redeemid_page: returnTo }, buyerIp, context, discountCodes: discount ? [discount] : [] },
 		);
+		await usedDiscount(session, config, discount, cart, current, { buyerIp });
 		saveCart(session, { id: cart.id, count: cart.totalQuantity });
 		return redirect(await checkoutFor(config, cart, { session, request, emdashConfig: emdash?.config }), 303);
 	} catch {
