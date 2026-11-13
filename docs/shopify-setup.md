@@ -27,11 +27,11 @@ The store must use the new customer accounts (Settings → Customer accounts). C
 
 RedeemID keeps tags and status current from webhooks sent by a Shopify app on the store (for example a Dev Dashboard app). Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
 
-Give the app the `read_customers` and `write_customers` Admin API scopes, plus `read_customer_merge` for `customers/merge`, and set its **client ID** on the site as well. Then the Setup page (or **Webhooks → Setup**) registers these topics at `https://<site>/_emdash/api/auth/redeemid/webhook` with one button:
+Give the app the `read_customers` and `write_customers` Admin API scopes (`write_customers` alone is enough, since a write scope includes its read scope), plus `read_customer_merge` for `customers/merge`, and set its **client ID** on the site as well. Then the Setup page (or **Webhooks → Setup**) registers these topics at `https://<site>/_emdash/api/auth/redeemid/webhook` with one button:
 
 `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`
 
-Without the client ID, subscribe them to that URL yourself. If the app already sends webhooks to another site, add this URL as extra subscriptions.
+Without the client ID, subscribe them to that URL yourself. If the app already sends webhooks to another site, add this URL as extra subscriptions. Subscriptions set in the app's own configuration (its Dev Dashboard version or `shopify.app.toml`) don't show in the Admin API, so Setup counts each of those topics as sent once a delivery of it arrives.
 
 The client ID and those scopes also run the staff tools (member resync and tag edits written to Shopify), member preferences, and the reads that keep tags in order (see [staff tools](staff.md#staff-tools)). RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization. For the **Also request erasure in Shopify** button on a member's page, add the optional `write_customer_data_erasure` scope.
 

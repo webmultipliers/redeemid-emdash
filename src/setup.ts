@@ -16,7 +16,7 @@
  * setupSteps() and setupPage() are pure.
  */
 
-import { adminConfigured, adminScopes, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
+import { adminConfigured, adminScopes, grantedScopes, topicName, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
 import { env, ENV, levelTags, storeDomain, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import type { Stores } from "./storage.js";
@@ -43,7 +43,12 @@ export interface SetupFacts {
 	/** null without the app; "ok", or why the Admin API token was refused. */
 	admin: string | null;
 	scopes: string[];
-	/** Topics not yet sent to this site, or null when that can't be checked. */
+	/**
+	 * Topics not yet sent to this site, or null when that can't be checked.
+	 * A topic counts as sent when the Admin API lists a subscription for it
+	 * here, or when a delivery of it has arrived: subscriptions set in the
+	 * app's own configuration don't show in the Admin API.
+	 */
 	webhooksMissing: string[] | null;
 	levels: Array<{ name: string; tags: string[] }>;
 	/** Members who have signed in on this site. */
@@ -74,10 +79,10 @@ export async function setupFacts(config: RedeemIDConfig, s: Stores, origin: stri
 	let webhooksMissing: string[] | null = null;
 	if (domain && adminConfigured()) {
 		try {
-			scopes = (await adminScopes(config)).split(",").map((t) => t.trim()).filter(Boolean);
+			scopes = grantedScopes(await adminScopes(config));
 			admin = "ok";
-			const subs = await webhookSubscriptions(config);
-			webhooksMissing = WEBHOOK_TOPICS.filter((t) => !subs.some((h) => h.topic === t && h.uri === `${origin}${WEBHOOK}`));
+			const [subs, heard] = await Promise.all([webhookSubscriptions(config), heardTopics(s)]);
+			webhooksMissing = WEBHOOK_TOPICS.filter((t) => !subs.some((h) => h.topic === t && h.uri === `${origin}${WEBHOOK}`) && !heard.has(topicName(t)));
 		} catch (e) {
 			admin = (e as Error).message || "failed";
 		}
@@ -104,6 +109,16 @@ export async function setupFacts(config: RedeemIDConfig, s: Stores, origin: stri
 		signedIn,
 		storefront: Boolean(env(ENV.storefrontPrivateToken) || env(ENV.storefrontPublicToken)),
 	};
+}
+
+/** Topics of the latest deliveries, as Shopify names them (customers/update). */
+async function heardTopics(s: Stores): Promise<Set<string>> {
+	try {
+		const { items } = await s.deliveries.query({ orderBy: { receivedAt: "desc" }, limit: 200 });
+		return new Set(items.map((r) => r.data.topic.trim().toLowerCase()));
+	} catch {
+		return new Set();
+	}
 }
 
 const missingScopes = (f: SetupFacts) => SETUP_SCOPES.filter((sc) => !f.scopes.includes(sc));
@@ -201,7 +216,11 @@ function stepBlocks(step: Step, f: SetupFacts): unknown[] {
 			const missing = f.webhooksMissing ?? [];
 			return [
 				...out,
-				{ type: "section", text: `${missing.length} of ${WEBHOOK_TOPICS.length} topics aren't sent to this site yet. RedeemID can register them through the app.` },
+				{ type: "section", text: `${missing.length} of ${WEBHOOK_TOPICS.length} topics aren't sent to this site yet: ${missing.map(topicName).join(", ")}. RedeemID can register them through the app.` },
+				{
+					type: "context",
+					text: "Webhooks set in the app's own configuration (Dev Dashboard version or shopify.app.toml) don't show in the Admin API. Each of those topics counts here once Shopify has sent one, so registering them again isn't needed.",
+				},
 				{ type: "actions", elements: [{ type: "button", action_id: "setup_register", label: `Register ${missing.length} webhooks`, style: "primary" }] },
 				{
 					type: "context",
