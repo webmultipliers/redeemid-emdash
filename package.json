@@ -1,6 +1,6 @@
 {
 	"name": "@redeemid/emdash",
-	"version": "0.0.30",
+	"version": "0.0.31",
 	"description": "Shopify commerce for EmDash sites: storefront, cart, checkout, customer accounts, memberships and paywalls. Shopify runs commerce; EmDash runs content.",
 	"type": "module",
 	"license": "MIT",
@@ -26,6 +26,7 @@
 		"./text": "./src/text.ts",
 		"./contract": "./src/contract.ts",
 		"./plugin": "./src/plugin.ts",
+		"./admin": "./src/admin.ts",
 		"./blocks": "./src/blocks/index.ts",
 		"./components/*": "./src/components/*",
 		"./routes/*": "./src/routes/*"
@@ -58,18 +59,26 @@
 		"e2e": "node tests/e2e/run.mjs"
 	},
 	"peerDependencies": {
+		"@cloudflare/kumo": ">=2.6.0",
 		"@emdash-cms/auth": ">=1.1.0",
+		"@emdash-cms/blocks": ">=1.4.0",
 		"astro": ">=6",
-		"emdash": ">=1.1.0"
+		"emdash": ">=1.4.0",
+		"react": ">=19"
 	},
 	"dependencies": {
 		"jose": "^6.1.3"
 	},
 	"devDependencies": {
+		"@cloudflare/kumo": "^2.6.0",
+		"@emdash-cms/admin": "^1.4.0",
 		"@emdash-cms/auth": "^1.4.0",
+		"@emdash-cms/blocks": "^1.4.0",
+		"@types/react": "^19.2.0",
 		"astro": "^7.3.2",
 		"emdash": "^1.4.0",
 		"kysely": "^0.29.0",
+		"react": "19.2.4",
 		"typescript": "^6.0.3",
 		"vitest": "4.1.10"
 	},

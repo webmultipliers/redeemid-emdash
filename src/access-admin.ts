@@ -16,6 +16,8 @@
 import type { StorageCollection } from "emdash";
 
 import { applyEntryRule, badgeColor, describe, requirement, ruleSource, SIGNED_IN, termTree, type Requirement, type Terms } from "./access.js";
+import { accessMap, type MapGo } from "./access-map.js";
+import { accessTest } from "./staff.js";
 import { groupsOf, type FeatureConfig, type FileRule, type LevelConfig, type MeterConfig, type RedeemIDConfig, type RuleConfig, type TagGroup } from "./config.js";
 import {
 	days,
@@ -62,12 +64,30 @@ export interface AccessEnv {
 	taxonomies: TaxonomyInfo[];
 	/** Terms of a taxonomy, parents before children, labels showing the path. */
 	terms(taxonomy: string): Promise<TermInfo[]>;
+	/** Members holding each level, for the map (left out in tests). */
+	holders?(): Promise<Record<string, number>>;
 }
 
-export const TABS = ["levels", "site", "types", "taxonomies", "features", "files"] as const;
+export const TABS = ["map", "levels", "site", "types", "taxonomies", "features", "files", "test"] as const;
 export type Tab = (typeof TABS)[number];
-/** Which of the four panels holds each part. */
-const PANEL: Record<Tab, number> = { levels: 0, features: 0, site: 1, types: 1, taxonomies: 2, files: 3 };
+/** Which panel holds each part: Map, Levels, Features, Rules, Terms, Files, Test. */
+const PANEL: Record<Tab, number> = { map: 0, levels: 1, features: 2, site: 3, types: 3, taxonomies: 4, files: 5, test: 6 };
+
+/**
+ * A button that opens a dialog around `blocks` (rendered by admin.ts). With
+ * `open` and no `label` it opens straight away, for Edit picked in a table.
+ */
+function modal(id: string, title: string, blocks: unknown[], opts: { label?: string; style?: "primary" | "secondary"; description?: string; open?: boolean } = {}) {
+	return {
+		type: "redeemid_modal",
+		block_id: `modal:${id}`,
+		title,
+		...(opts.description ? { description: opts.description } : {}),
+		...(opts.label ? { trigger: { label: opts.label, style: opts.style ?? "primary" } } : {}),
+		...(opts.open ? { open: true } : {}),
+		blocks,
+	};
+}
 
 const effective = (env: AccessEnv) => mergeAccess(env.code, env.saved) ?? env.code;
 
@@ -189,16 +209,78 @@ export function parseGroups(raw: unknown, firstMatch?: unknown): TagGroup[] {
 
 // ---------------------------------------------------------------- tabs
 
+const API_DOCS = "https://github.com/webmultipliers/redeemid-emdash/blob/main/docs/developer-api.md";
+
+/** Astro code that checks a level, with its slug filled in. */
+function levelCode(slug: string): string {
+	return `---
+import Gate from "@redeemid/emdash/components/Gate.astro";
+import { viewer } from "@redeemid/emdash/access";
+const reader = await viewer(Astro);
+---
+<Gate levels={["${slug}"]}>
+  <p>Only this level sees this part.</p>
+  <p slot="locked">Join to read it.</p>
+</Gate>
+{reader.levels.includes("${slug}") && <p>Thanks for being a member.</p>}`;
+}
+
+/** Astro code that checks a feature, with its slug filled in. */
+function featureCode(slug: string): string {
+	return `---
+import Feature from "@redeemid/emdash/components/Feature.astro";
+import { hasFeature } from "@redeemid/emdash/features";
+const on = await hasFeature(Astro, "${slug}");
+---
+<Feature slug="${slug}">
+  <p>Shown to members who hold it.</p>
+  <p slot="else">Shown to everyone else.</p>
+</Feature>
+{!on && <aside class="ad">…</aside>}`;
+}
+
+/**
+ * A closed "Use it in your site" section: who grants it (Shopify), the code
+ * that checks it, and where the full API is.
+ */
+function inSite(kind: "level" | "feature", slug: string, named?: string): unknown {
+	const grant = "Who holds it is decided in Shopify: Flow, a subscription app, or staff on a member's Tags tab. Nothing on this site grants it.";
+	const what =
+		kind === "level"
+			? "Content rules here lock posts to a level without code. In templates, <Gate levels> locks part of a page, and viewer(Astro).levels or membership() says what the reader holds. In the browser, window.redeemid's state event lists the reader's levels."
+			: "A feature does nothing until the site's code checks it. Use <Feature slug> to show or hide part of a page, or hasFeature(Astro, slug) in code. Protected folders on the Files tab can also open to a feature. In the browser, window.redeemid's state event lists the reader's features.";
+	return {
+		type: "accordion",
+		label: named ? `Use ${named} in your site` : "Use it in your site",
+		blocks: [
+			{ type: "context", text: grant },
+			{ type: "context", text: what },
+			{ type: "code", language: "astro", code: kind === "level" ? levelCode(slug) : featureCode(slug) },
+			{ type: "actions", elements: [{ type: "link", label: "Developer API", target: { kind: "external", url: API_DOCS }, appearance: "secondary" }] },
+		],
+	};
+}
+
+/** The whole picture: who gets what, and through which level. */
+async function mapTab(env: AccessEnv): Promise<unknown[]> {
+	const config = effective(env);
+	const holders = env.holders ? await env.holders().catch(() => undefined) : undefined;
+	const rows = accessMap({ config, entries: env.saved.entries, collections: env.collections, taxonomies: env.taxonomies, tagWords: groupsWords, holders });
+	return [
+		{ type: "context", text: "Who gets what. Pick a row to see everything it opens and where to change it. A level also gets what its included levels, signed-in members and everyone get, counted as \"via\". This shows which settings name a reader; to see which rule wins on one post, use the Test tab." },
+		{ type: "redeemid_map", action_id: "map_go", rows },
+	];
+}
+
 function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 	const config = effective(env);
 	const levels = config.levels ?? [];
 	const rules = config.rules ?? [];
 	const used = (slug: string) => rules.filter((r) => r.levels.includes(slug)).length;
 	const current = editing ? levels.find((l) => l.slug === editing) : undefined;
-	const others = levels.filter((l) => l.slug !== current?.slug);
 	return [
-		{ type: "context", text: "A level is a name for readers who hold some Shopify customer tags. Name them anything. Tags come from Shopify (Flow, a subscription app or staff), never from this site. A level that includes another reads everything for it too, so a rule names only the lowest level that may read." },
-		...sourceLine(env, "levels", "Levels"),
+		{ type: "context", text: "A level names the readers who hold some Shopify customer tags, and rules lock content to it. Tags come from Shopify (Flow, a subscription app or staff), never from this site. A level that includes another also reads everything that one reads. Features (next tab) add perks on top." },
+		modal("level:new", "Add a level", levelForm(levels), { label: "Add a level", description: TAG_HELP }),
 		levels.length
 			? {
 					type: "table",
@@ -221,35 +303,40 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 						act: { type: "menu", action_id: "level_menu", label: "Edit", items: [{ label: "Edit", value: `edit:${l.slug}` }, { label: "Remove", value: `remove:${l.slug}` }] },
 					})),
 				}
-			: { type: "empty", title: "No levels yet", description: "Add one below, such as Members for the tag member.", size: "sm" },
-		{ type: "header", text: current ? `Edit ${current.name}` : "Add a level" },
-		{ type: "context", text: "Shopify tags: a line passes when the customer has any one of its tags; start a line with all: to need every tag on it. Any one line grants the level, so gold on one line and all: silver, annual on the next means Gold, or Silver with Annual." },
+			: { type: "empty", title: "No levels yet", description: "Add one, such as Members for the Shopify tag member.", size: "sm" },
+		inSite("level", levels[0]?.slug ?? "members"),
+		...(current ? [modal(`level:${current.slug}`, `Edit ${current.name}`, [...levelForm(levels, current), inSite("level", current.slug, current.name)], { open: true, description: TAG_HELP })] : []),
+		...sourceLine(env, "levels", "Levels"),
+	];
+}
+
+const TAG_HELP = "Shopify tags: one group per line, commas between tags. A line passes when the customer has any one of its tags; start it with all: to need every tag. Any line grants the level.";
+
+/** The level form: what a level needs first, the optional extras behind a switch. */
+function levelForm(levels: LevelConfig[], current?: LevelConfig): unknown[] {
+	const others = levels.filter((l) => l.slug !== current?.slug);
+	const extras = Boolean(current && (current.wall || current.joinUrl || current.products?.length || current.home || current.badge));
+	const more = { field: "more", eq: true };
+	return [
 		{
 			type: "form",
 			block_id: current ? `level:${current.slug}` : "level:new",
 			fields: [
 				{ type: "text_input", action_id: "name", label: "Name", placeholder: "Members", initial_value: current?.name ?? "" },
 				...(current ? [] : [{ type: "text_input", action_id: "slug", label: "Slug (optional, fixed once saved)", placeholder: "members" }]),
-				{
-					type: "text_input",
-					action_id: "tags",
-					label: "Shopify tags: commas between tags, one group per line",
-					placeholder: "gold\nall: silver, annual",
-					initial_value: groupsText(current),
-					multiline: true,
-				},
+				{ type: "text_input", action_id: "tags", label: "Shopify tags", placeholder: "gold\nall: silver, annual", initial_value: groupsText(current), multiline: true },
 				...(others.length
-					? [{ type: "checkbox", action_id: "includes", label: "Also opens what these levels read", options: others.map((l) => ({ label: l.name, value: l.slug })), initial_value: current?.includes ?? [] }]
+					? [{ type: "checkbox", action_id: "includes", label: "Also reads what these levels read", options: others.map((l) => ({ label: l.name, value: l.slug })), initial_value: current?.includes ?? [] }]
 					: []),
-				{ type: "text_input", action_id: "wall", label: "Wall text (optional)", initial_value: current?.wall ?? "", multiline: true },
-				{ type: "text_input", action_id: "join_url", label: "Join link (optional)", placeholder: "/join/", initial_value: current?.joinUrl ?? "" },
-				{ type: "text_input", action_id: "products", label: "Shopify product handles that lead to it (optional, for plan cards)", placeholder: "gold-membership", initial_value: current?.products?.join(", ") ?? "" },
-				{ type: "text_input", action_id: "home", label: "Members' home after sign-in (optional)", placeholder: "/members/gold/", initial_value: current?.home ?? "" },
-				{ type: "text_input", action_id: "badge", label: "Badge colour (optional)", placeholder: "#c9a227", initial_value: current?.badge ?? "" },
+				{ type: "toggle", action_id: "more", label: "More options", description: "Wall text, join link, plan products, members' home and badge colour", initial_value: extras },
+				{ type: "text_input", action_id: "wall", label: "Wall text", initial_value: current?.wall ?? "", multiline: true, condition: more },
+				{ type: "text_input", action_id: "join_url", label: "Join link", placeholder: "/join/", initial_value: current?.joinUrl ?? "", condition: more },
+				{ type: "text_input", action_id: "products", label: "Shopify product handles that lead to it (for plan cards)", placeholder: "gold-membership", initial_value: current?.products?.join(", ") ?? "", condition: more },
+				{ type: "text_input", action_id: "home", label: "Members' home after sign-in", placeholder: "/members/gold/", initial_value: current?.home ?? "", condition: more },
+				{ type: "text_input", action_id: "badge", label: "Badge colour", placeholder: "#c9a227", initial_value: current?.badge ?? "", condition: more },
 			],
 			submit: { label: current ? "Save level" : "Add level", action_id: "level_save" },
 		},
-		...(current ? [{ type: "actions", elements: [{ type: "button", action_id: "level_cancel", label: "Cancel", style: "secondary" }] }] : []),
 	];
 }
 
@@ -259,23 +346,34 @@ function siteTab(env: AccessEnv): unknown[] {
 	const site = (config.rules ?? []).find((r) => r.collection === "*" && !r.taxonomy && !r.term);
 	const meter = config.meter;
 	return [
-		{ type: "context", text: "What applies when nothing more specific does, how rules combine, the meter and the join link." },
-		...sourceLine(env, "rules", "Rules"),
+		{ type: "header", text: "Site default" },
+		{ type: "context", text: "Who can read when no content type, term or entry rule says otherwise." },
 		{
 			type: "form",
 			block_id: "site",
 			fields: [
 				...ruleFields(levels, site, "Free to everyone", false),
-				{ type: "select", action_id: "combine", label: "Several term rules on one entry", options: [{ label: "Pass every one", value: "all" }, { label: "Pass any one", value: "any" }], initial_value: config.combine ?? "all" },
-				{ type: "number_input", action_id: "meter_limit", label: "Meter: free locked reads per period (0 = off)", min: 0, max: 1000, initial_value: meter?.limit ?? 0 },
-				{ type: "select", action_id: "meter_period", label: "Meter period", options: [{ label: "Month", value: "month" }, { label: "Week", value: "week" }], initial_value: meter?.period ?? "month" },
+				{ type: "select", action_id: "combine", label: "When an entry has several term rules", options: [{ label: "Readers pass every one", value: "all" }, { label: "Readers pass any one", value: "any" }], initial_value: config.combine ?? "all" },
+			],
+			submit: { label: "Save site default", action_id: "site_save" },
+		},
+		...sourceLine(env, "rules", "Rules"),
+		{ type: "divider" },
+		{ type: "header", text: "Meter and join link" },
+		{ type: "context", text: "The meter lets signed-in readers open a few locked entries each period. The join link is where walls send readers without a level." },
+		{
+			type: "form",
+			block_id: "site:meter",
+			fields: [
+				{ type: "number_input", action_id: "meter_limit", label: "Free locked reads per period (0 = off)", min: 0, max: 1000, initial_value: meter?.limit ?? 0 },
+				{ type: "select", action_id: "meter_period", label: "Period", options: [{ label: "Month", value: "month" }, { label: "Week", value: "week" }], initial_value: meter?.period ?? "month" },
 				...(env.collections.length
 					? [{ type: "checkbox", action_id: "meter_collections", label: "Meter covers (none ticked = all)", options: env.collections.map((c) => ({ label: c.label, value: c.slug })), initial_value: meter?.collections ?? [] }]
 					: []),
 				{ type: "text_input", action_id: "join_href", label: "Join link", placeholder: "/join/", initial_value: config.join?.href ?? "" },
 				{ type: "text_input", action_id: "join_label", label: "Join link text", placeholder: "Become a member", initial_value: config.join?.label ?? "" },
 			],
-			submit: { label: "Save site rules", action_id: "site_save" },
+			submit: { label: "Save meter and join link", action_id: "site_save" },
 		},
 		...sourceLine(env, "meter", "Meter"),
 		...sourceLine(env, "join", "Join link"),
@@ -288,8 +386,8 @@ function typesTab(env: AccessEnv): unknown[] {
 	const rules = config.rules ?? [];
 	if (env.collections.length === 0) return [{ type: "empty", title: "No content types yet", size: "sm" }];
 	return [
+		{ type: "header", text: "Content types" },
 		{ type: "context", text: "Who can read each content type. New content types appear here as soon as they're made. Term rules (Terms tab) and an entry's own rule (its Access panel) beat these." },
-		...sourceLine(env, "rules", "Rules"),
 		...env.collections.map((c) => {
 			const rule = rules.find((r) => r.collection === c.slug && !r.taxonomy && !r.term);
 			const teaser = config.teaser?.[c.slug] ?? 0;
@@ -354,16 +452,23 @@ async function taxonomiesTab(env: AccessEnv): Promise<unknown[]> {
 						}
 					: { type: "context", text: "No rules: its terms don't change who can read." },
 				terms.length
-					? {
-							type: "form",
-							block_id: `term:${t.name}`,
-							fields: [
-								{ type: "combobox", action_id: "term", label: "Term", options: terms.map((x) => ({ label: x.label, value: x.slug })) },
-								{ type: "select", action_id: "scope", label: "In", options: [{ label: "Every content type", value: "*" }, ...t.collections.map((c) => ({ label: label(c), value: c }))], initial_value: "*" },
-								...ruleFields(levels, undefined, null),
+					? modal(
+							`term:${t.name}`,
+							`Add a ${t.label} rule`,
+							[
+								{
+									type: "form",
+									block_id: `term:${t.name}`,
+									fields: [
+										{ type: "combobox", action_id: "term", label: "Term", options: terms.map((x) => ({ label: x.label, value: x.slug })) },
+										{ type: "select", action_id: "scope", label: "In", options: [{ label: "Every content type", value: "*" }, ...t.collections.map((c) => ({ label: label(c), value: c }))], initial_value: "*" },
+										...ruleFields(levels, undefined, null),
+									],
+									submit: { label: "Save term rule", action_id: "term_save" },
+								},
 							],
-							submit: { label: "Save term rule", action_id: "term_save" },
-						}
+							{ label: "Add a term rule", style: "secondary", description: "Saving a rule for a term that has one replaces it." },
+						)
 					: { type: "context", text: "Add terms to this taxonomy to give them rules." },
 			],
 		});
@@ -377,8 +482,8 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 	const features = config.features ?? [];
 	const current = editing ? features.find((f) => f.slug === editing) : undefined;
 	return [
-		{ type: "context", text: "Perks members hold through a level or a Shopify tag, such as ad-free reading. Pages check them with <Feature>." },
-		...sourceLine(env, "features", "Features"),
+		{ type: "context", text: "A level says what a member is and decides what they can read. A feature says what they get, such as ad-free reading: a switch the site's code checks. Give a feature to levels (the usual way) or to a Shopify tag for a one-off perk." },
+		modal("feature:new", "Add a feature", featureForm(levels), { label: "Add a feature" }),
 		features.length
 			? {
 					type: "table",
@@ -398,8 +503,15 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 						act: { type: "menu", action_id: "feature_menu", label: "Edit", items: [{ label: "Edit", value: `edit:${f.slug}` }, { label: "Remove", value: `remove:${f.slug}` }] },
 					})),
 				}
-			: { type: "context", text: "No features." },
-		{ type: "header", text: current ? `Edit ${current.name}` : "Add a feature" },
+			: { type: "empty", title: "No features yet", description: "Add one, such as Ad-free for the Members level.", size: "sm" },
+		inSite("feature", features[0]?.slug ?? "ad-free"),
+		...(current ? [modal(`feature:${current.slug}`, `Edit ${current.name}`, [...featureForm(levels, current), inSite("feature", current.slug, current.name)], { open: true })] : []),
+		...sourceLine(env, "features", "Features"),
+	];
+}
+
+function featureForm(levels: LevelConfig[], current?: FeatureConfig): unknown[] {
+	return [
 		{
 			type: "form",
 			block_id: current ? `feature:${current.slug}` : "feature:new",
@@ -407,12 +519,25 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 				{ type: "text_input", action_id: "name", label: "Name", placeholder: "Ad-free", initial_value: current?.name ?? "" },
 				...(current ? [] : [{ type: "text_input", action_id: "slug", label: "Slug (optional, fixed once saved)", placeholder: "ad-free" }]),
 				...(levels.length ? [{ type: "checkbox", action_id: "levels", label: "Levels that hold it", options: levelOptions(levels), initial_value: current?.levels ?? [] }] : []),
-				{ type: "text_input", action_id: "tags", label: "Shopify tags, comma separated (optional)", initial_value: current?.tags?.join(", ") ?? "" },
+				{ type: "text_input", action_id: "tags", label: "Shopify tags that hold it (comma separated, optional)", initial_value: current?.tags?.join(", ") ?? "" },
 			],
 			submit: { label: current ? "Save feature" : "Add feature", action_id: "feature_save" },
 		},
 	];
 }
+
+const FILE_FORM = (levels: LevelConfig[], features: FeatureConfig[]) => ({
+	type: "form",
+	block_id: "file",
+	fields: [
+		{ type: "text_input", action_id: "folder", label: "Media folder name", placeholder: "Member downloads" },
+		{ type: "toggle", action_id: "members", label: "Signed-in members", initial_value: true },
+		...(levels.length ? [{ type: "checkbox", action_id: "levels", label: "Only these levels (none = any member)", options: levelOptions(levels), condition: { field: "members", eq: true } }] : []),
+		...(features.length ? [{ type: "checkbox", action_id: "features", label: "Members with these features", options: features.map((f) => ({ label: f.name, value: f.slug })) }] : []),
+		{ type: "toggle", action_id: "entries", label: "Readers of an entry that uses the file", initial_value: false },
+	],
+	submit: { label: "Save folder", action_id: "file_save" },
+});
 
 function filesTab(env: AccessEnv): unknown[] {
 	const config = effective(env);
@@ -421,7 +546,7 @@ function filesTab(env: AccessEnv): unknown[] {
 	const files = config.files ?? [];
 	return [
 		{ type: "context", text: "Media folders whose files only some readers may download. Any of the ways in is enough." },
-		...sourceLine(env, "files", "Protected files"),
+		modal("file", "Protect a folder", [FILE_FORM(levels, features)], { label: "Protect a folder" }),
 		files.length
 			? {
 					type: "table",
@@ -442,30 +567,21 @@ function filesTab(env: AccessEnv): unknown[] {
 					})),
 				}
 			: { type: "context", text: "No protected folders: every file is public." },
-		{ type: "header", text: "Protect a folder" },
-		{
-			type: "form",
-			block_id: "file",
-			fields: [
-				{ type: "text_input", action_id: "folder", label: "Media folder name", placeholder: "Member downloads" },
-				{ type: "toggle", action_id: "members", label: "Signed-in members", initial_value: true },
-				...(levels.length ? [{ type: "checkbox", action_id: "levels", label: "Only these levels (none = any member)", options: levelOptions(levels), condition: { field: "members", eq: true } }] : []),
-				...(features.length ? [{ type: "checkbox", action_id: "features", label: "Features", options: features.map((f) => ({ label: f.name, value: f.slug })) }] : []),
-				{ type: "toggle", action_id: "entries", label: "Readers of an entry that uses it", initial_value: false },
-			],
-			submit: { label: "Save folder", action_id: "file_save" },
-		},
+		...sourceLine(env, "files", "Protected files"),
 	];
 }
 
-/** The Access page, opened on `tab`. */
-export async function accessPage(env: AccessEnv, tab: Tab = "levels", toast?: Toast, edit?: { level?: string; feature?: string }): Promise<Blocks> {
+/** The Access page, opened on `tab`. `test` holds the Test tab's last answer. */
+export async function accessPage(env: AccessEnv, tab: Tab = "map", toast?: Toast, edit?: { level?: string; feature?: string }, test?: Record<string, unknown>): Promise<Blocks> {
+	const tested = (await accessTest(effective(env), test)).blocks.filter((b) => (b as { type: string }).type !== "header");
 	const panels = [
-		// Four short tabs so they fit across a phone without scrolling the page.
-		{ label: "Levels", blocks: [...levelsTab(env, edit?.level), { type: "divider" }, { type: "header", text: "Features" }, ...featuresTab(env, edit?.feature)] },
-		{ label: "Rules", blocks: [{ type: "header", text: "Site default" }, ...siteTab(env), { type: "divider" }, { type: "header", text: "Content types" }, ...typesTab(env)] },
+		{ label: "Map", blocks: await mapTab(env) },
+		{ label: "Levels", blocks: levelsTab(env, edit?.level) },
+		{ label: "Features", blocks: featuresTab(env, edit?.feature) },
+		{ label: "Rules", blocks: [...siteTab(env), { type: "divider" }, ...typesTab(env)] },
 		{ label: "Terms", blocks: await taxonomiesTab(env) },
 		{ label: "Files", blocks: filesTab(env) },
+		{ label: "Test", blocks: tested },
 	];
 	return {
 		toast,
@@ -511,7 +627,7 @@ export interface Interaction {
 	values?: Record<string, unknown>;
 }
 
-const ACCESS_ACTIONS = new Set(["reset", "level_menu", "level_cancel", "level_save", "site_save", "type_save", "term_save", "term_remove", "feature_menu", "feature_save", "file_save", "file_remove"]);
+const ACCESS_ACTIONS = new Set(["map_go", "access_test", "reset", "level_menu", "level_cancel", "level_save", "site_save", "type_save", "term_save", "term_remove", "feature_menu", "feature_save", "file_save", "file_remove"]);
 
 export function isAccessAction(id: string | undefined): boolean {
 	return Boolean(id && ACCESS_ACTIONS.has(id));
@@ -525,6 +641,18 @@ export async function accessAction(env: AccessEnv, i: Interaction): Promise<Bloc
 	const target = String(i.block_id ?? "").split(":").slice(1).join(":");
 
 	switch (i.action_id) {
+		case "map_go": {
+			// From the map to where that part is changed.
+			const go = JSON.parse(String(i.value ?? "{}")) as MapGo;
+			if ("level" in go) return accessPage(env, "levels", undefined, { level: go.level });
+			if ("feature" in go) return accessPage(env, "features", undefined, { feature: go.feature });
+			if ("tab" in go && (TABS as readonly string[]).includes(go.tab)) return accessPage(env, go.tab);
+			return accessPage(env);
+		}
+
+		case "access_test":
+			return accessPage(env, "test", undefined, undefined, values);
+
 		case "reset": {
 			const key = String(i.value ?? "") as ManagedKey;
 			if (!MANAGED.includes(key)) return accessPage(env);
@@ -600,8 +728,12 @@ export async function accessAction(env: AccessEnv, i: Interaction): Promise<Bloc
 		}
 
 		case "site_save": {
+			// Two forms save here: the site default ("who") and the meter with
+			// the join link ("meter_limit"). Each changes only its own settings.
 			const now = effective(env);
-			const rule = ruleFrom(values, { collection: "*" }, now.levels ?? []);
+			const ruleForm = "who" in values;
+			const meterForm = "meter_limit" in values;
+			const rule = ruleForm ? ruleFrom(values, { collection: "*" }, now.levels ?? []) : null;
 			if (rule && "error" in rule) return bad("site", rule.error);
 			const limit = Math.max(0, Math.floor(Number(values.meter_limit) || 0));
 			const known = new Set(env.collections.map((c) => c.slug));
@@ -610,17 +742,20 @@ export async function accessAction(env: AccessEnv, i: Interaction): Promise<Bloc
 			const href = String(values.join_href ?? "").trim();
 			const label = String(values.join_label ?? "").trim();
 			await saveSite(env, (site, n) => {
-				const rules = start(site, n, "rules").filter((r) => !(r.collection === "*" && !r.taxonomy && !r.term));
-				if (rule) rules.push(rule);
-				return {
-					...site,
-					rules,
-					combine: values.combine === "any" ? "any" : "all",
-					meter,
-					join: href ? { href, ...(label ? { label } : {}) } : null,
-				};
+				const out: SiteAccess = { ...site };
+				if (ruleForm) {
+					const rules = start(site, n, "rules").filter((r) => !(r.collection === "*" && !r.taxonomy && !r.term));
+					if (rule) rules.push(rule);
+					out.rules = rules;
+					out.combine = values.combine === "any" ? "any" : "all";
+				}
+				if (meterForm) {
+					out.meter = meter;
+					out.join = href ? { href, ...(label ? { label } : {}) } : null;
+				}
+				return out;
 			});
-			return ok("site", "Site rules saved.");
+			return ok("site", ruleForm && !meterForm ? "Site default saved." : meterForm && !ruleForm ? "Meter and join link saved." : "Site rules saved.");
 		}
 
 		case "type_save": {

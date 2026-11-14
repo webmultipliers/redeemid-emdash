@@ -6,7 +6,7 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 
 | Option | Type | What it does |
 | --- | --- | --- |
-| `shop` | `string` | The store's `*.myshopify.com` domain. A custom domain works for sign-in, but the Admin API (staff tools, webhook registration, tag reads) answers only on myshopify.com, and the Status page warns when the app is set up with a custom domain. Leave it out to read `REDEEMID_SHOPIFY_STORE_DOMAIN`. |
+| `shop` | `string` | The store's `*.myshopify.com` domain. A custom domain works for sign-in, but the Admin API (staff tools, webhook registration, tag reads) answers only on myshopify.com, and Connection → Status warns when the app is set up with a custom domain. Leave it out to read `REDEEMID_SHOPIFY_STORE_DOMAIN`. |
 | `label` | `string` | The sign-in button's label. Default "Sign in". |
 | `levels` | `{ slug, name, tags?, match?, groups?, includes?, wall?, joinUrl?, products?, home?, badge? }[]` | Levels from customer tags. See [levels](access.md#levels). |
 | `rules` | `{ collection, taxonomy?, term?, levels, open?, drip?, meter? }[]` | What needs which levels. See [rules](access.md#rules). |
@@ -42,7 +42,7 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 | `REDEEMID_SHOPIFY_STORE_DOMAIN` | Discovery | The store's domain, only when `shop` isn't in the config |
 | `REDEEMID_EVENTS_SECRET` | Events | Signs outbound events. Set it with `events.url`. |
 
-The Status page shows each one as Set or Missing, and lists any `REDEEMID_` variable that is set but not read, by name only, so a misspelt name stands out. Authorization, token and logout endpoints need no setting: RedeemID reads them from the store's discovery documents.
+Connection → Status shows each one as Set or Missing, and lists any `REDEEMID_` variable that is set but not read, by name only, so a misspelt name stands out. Authorization, token and logout endpoints need no setting: RedeemID reads them from the store's discovery documents.
 
 ## Components
 
@@ -110,7 +110,7 @@ The full developer API (stable exports, JSON routes, the browser client and its 
 
 Under `/_emdash/api/auth/redeemid/`: `login`, `callback`, `logout`, `webhook`, `buy`, `cart`, `cart-edit`, `account`, `preferences` and `privacy`, and the JSON routes `api/state`, `api/cart` and `api/search`. Staff-only routes for the admin, agents and the command line are under `/_emdash/api/plugins/redeemid/`.
 
-In the Customer Account API client, set the callback URI to `https://<site>/_emdash/api/auth/redeemid/callback`, the logout URI to `https://<site>/`, and (public clients) the JavaScript origin to `https://<site>`. Point webhooks at `https://<site>/_emdash/api/auth/redeemid/webhook`: `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added` and `customer.tags_removed` (the Setup page registers these for you). The compliance topics `customers/data_request`, `customers/redact` and `shop/redact` go to the same URL, set in the app's own configuration.
+In the Customer Account API client, set the callback URI to `https://<site>/_emdash/api/auth/redeemid/callback`, the logout URI to `https://<site>/`, and (public clients) the JavaScript origin to `https://<site>`. Point webhooks at `https://<site>/_emdash/api/auth/redeemid/webhook`: `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added` and `customer.tags_removed` (Connection → Setup registers these for you). The compliance topics `customers/data_request`, `customers/redact` and `shop/redact` go to the same URL, set in the app's own configuration.
 
 ## Notices
 
