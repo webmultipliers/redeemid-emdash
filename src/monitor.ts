@@ -129,7 +129,7 @@ export async function healthCheck(env_: MonitorEnv): Promise<HealthResult> {
 
 	const last = await lastDelivery(s);
 	if (settings.quietDays > 0) {
-		if (!last) problems.push({ level: "warn", text: "No webhooks received yet. Check the subscriptions under Setup." });
+		if (!last) problems.push({ level: "warn", text: "No webhooks received yet. Check the webhook subscriptions under Connection → Status." });
 		else if (Date.parse(last.receivedAt) < now - settings.quietDays * DAY) {
 			const days = Math.floor((now - Date.parse(last.receivedAt)) / DAY);
 			problems.push({ level: "warn", text: `No webhooks for ${days} days. Quiet stores are normal; if customers changed in Shopify since, check Setup.` });

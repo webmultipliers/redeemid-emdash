@@ -31,7 +31,7 @@ Both caching helpers add the tag `redeemid` (`CACHE_TAG`). Saving on the Access 
 
 A cached page is the same for everyone, signed-in members included, since nothing runs on a hit. Keep member-aware parts of cached pages, such as the header's Account link or a cart count, in the browser with [`window.redeemid`](developer-api.md), or leave those pages out of the cache.
 
-The Status page lists templates that call `Astro.cache.set()` on pages of a gated collection.
+Connection → Status lists templates that call `Astro.cache.set()` on pages of a gated collection.
 
 ## Rate limits
 
@@ -45,8 +45,8 @@ Each action counts separately per visitor (by `CF-Connecting-IP`), and Cloudflar
 
 ## Troubleshooting
 
-- **A setting shows Missing on the Status page.** Check the name: the Status page lists any `REDEEMID_` variable it doesn't read. Set it as a runtime secret, not a build variable. On Workers, a deploy can remove plain-text dashboard variables, so use encrypted secrets.
+- **A setting shows Missing on Connection → Status.** Check the name: Connection → Status lists any `REDEEMID_` variable it doesn't read. Set it as a runtime secret, not a build variable. On Workers, a deploy can remove plain-text dashboard variables, so use encrypted secrets.
 - **Sign-in comes back with a notice.** The code says why; see [notices](reference.md#notices). `sign_in_unavailable` means store discovery failed, usually a wrong `shop`. `not_configured` means the client ID or `shop` is missing.
 - **Register webhooks names a refused topic.** The app lacks a scope, such as `read_customer_merge` for `customers/merge`. Add it to the app, have the store accept the new version, and press Register again.
-- **Tags changed in Shopify but the site didn't follow.** Check Webhooks → Received and Health, and App events with Problems only. Resync the member from their page, or ask them to press Refresh membership.
+- **Tags changed in Shopify but the site didn't follow.** Check Connection → Webhooks and Health, and App events with Problems only. Resync the member from their page, or ask them to press Refresh membership.
 - **A member sees the visitor's page.** A cache is serving it. See [caching](#caching).

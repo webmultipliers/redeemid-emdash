@@ -290,14 +290,13 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 						if (i.page === "/access") return await accessPage(await accessEnv(config));
 						// Access test moved to Access → Test; old links land there.
 						if (i.page === "/test") return await accessPage(await accessEnv(config), "test");
-						if (i.page === "/webhooks") {
-							await scheduleHealth(ctx);
-							return await webhooksPage(monitorEnv(config, await memberStores(), ctx));
-						}
-						if (i.page === "/events") return await eventsPage(await memberStores());
 						if (i.page === "/reports") return await reportsPage(config, await memberStores());
-						if (i.page === "/setup") return setupPage(await setupFacts(config, await memberStores(), siteOrigin(ctx)));
-						if (i.page === "/status") return await statusPage(config, ctx.request);
+						// Status, Setup, Webhooks, Health and App events are tabs of Connection; the old pages open their tab.
+						const conn = CONNECTION_PATHS[i.page ?? ""];
+						if (conn !== undefined) {
+							await scheduleHealth(ctx);
+							return await connectionPage(config, ctx, conn ?? undefined);
+						}
 						if (i.page === "/privacy") return await privacyPage(await memberStores());
 						if (i.page === "widget:status") return await statusWidget(config, ctx);
 					} catch (e) {
@@ -486,12 +485,15 @@ function siteOrigin(ctx: PluginContext): string {
 async function setupAction(
 	config: RedeemIDConfig,
 	live: () => Promise<RedeemIDConfig>,
-	ctx: PluginContext,
+	ctx: RouteContext,
 	i: { action_id?: string; values?: Record<string, unknown> },
 ) {
 	const s = await memberStores();
 	const origin = siteOrigin(ctx);
-	const page = async (toast?: { type: "success" | "error" | "info"; message: string }) => setupPage(await setupFacts(await live(), s, origin), toast);
+	const page = async (toast?: { type: "success" | "error" | "info"; message: string }) => {
+		const now = await live();
+		return connectionPage(now, ctx, "setup", { setup: setupPage(await setupFacts(now, s, origin), toast) });
+	};
 	if (i.action_id === "setup_register") {
 		try {
 			const { added, failed } = await registerWebhooks(config, origin + WEBHOOK);
@@ -588,41 +590,41 @@ async function action(
 				const done = added.length ? `Registered ${added.length} webhooks.` : failed.length ? "" : "Nothing was missing.";
 				const refused = failed.map((f) => `Shopify refused ${f.topic}: ${f.message}`).join(" ");
 				await record({ event: "staff.webhooks", label: "register", status: failed.length ? `${failed.length} refused` : `${added.length} registered`, level: failed.length ? "warn" : "ok", origin: "staff" });
-				return webhooksPage(monitor(), "setup", { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") });
+				return connectionPage(config, ctx, "status", { hooks: await webhooksPage(monitor(), "setup", { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") }) });
 			} catch (e) {
-				return webhooksPage(monitor(), "setup", fail(e));
+				return connectionPage(config, ctx, "status", { hooks: await webhooksPage(monitor(), "setup", fail(e)) });
 			}
 		}
 		case "webhooks_tab": {
 			const tab = WEBHOOK_TABS.includes(i.value as WebhookTab) ? (i.value as WebhookTab) : "received";
-			return webhooksPage(monitor(), tab);
+			return connectionPage(config, ctx, tab === "setup" ? "status" : tab === "health" ? "health" : "webhooks");
 		}
 		case "deliveries_page":
-			return webhooksPage(monitor(), "received", undefined, cursorOf(i.value));
+			return connectionPage(config, ctx, "webhooks", { hooks: await webhooksPage(monitor(), "received", undefined, cursorOf(i.value)) });
 		case "health_check": {
 			const r = await healthCheck({ ...monitor(), by: "staff" });
 			const message = r.problems.length ? `Checked: ${r.problems.length === 1 ? "1 problem" : `${r.problems.length} problems`}.` : "Checked: subscriptions are in place and deliveries look healthy.";
-			return webhooksPage(monitor(), "health", { type: r.problems.length ? "info" : "success", message });
+			return connectionPage(config, ctx, "health", { hooks: await webhooksPage(monitor(), "health", { type: r.problems.length ? "info" : "success", message }) });
 		}
 		case "monitor_save":
-			return webhooksPage(monitor(), "health", await saveMonitor(ctx.kv, i.values));
+			return connectionPage(config, ctx, "health", { hooks: await webhooksPage(monitor(), "health", await saveMonitor(ctx.kv, i.values)) });
 		case "events_filter":
-			return eventsPage(s, { event: String(i.values?.event ?? "") || undefined, problems: i.values?.problems === true });
+			return connectionPage(config, ctx, "events", { events: await eventsPage(s, { event: String(i.values?.event ?? "") || undefined, problems: i.values?.problems === true }) });
 		case "events_show":
-			return eventsPage(s, { event: String(i.value ?? "") || undefined });
+			return connectionPage(config, ctx, "events", { events: await eventsPage(s, { event: String(i.value ?? "") || undefined }) });
 		case "events_page":
-			return eventsPage(s, parseFilter(i.block_id), cursorOf(i.value));
+			return connectionPage(config, ctx, "events", { events: await eventsPage(s, parseFilter(i.block_id), cursorOf(i.value)) });
 		case "failed_resend": {
 			const sent = await resend(config, s, String(i.value ?? "")).catch(() => false);
-			return eventsPage(s, {}, undefined, sent ? { type: "success", message: "Sent. It's off the failed list." } : { type: "error", message: "The receiver still didn't take it. It stays on the list." });
+			return connectionPage(config, ctx, "events", { events: await eventsPage(s, {}, undefined, sent ? { type: "success", message: "Sent. It's off the failed list." } : { type: "error", message: "The receiver still didn't take it. It stays on the list." }) });
 		}
 		case "failed_clear":
 			await s.failedEvents.delete(String(i.value ?? ""));
-			return eventsPage(s, {}, undefined, { type: "success", message: "Cleared." });
+			return connectionPage(config, ctx, "events", { events: await eventsPage(s, {}, undefined, { type: "success", message: "Cleared." }) });
 		case "failed_clear_all": {
 			const { items } = await s.failedEvents.query({ limit: 100 });
 			await s.failedEvents.deleteMany(items.map((r) => r.id));
-			return eventsPage(s, {}, undefined, { type: "success", message: "Failed events cleared." });
+			return connectionPage(config, ctx, "events", { events: await eventsPage(s, {}, undefined, { type: "success", message: "Failed events cleared." }) });
 		}
 		case "member_export": {
 			const id = String(i.value ?? "");
@@ -789,6 +791,56 @@ function textSummary(config: RedeemIDConfig): string {
 	return ignored ? `${all - ignored} in use, ${ignored} ignored` : `${all} in use`;
 }
 
+type ConnectionTab = "status" | "setup" | "webhooks" | "health" | "events";
+const CONNECTION_TABS: ConnectionTab[] = ["status", "setup", "webhooks", "health", "events"];
+/** Connection, and the pages that are now its tabs (null: pick the tab from the setup state). */
+const CONNECTION_PATHS: Record<string, ConnectionTab | null> = { "/connection": null, "/status": "status", "/setup": "setup", "/webhooks": "webhooks", "/health": "health", "/events": "events" };
+
+type Built = { blocks: unknown[]; toast?: unknown };
+const withoutHeader = (b: Built) => b.blocks.filter((x, n) => !(n === 0 && (x as { type?: string }).type === "header"));
+const panelsOf = (b: Built) => ((b.blocks.find((x) => (x as { type?: string }).type === "tab") as { panels?: Array<{ blocks: unknown[] }> } | undefined)?.panels ?? []).map((p) => p.blocks);
+
+/**
+ * Everything about the store connection on one page: the values Shopify
+ * needs (Status), the setup steps, webhook deliveries and their health, and
+ * the app's event log. An action passes the part it rebuilt (with its
+ * toast); the other tabs load as usual. Opens on Setup until it's done.
+ */
+async function connectionPage(config: RedeemIDConfig, ctx: RouteContext, tab?: ConnectionTab, given: { hooks?: Built; events?: Built; setup?: Built } = {}) {
+	const s = await memberStores();
+	const [hooks, events, facts, status] = await Promise.all([
+		given.hooks ?? webhooksPage(monitorEnv(config, s, ctx)),
+		given.events ?? eventsPage(s),
+		setupFacts(config, s, siteOrigin(ctx)),
+		statusPage(config, ctx.request),
+	]);
+	const setup = given.setup ?? setupPage(facts);
+	const steps = setupSteps(facts).filter((x) => x.state !== "optional" && x.key !== "storefront");
+	const ready = steps.every((x) => x.state === "done");
+	const [received = [], health = [], subscriptions = []] = panelsOf(hooks);
+	const attention = JSON.stringify(hooks.blocks).includes('"label":"Health (!)"');
+	const open = tab ?? (ready ? "status" : "setup");
+	const toast = (given.hooks ?? given.events ?? given.setup)?.toast;
+	return {
+		blocks: [
+			{ type: "header", text: "Connection" },
+			{ type: "context", text: "How this site talks to Shopify: the values to copy into Shopify, the setup steps, webhook deliveries and what RedeemID has done." },
+			{
+				type: "tab",
+				default_tab: CONNECTION_TABS.indexOf(open),
+				panels: [
+					{ label: "Status", blocks: [...withoutHeader(status), { type: "divider" }, { type: "header", text: "Webhook subscriptions" }, ...subscriptions] },
+					{ label: ready ? "Setup" : `Setup (${steps.filter((x) => x.state === "done").length}/${steps.length})`, blocks: withoutHeader(setup) },
+					{ label: "Webhooks", blocks: received },
+					{ label: attention ? "Health (!)" : "Health", blocks: health },
+					{ label: "App events", blocks: withoutHeader(events) },
+				],
+			},
+		],
+		...(toast ? { toast } : {}),
+	};
+}
+
 async function statusPage(config: RedeemIDConfig, request: Request) {
 	const c = await checks(config);
 	const origin = new URL(request.url).origin;
@@ -815,7 +867,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 				],
 			},
 			{ type: "divider" },
-			{ type: "header", text: "Connection" },
+			{ type: "header", text: "Environment" },
 			{ type: "context", text: "What the site reads from its environment. Secrets show only whether they're set." },
 			{
 				type: "redeemid_copy",
@@ -848,14 +900,6 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 			{ type: "divider" },
 			{ type: "header", text: "Templates" },
 			...templateBlocks(config),
-			{
-				type: "actions",
-				elements: [
-					{ type: "link", label: "Setup", target: { kind: "plugin-page", path: "/setup" }, appearance: "secondary" },
-					{ type: "link", label: "Webhooks", target: { kind: "plugin-page", path: "/webhooks" }, appearance: "secondary" },
-					{ type: "link", label: "App events", target: { kind: "plugin-page", path: "/events" }, appearance: "secondary" },
-				],
-			},
 		],
 	};
 }

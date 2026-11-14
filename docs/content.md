@@ -81,4 +81,4 @@ text: {
 
 Each key is a string's original English and its value is the new text. Only the strings you name change: there is no find-and-replace, so replacing "Sign in" leaves "Sign in to download this file." alone. `STRINGS` in `@redeemid/emdash/text` lists every string, grouped by where it shows.
 
-A replacement may use its original's placeholders (such as `{level}`, or `{signIn}` for a link) in any order, or not at all, but no others. Text is plain, so HTML shows as typed. A replacement with an unknown placeholder, or for a string RedeemID doesn't show, is ignored and listed on the Status page with the reason. Props you pass (`label`, `title`, Notices `messages`) win over `text`. Staff screens in the admin aren't covered.
+A replacement may use its original's placeholders (such as `{level}`, or `{signIn}` for a link) in any order, or not at all, but no others. Text is plain, so HTML shows as typed. A replacement with an unknown placeholder, or for a string RedeemID doesn't show, is ignored and listed on Connection → Status with the reason. Props you pass (`label`, `title`, Notices `messages`) win over `text`. Staff screens in the admin aren't covered.

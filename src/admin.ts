@@ -23,7 +23,7 @@ import { API_BASE, apiFetch, useNavigate } from "@emdash-cms/admin";
 import { BlockRenderer } from "@emdash-cms/blocks";
 import { createElement as h, Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { PAGES } from "./descriptor.js";
+import { PAGE_ALIASES, PAGES } from "./descriptor.js";
 
 const PLUGIN = "redeemid";
 const ADMIN = "/_emdash/admin";
@@ -497,7 +497,7 @@ function Page({ page }: { page: string }): ReactNode {
 
 /** One component per page, so moving between them starts each one fresh. */
 export const pages: Record<string, () => ReactNode> = Object.fromEntries(
-	[...PAGES.map((p) => p.path), "/test"].map((path) => {
+	[...PAGES.map((p) => p.path), ...PAGE_ALIASES].map((path) => {
 		const C = () => h(Page, { key: path, page: path });
 		C.displayName = `RedeemID${path}`;
 		return [path, C];

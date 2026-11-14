@@ -12,7 +12,8 @@ import { VERSION } from "./version.js";
  * Every page shares one sidebar folder, so RedeemID shows as a single
  * RedeemID entry under Plugins (opening to these pages) instead of loose
  * items mixed in with other plugins' pages. Overview comes first; then the
- * day-to-day pages (people and access), then the store connection.
+ * day-to-day pages (people and access), then Connection, whose tabs hold
+ * Status, Setup, Webhooks, Health and App events.
  */
 const GROUP = "RedeemID";
 export const PAGES = [
@@ -21,11 +22,10 @@ export const PAGES = [
 	{ path: "/access", label: "Access", icon: "lock", group: GROUP },
 	{ path: "/reports", label: "Reports", icon: "chart", group: GROUP },
 	{ path: "/privacy", label: "Privacy", icon: "shield-check", group: GROUP },
-	{ path: "/webhooks", label: "Webhooks", icon: "plugs-connected", group: GROUP },
-	{ path: "/events", label: "App events", icon: "list", group: GROUP },
-	{ path: "/status", label: "Status", icon: "heartbeat", group: GROUP },
-	{ path: "/setup", label: "Setup", icon: "settings", group: GROUP },
+	{ path: "/connection", label: "Connection", icon: "plugs-connected", group: GROUP },
 ];
+/** Pages that became tabs (Access → Test, Connection's tabs); links to them and old bookmarks open that tab. */
+export const PAGE_ALIASES = ["/test", "/status", "/setup", "/webhooks", "/health", "/events"];
 /** The Access panel on every saved entry, in every collection (new ones too). */
 export const EDITOR_PANELS = [{ id: "access", title: "Access", route: "access-panel", order: 10 }];
 export const WIDGETS = [{ id: "status", title: "RedeemID", size: "half" as const }];
