@@ -48,7 +48,7 @@ The rest of a level is how it looks and where it leads:
 Everything about who reads what can be set in the EmDash admin, so a new content type, taxonomy or level never needs a code change. Under **Plugins → RedeemID → Access**:
 
 - **Levels.** **Add a level** (or Edit in the table) opens a dialog: the name, the Shopify tags that grant it (one group per line, commas between tags, and `all:` before a line that needs every tag on it) and the levels it includes. **More options** holds its wall text, join link, plan products, members' home and badge colour. Name levels anything; the slug is made from the name. A level that rules, features or folders still use can't be removed; removing one drops it from other levels' includes.
-- **Features.** Perks held through a level or a tag, added and edited in a dialog.
+- **Features.** Perks held through a level or a tag, added and edited in a dialog. A level says what a member is and decides what they can read; a feature is a switch the site's code checks (`<Feature>`, `hasFeature`). Both tabs end with **Use it in your site**: who grants it (Shopify), the code that checks it, and a link to the developer API. Each Edit dialog shows the same code with that slug filled in.
 - **Rules.** The site default and how term rules combine; the meter and the wall's join link (a form of their own); and who can read each content type, with drip, the meter and the teaser. Every collection on the site is listed, including ones made after RedeemID was set up.
 - **Terms.** Rules for terms in every taxonomy, for one collection or every collection the taxonomy is on, added in a dialog.
 - **Files.** Protected media folders, added in a dialog.

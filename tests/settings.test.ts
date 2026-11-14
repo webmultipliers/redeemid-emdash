@@ -179,6 +179,18 @@ describe("saved settings over code", () => {
 		expect(now.files).toEqual([{ folder: "Member downloads", levels: ["member"], features: ["ad-free"] }]);
 	});
 
+	it("shows site code for a level or feature, with its slug and the Shopify note", async () => {
+		const levels = JSON.stringify(await accessPage(await env()));
+		expect(levels).toContain("Use it in your site");
+		expect(levels).toContain('<Gate levels={[\\"member\\"]}>');
+		expect(levels).toContain("decided in Shopify");
+		await accessAction(await env(), { action_id: "feature_save", block_id: "feature:new", values: { name: "Ad-free", levels: ["member"] } });
+		const editing = JSON.stringify(await accessPage(await env(), "features", undefined, { feature: "ad-free" }));
+		expect(editing).toContain("Use Ad-free in your site");
+		expect(editing).toContain('hasFeature(Astro, \\"ad-free\\")');
+		expect(editing).toContain("developer-api.md");
+	});
+
 	it("renders every tab, with new content types and taxonomies listed", async () => {
 		const page = JSON.stringify(await accessPage(await env()));
 		for (const text of ["Levels", "Rules", "Terms", "Files", "Features", "Content types", "Recipes: follows the site default", "Categories: 1 rule"]) {

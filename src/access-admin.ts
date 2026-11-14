@@ -206,6 +206,58 @@ export function parseGroups(raw: unknown, firstMatch?: unknown): TagGroup[] {
 
 // ---------------------------------------------------------------- tabs
 
+const API_DOCS = "https://github.com/webmultipliers/redeemid-emdash/blob/main/docs/developer-api.md";
+
+/** Astro code that checks a level, with its slug filled in. */
+function levelCode(slug: string): string {
+	return `---
+import Gate from "@redeemid/emdash/components/Gate.astro";
+import { viewer } from "@redeemid/emdash/access";
+const reader = await viewer(Astro);
+---
+<Gate levels={["${slug}"]}>
+  <p>Only this level sees this part.</p>
+  <p slot="locked">Join to read it.</p>
+</Gate>
+{reader.levels.includes("${slug}") && <p>Thanks for being a member.</p>}`;
+}
+
+/** Astro code that checks a feature, with its slug filled in. */
+function featureCode(slug: string): string {
+	return `---
+import Feature from "@redeemid/emdash/components/Feature.astro";
+import { hasFeature } from "@redeemid/emdash/features";
+const on = await hasFeature(Astro, "${slug}");
+---
+<Feature slug="${slug}">
+  <p>Shown to members who hold it.</p>
+  <p slot="else">Shown to everyone else.</p>
+</Feature>
+{!on && <aside class="ad">…</aside>}`;
+}
+
+/**
+ * A closed "Use it in your site" section: who grants it (Shopify), the code
+ * that checks it, and where the full API is.
+ */
+function inSite(kind: "level" | "feature", slug: string, named?: string): unknown {
+	const grant = "Who holds it is decided in Shopify: Flow, a subscription app, or staff on a member's Tags tab. Nothing on this site grants it.";
+	const what =
+		kind === "level"
+			? "Content rules here lock posts to a level without code. In templates, <Gate levels> locks part of a page, and viewer(Astro).levels or membership() says what the reader holds. In the browser, window.redeemid's state event lists the reader's levels."
+			: "A feature does nothing until the site's code checks it. Use <Feature slug> to show or hide part of a page, or hasFeature(Astro, slug) in code. Protected folders on the Files tab can also open to a feature. In the browser, window.redeemid's state event lists the reader's features.";
+	return {
+		type: "accordion",
+		label: named ? `Use ${named} in your site` : "Use it in your site",
+		blocks: [
+			{ type: "context", text: grant },
+			{ type: "context", text: what },
+			{ type: "code", language: "astro", code: kind === "level" ? levelCode(slug) : featureCode(slug) },
+			{ type: "actions", elements: [{ type: "link", label: "Developer API", target: { kind: "external", url: API_DOCS }, appearance: "secondary" }] },
+		],
+	};
+}
+
 function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 	const config = effective(env);
 	const levels = config.levels ?? [];
@@ -213,7 +265,7 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 	const used = (slug: string) => rules.filter((r) => r.levels.includes(slug)).length;
 	const current = editing ? levels.find((l) => l.slug === editing) : undefined;
 	return [
-		{ type: "context", text: "A level names the readers who hold some Shopify customer tags. Tags come from Shopify (Flow, a subscription app or staff), never from this site. A level that includes another also reads everything that one reads." },
+		{ type: "context", text: "A level names the readers who hold some Shopify customer tags, and rules lock content to it. Tags come from Shopify (Flow, a subscription app or staff), never from this site. A level that includes another also reads everything that one reads. Features (next tab) add perks on top." },
 		modal("level:new", "Add a level", levelForm(levels), { label: "Add a level", description: TAG_HELP }),
 		levels.length
 			? {
@@ -238,7 +290,8 @@ function levelsTab(env: AccessEnv, editing?: string): unknown[] {
 					})),
 				}
 			: { type: "empty", title: "No levels yet", description: "Add one, such as Members for the Shopify tag member.", size: "sm" },
-		...(current ? [modal(`level:${current.slug}`, `Edit ${current.name}`, levelForm(levels, current), { open: true, description: TAG_HELP })] : []),
+		inSite("level", levels[0]?.slug ?? "members"),
+		...(current ? [modal(`level:${current.slug}`, `Edit ${current.name}`, [...levelForm(levels, current), inSite("level", current.slug, current.name)], { open: true, description: TAG_HELP })] : []),
 		...sourceLine(env, "levels", "Levels"),
 	];
 }
@@ -415,7 +468,7 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 	const features = config.features ?? [];
 	const current = editing ? features.find((f) => f.slug === editing) : undefined;
 	return [
-		{ type: "context", text: "Perks members hold through a level or a Shopify tag, such as ad-free reading. Pages check them with <Feature>." },
+		{ type: "context", text: "A level says what a member is and decides what they can read. A feature says what they get, such as ad-free reading: a switch the site's code checks. Give a feature to levels (the usual way) or to a Shopify tag for a one-off perk." },
 		modal("feature:new", "Add a feature", featureForm(levels), { label: "Add a feature" }),
 		features.length
 			? {
@@ -437,7 +490,8 @@ function featuresTab(env: AccessEnv, editing?: string): unknown[] {
 					})),
 				}
 			: { type: "empty", title: "No features yet", description: "Add one, such as Ad-free for the Members level.", size: "sm" },
-		...(current ? [modal(`feature:${current.slug}`, `Edit ${current.name}`, featureForm(levels, current), { open: true })] : []),
+		inSite("feature", features[0]?.slug ?? "ad-free"),
+		...(current ? [modal(`feature:${current.slug}`, `Edit ${current.name}`, [...featureForm(levels, current), inSite("feature", current.slug, current.name)], { open: true })] : []),
 		...sourceLine(env, "features", "Features"),
 	];
 }
