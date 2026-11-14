@@ -190,7 +190,7 @@ describe("saved settings over code", () => {
 		expect(map.action_id).toBe("map_go");
 		expect(map.rows.map((r) => r.id)).toEqual(["everyone", "signed-in", "member", "pro"]);
 		const member = map.rows.find((r) => r.id === "member")!;
-		expect(member.items).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "term", label: "Categories: members" }), expect.objectContaining({ kind: "feature", label: "Ad-free" }), expect.objectContaining({ kind: "folder", label: "Extras", via: "Ad-free" })]));
+		expect(member.items).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "term", label: "Categories: members" }), expect.objectContaining({ kind: "feature", label: "Ad-free" }), expect.objectContaining({ kind: "folder", label: "Extras", via: "Ad-free", through: "Ad-free" })]));
 		const pro = map.rows.find((r) => r.id === "pro")!;
 		expect(pro.includes).toEqual(["Member"]);
 		expect(pro.chain).toEqual(["member", "signed-in", "everyone"]);

@@ -267,7 +267,7 @@ async function mapTab(env: AccessEnv): Promise<unknown[]> {
 	const holders = env.holders ? await env.holders().catch(() => undefined) : undefined;
 	const rows = accessMap({ config, entries: env.saved.entries, collections: env.collections, taxonomies: env.taxonomies, tagWords: groupsWords, holders });
 	return [
-		{ type: "context", text: "Who gets what. Pick a row to see everything it opens and where to change it. A level also gets what its included levels, signed-in members and everyone get, counted as \"via\". This shows which settings name a reader; to see which rule wins on one post, use the Test tab." },
+		{ type: "context", text: "Who gets what. Readers are on the left and what the site's settings open is on the right; a line joins a reader to each thing a setting gives it. A level also gets what its included levels, signed-in readers and everyone get. Pick anything to light up what it reaches, or who reaches it, and where to change it. To see which rule wins on one post, use the Test tab." },
 		{ type: "redeemid_map", action_id: "map_go", rows },
 	];
 }
