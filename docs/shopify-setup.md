@@ -2,7 +2,7 @@
 
 What to set up in Shopify, and on the site, to run RedeemID on an EmDash site. One store can serve several sites: each site gets its own Headless storefront for sign-in, and each receives webhooks.
 
-Once the package is installed, **Plugins → RedeemID → Connection → Setup** in the EmDash admin walks through these same steps with your site's own addresses filled in, checks each one, and registers the webhooks for you.
+Once the package is installed, **Plugins → RedeemID → Connection** in the EmDash admin walks through these same steps, one tab each, with your site's own addresses filled in, checks each one, and registers the webhooks for you.
 
 ## 1. Sign-in: a Headless storefront
 
@@ -27,7 +27,7 @@ The store must use the new customer accounts (Settings → Customer accounts). C
 
 RedeemID keeps tags and status current from webhooks sent by a Shopify app on the store (for example a Dev Dashboard app). Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret.
 
-Give the app the `read_customers` and `write_customers` Admin API scopes (`write_customers` alone is enough, since a write scope includes its read scope), plus `read_customer_merge` for `customers/merge`, and set its **client ID** on the site as well. Then Connection → Setup (or the Webhook subscriptions on Connection → Status) registers these topics at `https://<site>/_emdash/api/auth/redeemid/webhook` with one button:
+Give the app the `read_customers` and `write_customers` Admin API scopes (`write_customers` alone is enough, since a write scope includes its read scope), plus `read_customer_merge` for `customers/merge`, and set its **client ID** on the site as well. Then Connection → Webhooks registers these topics at `https://<site>/_emdash/api/auth/redeemid/webhook` with one button:
 
 `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`
 

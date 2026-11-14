@@ -1,19 +1,19 @@
 /**
- * Plugins → RedeemID → Setup: connecting a store, step by step, from the
- * admin alone. Each step says what to do in Shopify (with the exact values
+ * RedeemID → Connection: connecting a store, step by step, from the admin
+ * alone, one tab per step. Each step says what to do in Shopify (with the exact values
  * to paste), what to set on the site, and has a button for whatever
  * RedeemID can do itself: register the webhooks, add the first level.
  *
  * Nothing about progress is stored. Each step's state comes from the site
- * as it is (setupFacts), so opening Setup again picks up where things stand
- * and it always agrees with the Status page.
+ * as it is (setupFacts), so opening Connection again picks up where things stand
+ * and it always agrees with the Status tab.
  *
  * Secrets stay where they are today, in the site's environment: the wizard
  * checks them and gives the command to set each one, and never stores one.
  * It writes only what staff can already write (a level, through Access) and
  * never grants access: levels still come only from Shopify tags.
  *
- * setupSteps() and setupPage() are pure.
+ * setupSteps() and setupPanels() are pure.
  */
 
 import { adminConfigured, adminScopes, grantedScopes, topicName, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
@@ -182,7 +182,7 @@ function stepBlocks(step: Step, f: SetupFacts): unknown[] {
 					text: "In Shopify admin, open Sales channels, then Headless (add the channel if it isn't there), and Create storefront. Name it after this site. Open its Customer Account API settings, pick a client type (Public needs no secret; Confidential gives one) and, under Application setup, add these:",
 				},
 				{
-					type: "fields",
+					type: "redeemid_copy",
 					fields: [
 						{ label: "Callback URI", value: `${f.origin}${CALLBACK}` },
 						{ label: "JavaScript origin (public clients)", value: f.origin },
@@ -266,34 +266,29 @@ function stepBlocks(step: Step, f: SetupFacts): unknown[] {
 	return out;
 }
 
-/** The Setup page. Pure. */
-export function setupPage(f: SetupFacts, toast?: Toast): Blocks {
-	const steps = setupSteps(f);
-	const required = steps.filter((s) => s.state !== "optional" && s.key !== "storefront");
-	const done = required.filter((s) => s.state === "done").length;
-	return {
+/** Connection's tab address for each step (/connection/sign-in). */
+export const STEP_TABS: Record<Step["key"], string> = { store: "store", sign_in: "sign-in", app: "app", webhooks: "webhooks", level: "level", try: "try", storefront: "storefront" };
+const SHORT: Record<Step["key"], string> = { store: "Store", sign_in: "Sign-in", app: "Webhook app", webhooks: "Webhooks", level: "First level", try: "Try it", storefront: "Storefront" };
+
+/** The steps that count toward "set up" (Storefront is optional). */
+export const requiredSteps = (steps: Step[]) => steps.filter((s) => s.key !== "storefront");
+
+/**
+ * One tab per step, for Connection: the step, with a Check again button
+ * until it's done. Labels carry a check mark once done. Pure.
+ */
+export function setupPanels(f: SetupFacts): Array<{ tab: string; label: string; blocks: unknown[] }> {
+	return setupSteps(f).map((step) => ({
+		tab: STEP_TABS[step.key],
+		label: step.state === "done" ? `${SHORT[step.key]} ✓` : SHORT[step.key],
 		blocks: [
-			{ type: "header", text: "Setup" },
-			done === required.length
-				? { type: "banner", variant: "default", title: "RedeemID is set up", description: "Members can sign in with their Shopify customer account. Levels, rules and the meter are under Access." }
-				: {
-						type: "banner",
-						variant: "alert",
-						title: `${done} of ${required.length} steps done`,
-						description: "Work down the steps. Each one checks the site as it is, so set a secret, redeploy or restart, and press Check again.",
-					},
-			{ type: "actions", elements: [{ type: "button", action_id: "setup_check", label: "Check again", style: "secondary" }] },
-			{
-				type: "table",
-				page_action_id: "setup_steps",
-				columns: [
-					{ key: "step", label: "Step" },
-					{ key: "state", label: "State", format: "badge" },
-				],
-				rows: steps.map((s) => ({ step: s.title, state: BADGE[s.state] })),
-			},
-			...steps.flatMap((s) => [{ type: "divider" }, ...stepBlocks(s, f)]),
+			...stepBlocks(step, f),
+			...(step.state === "done" ? [] : [{ type: "actions", elements: [{ type: "button", action_id: "setup_check", value: STEP_TABS[step.key], label: "Check again", style: "secondary" }] }]),
 		],
-		...(toast ? { toast } : {}),
-	};
+	}));
+}
+
+/** Where Connection opens: the first step not done, or null once every required one is. Pure. */
+export function nextStep(f: SetupFacts): Step | null {
+	return requiredSteps(setupSteps(f)).find((s) => s.state !== "done") ?? null;
 }

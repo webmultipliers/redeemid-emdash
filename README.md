@@ -27,7 +27,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 - **For shoppers:** product pages with options, subscriptions and Product structured data, a product sitemap, collections with Shopify's filters and sorting, product search, recommendations, a cart page and cart drawer, discount codes, local prices by market, and a checkout that opens signed in for members. It all works without JavaScript.
 - **For members:** sign in, Account and Sign out without ever seeing the word "Shopify"; a member card with levels, renewal and end dates; preferences saved on their customer record; download or delete what the site keeps about them.
 - **For editors:** Paywall break, Members only, Sold on its own, Plan, Product, Collection, Product search, Contribution and Preferences blocks; an Access panel on every entry; teasers, a monthly or weekly meter, drip, badges and protected file downloads.
-- **For staff:** an Overview, then Members, Access (with Map and Test tabs), Reports, Privacy and Connection (Status, Setup, Webhooks, Health and App events tabs) in the EmDash admin, and a dashboard card. New content types and taxonomies appear on their own, so access never needs a code change.
+- **For staff:** an Overview, then Members, Access (with Map and Test tabs), Reports, Events (Webhook, App and Health tabs), Privacy and Connection (Status, then a tab per setup step) in the EmDash admin, and a dashboard card. New content types and taxonomies appear on their own, so access never needs a code change.
 - **For developers:** Astro components for every piece, `canRead()` and friends for your own code, a storefront from the Storefront API with a cart and a signed-in checkout, a browser client with analytics events, signed outbound events, MCP tools for AI agents and a `redeemid-emdash` command.
 
 ## Requirements
@@ -75,7 +75,7 @@ import Content from "@redeemid/emdash/components/Content.astro";
 <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title} />
 ```
 
-Set the secrets, open **Plugins → RedeemID → Connection → Setup** in the admin, and work down the steps. [Getting started](docs/getting-started.md) walks through all of it.
+Set the secrets, open **Plugins → RedeemID → Connection** in the admin, and work through its tabs. [Getting started](docs/getting-started.md) walks through all of it.
 
 ## Documentation
 

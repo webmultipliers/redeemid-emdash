@@ -12,7 +12,7 @@ vi.mock("../src/admin-api.js", async (orig) => ({
 
 import type { RedeemIDConfig } from "../src/config.js";
 import { LOG_DAYS, record, setLogSink, timed, type LogEntry } from "../src/log.js";
-import { eventsPage, filterId, REQUEST_DAYS, tidy, healthCheck, lastCheck, parseFilter, reportsPage, saveMonitor, webhooksPage, type Kv, type MonitorEnv } from "../src/monitor.js";
+import { eventsPage, filterId, REQUEST_DAYS, tidy, healthCheck, lastCheck, parseFilter, reportsPage, saveMonitor, webhookPanels, type Kv, type MonitorEnv } from "../src/monitor.js";
 import { POST } from "../src/routes/webhook.js";
 import { emptyMember } from "../src/storage.js";
 import { sign } from "../src/webhooks.js";
@@ -174,11 +174,13 @@ describe("webhook health", () => {
 		expect((await saveMonitor(kv(), { alert_email: "not an email" })).type).toBe("error");
 	});
 
-	it("renders the three tabs with the deliveries", async () => {
+	it("renders the deliveries, health and subscription panels", async () => {
 		await deliver("customers/update", { id: 7, tags: "member" });
-		const page = JSON.stringify(await webhooksPage(monitor(), "health"));
-		for (const text of ["Received", "Health", "Setup", "customers/update", "Processed", "Check now", "Email warnings to", "No email provider"]) expect(page).toContain(text);
-		expect(page).toContain('"default_tab":1');
+		const p = await webhookPanels(monitor());
+		for (const text of ["customers/update", "Processed"]) expect(JSON.stringify(p.received)).toContain(text);
+		for (const text of ["Check now", "Email warnings to", "No email provider"]) expect(JSON.stringify(p.health)).toContain(text);
+		expect(JSON.stringify(p.subscriptions)).toContain("Endpoint:");
+		expect(p.attention).toBe(false);
 	});
 });
 
