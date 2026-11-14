@@ -6,7 +6,7 @@
 
 import { adminConfigured, adminScopes, editTags, registerWebhooks, resync, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
 import { applyEntryRule, describe, entryRuleFor, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
-import { PROVIDER_ID, type RedeemIDConfig } from "./config.js";
+import { PROVIDER_ID, shopOrigin, type RedeemIDConfig } from "./config.js";
 import { levelChange } from "./events.js";
 import { featuresFor } from "./features.js";
 import { record } from "./log.js";
@@ -32,76 +32,157 @@ function consentLabel(state: string | null | undefined): string {
 	return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Blocks["toast"]): Blocks {
+/** The member page's tabs, in order. */
+export const MEMBER_TABS = ["membership", "tags", "account", "privacy"] as const;
+export type MemberTab = (typeof MEMBER_TABS)[number];
+
+/** When, to the minute, in UTC: "2026-11-13 18:59 UTC". */
+const stamp = (iso: string | null | undefined) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`.trim() : "");
+
+/**
+ * One member: who they are and where they stand at the top, then tabs for
+ * their membership, their Shopify tags, their account and privacy.
+ */
+export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Blocks["toast"], tab: MemberTab = "membership", exported?: unknown): Blocks {
 	const levels = config.levels ?? [];
 	const { current, past } = membership(m, levels);
 	const features = featuresFor(m, config.features, levels);
 	const featureNames = (config.features ?? []).filter((f) => features.includes(f.slug)).map((f) => f.name);
 	const name = [m.firstName, m.lastName].filter(Boolean).join(" ") || m.email || `Customer ${m.customerId}`;
+	let shop: string | null = null;
+	try {
+		const origin = new URL(shopOrigin(config));
+		if (origin.hostname.endsWith(".myshopify.com")) shop = origin.origin;
+	} catch {
+		shop = null;
+	}
+	const admin = adminConfigured();
+
+	const membershipTab = [
+		{
+			type: "fields",
+			fields: [
+				{ label: "Levels now", value: current.map((l) => `${l.name} (since ${date(l.since)})`).join(", ") || "None" },
+				{ label: "Features", value: featureNames.join(", ") || "None" },
+				{ label: "Member since (Shopify)", value: m.dates?.since ?? "" },
+				{ label: m.dates?.ends ? "Ends on (Shopify)" : "Renews on (Shopify)", value: m.dates?.ends ?? m.dates?.renews ?? "" },
+				{ label: "Gift until (Shopify)", value: m.dates?.gift ?? "" },
+			],
+		},
+		{ type: "header", text: "Level history" },
+		past.length
+			? {
+					type: "table",
+					page_action_id: "member_levels",
+					columns: [
+						{ key: "level", label: "Level" },
+						{ key: "from", label: "From" },
+						{ key: "to", label: "To" },
+					],
+					rows: past.map((l) => ({ level: l.name, from: date(l.from), to: date(l.to) })),
+				}
+			: { type: "context", text: "No earlier levels." },
+	];
+
+	const tagsTab = [
+		{ type: "context", text: "Levels come only from these tags. Edits are written to Shopify, then read back, so Shopify stays the only source of access." },
+		...(admin
+			? [
+					{
+						type: "redeemid_modal",
+						block_id: `modal:tags:${m.customerId}`,
+						title: "Add tags in Shopify",
+						description: "Adds the tags to the customer in Shopify, then reads the customer back. Access follows.",
+						trigger: { label: "Add tags", style: "primary" },
+						blocks: [
+							{
+								type: "form",
+								block_id: `tags:${m.customerId}`,
+								fields: [{ type: "text_input", action_id: "tags", label: "Tags (comma separated)", placeholder: "gold-member" }],
+								submit: { label: "Add in Shopify", action_id: "member_tag_add" },
+							},
+						],
+					},
+				]
+			: [{ type: "context", text: "Set the Admin API app's client ID to edit tags and resync from here." }]),
+		m.tags.length
+			? {
+					type: "table",
+					page_action_id: "member_tags",
+					columns: [
+						{ key: "tag", label: "Tag", format: "code" },
+						{ key: "since", label: "Since" },
+						{ key: "remove", label: "", format: "element" },
+					],
+					rows: m.tags.map((t) => ({
+						tag: t,
+						since: date(m.tagsSince?.[t.toLowerCase()]),
+						remove: admin
+							? {
+									type: "button",
+									action_id: "member_tag_remove",
+									label: "Remove",
+									style: "secondary",
+									value: { customerId: m.customerId, tag: t },
+									confirm: { title: "Remove this tag in Shopify?", text: `Removes "${t}" from the customer in Shopify. Access follows.`, confirm: "Remove", deny: "Cancel", style: "danger" },
+								}
+							: null,
+					})),
+				}
+			: { type: "empty", title: "No tags", description: "This customer has no tags in Shopify, so no level.", size: "sm" },
+	];
+
+	const accountTab = [
+		{
+			type: "fields",
+			fields: [
+				{ label: "Email", value: m.email ?? "" },
+				{ label: "Shopify customer ID", value: m.customerId },
+				{ label: "Account", value: m.status === "enabled" ? "On" : "Turned off in Shopify" },
+				{ label: "Email verified", value: m.emailVerified === undefined ? "" : m.emailVerified ? "Yes" : "No" },
+				{ label: "Email marketing", value: consentLabel(m.emailMarketing) },
+				{ label: "SMS marketing", value: consentLabel(m.smsMarketing) },
+				{ label: "Last synced", value: stamp(m.syncedAt) },
+				{ label: "Synced by", value: m.source || "unknown" },
+			],
+		},
+		{ type: "divider" },
+		...linkSection(m),
+	];
+
+	const privacyTab = [...privacySection(m.customerId), ...(exported === undefined ? [] : [{ type: "header", text: "Export" }, { type: "code", language: "jsonc", code: JSON.stringify(exported, null, 2) }])];
+
 	return {
 		toast,
 		blocks: [
-			{ type: "actions", elements: [{ type: "button", action_id: "members_back", label: "← All members", style: "secondary" }] },
-			{ type: "header", text: name },
 			{
-				type: "fields",
-				fields: [
-					{ label: "Email", value: m.email ?? "—" },
-					{ label: "Shopify customer", value: m.customerId },
-					{ label: "Account", value: m.status === "enabled" ? "On" : "Turned off in Shopify" },
-					{ label: "Signed in here", value: m.userId ? `Yes, first on ${date(m.linkedAt)}` : "Not yet" },
-					{ label: "Levels", value: current.map((l) => `${l.name} (since ${date(l.since)})`).join(", ") || "—" },
-					{ label: "Levels before", value: past.map((l) => `${l.name} (${date(l.from)} to ${date(l.to)})`).join(", ") || "—" },
-					{ label: "Features", value: featureNames.join(", ") || "—" },
-					{ label: "Member since (Shopify)", value: m.dates?.since ?? "—" },
-					{ label: m.dates?.ends ? "Ends on (Shopify)" : "Renews on (Shopify)", value: m.dates?.ends ?? m.dates?.renews ?? "—" },
-					{ label: "Gift until (Shopify)", value: m.dates?.gift ?? "—" },
-					{ label: "Email verified", value: m.emailVerified === undefined ? "—" : m.emailVerified ? "Yes" : "No" },
-					{ label: "Email marketing", value: consentLabel(m.emailMarketing) },
-					{ label: "SMS marketing", value: consentLabel(m.smsMarketing) },
-					{ label: "Last synced", value: `${m.syncedAt} (${m.source || "unknown"})` },
+				type: "actions",
+				elements: [
+					{ type: "button", action_id: "members_back", label: "\u2190 All members", style: "secondary" },
+					...(admin ? [{ type: "button", action_id: "member_resync", label: "Resync from Shopify", style: "primary", value: m.customerId }] : []),
+					...(shop ? [{ type: "link", label: "Open in Shopify", target: { kind: "external", url: `${shop}/admin/customers/${m.customerId}` }, appearance: "secondary" }] : []),
 				],
 			},
-			{ type: "header", text: "Shopify tags" },
-			m.tags.length
-				? {
-						type: "table",
-						page_action_id: "member_tags",
-						columns: [
-							{ key: "tag", label: "Tag" },
-							{ key: "since", label: "Since" },
-							{ key: "remove", label: "", format: "element" },
-						],
-						rows: m.tags.map((t) => ({
-							tag: t,
-							since: date(m.tagsSince?.[t.toLowerCase()]),
-							remove: adminConfigured()
-								? {
-										type: "button",
-										action_id: "member_tag_remove",
-										label: "Remove in Shopify",
-										style: "danger",
-										value: { customerId: m.customerId, tag: t },
-										confirm: { title: "Remove this tag in Shopify?", text: `Removes "${t}" from the customer in Shopify. Access follows.`, confirm: "Remove", deny: "Cancel", style: "danger" },
-									}
-								: null,
-						})),
-					}
-				: { type: "context", text: "No tags." },
-			adminConfigured()
-				? {
-						type: "form",
-						block_id: `tags:${m.customerId}`,
-						fields: [{ type: "text_input", action_id: "tags", label: "Add tags in Shopify (comma separated)", placeholder: "gold-member" }],
-						submit: { label: "Add in Shopify", action_id: "member_tag_add" },
-					}
-				: { type: "context", text: "Set the Admin API app's client ID to edit tags and resync from here." },
-			adminConfigured()
-				? { type: "actions", elements: [{ type: "button", action_id: "member_resync", label: "Resync from Shopify", style: "primary", value: m.customerId }] }
-				: { type: "divider" },
-			{ type: "context", text: "Tags are written to Shopify, then read back. Shopify stays the only source of access." },
-			...linkSection(m),
-			...privacySection(m.customerId),
+			{ type: "header", text: name },
+			{ type: "context", text: [m.email, `Shopify customer ${m.customerId}`, m.userId ? `signed in here since ${date(m.linkedAt)}` : "hasn't signed in here yet"].filter(Boolean).join(" \u00b7 ") },
+			{
+				type: "stats",
+				items: [
+					{ label: "Account", value: m.status === "enabled" ? "On" : "Off" },
+					{ label: "Levels", value: current.map((l) => l.name).join(", ") || "None" },
+					{ label: "Tags", value: String(m.tags.length) },
+				],
+			},
+			{
+				type: "tab",
+				default_tab: MEMBER_TABS.indexOf(tab),
+				panels: [
+					{ label: "Membership", blocks: membershipTab },
+					{ label: "Tags", blocks: tagsTab },
+					{ label: "Account", blocks: accountTab },
+					{ label: "Privacy", blocks: privacyTab },
+				],
+			},
 		],
 	};
 }
@@ -228,15 +309,16 @@ function privacySection(customerId: string): unknown[] {
 			]
 		: [];
 	return [
-		{ type: "header", text: "Privacy" },
-		{ type: "actions", elements: [{ type: "button", action_id: "member_export", label: "Export data", style: "secondary", value: customerId }, erase, ...shopify] },
 		{ type: "context", text: "Export shows everything RedeemID keeps about this member. Erasing removes it from the site; Shopify stays the record of the customer." },
+		{ type: "actions", elements: [{ type: "button", action_id: "member_export", label: "Export data", style: "secondary", value: customerId }, erase] },
+		...(shopify.length
+			? [
+					{ type: "header", text: "In Shopify" },
+					{ type: "context", text: "Shopify erases the customer's personal data across the store, orders included, after its waiting period. Cancel stops a request that hasn't run yet." },
+					{ type: "actions", elements: shopify },
+				]
+			: []),
 	];
-}
-
-/** The member's export, as JSON, under their detail page. */
-export function exportBlocks(detail: Blocks, data: unknown): Blocks {
-	return { ...detail, blocks: [...detail.blocks, { type: "header", text: "Export" }, { type: "code", language: "jsonc", code: JSON.stringify(data, null, 2) }] };
 }
 
 /** Every privacy request: what came in, from where, and what's still open. */

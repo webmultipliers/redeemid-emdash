@@ -4,11 +4,11 @@
 
 With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API token for the webhook app with the client credentials grant. The app must be in the same Shopify organization as the store, as Dev Dashboard apps are, and needs `read_customers` and `write_customers`. Then, under **Plugins → RedeemID**:
 
-- **Member detail.** Levels, tags and features; resync from Shopify; add and remove tags. Tag edits are made in Shopify and read back. Nothing is granted on the site.
+- **Member detail.** Account, levels and tag count on top, then tabs: Membership (levels, features, membership dates and level history), Tags (add in a dialog, remove), Account (email, consent, last sync and the site user) and Privacy. Resync from Shopify, and on a myshopify.com store, open the customer in Shopify. Tag edits are made in Shopify and read back. Nothing is granted on the site.
 - **Site user.** Signing in links a customer to the site user with the same verified email. When the emails differ, staff link the customer to an existing Subscriber by that user's email on the member's page (never a staff account, never a user linked to another customer), or unlink them. This part needs no Admin API app.
 - **Bulk resync.** Reads the 25 members synced longest ago, few enough for the Workers free limit of 50 database queries a request. Press it again for the next 25. It never runs on its own.
 - **Webhook subscriptions.** Webhooks → Setup lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
-- **Access test.** A collection, an entry, terms and a reader's tags in; the verdict out.
+- **Access → Test.** A collection, an entry, terms and a reader's tags in; the verdict out.
 
 Resync updates email, name, tags, email marketing consent and the membership dates. Enabled or disabled status comes only from the enable and disable webhooks. With the app set up, two more things read the customer from the Admin API as it is now: every sign-in (and Refresh membership), and every `customer.tags_added` or `customer.tags_removed` webhook. Those topics carry only the change and can arrive out of order, so reading the current tags keeps the mirror right. Without the app, or when the read fails, the webhook's change is applied as sent.
 
@@ -24,6 +24,14 @@ A subscription app or Shopify Flow can keep these customer metafields, as dates 
 | `membership.gift_until` | "Gift membership until ...", while it's in the future |
 
 RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they need the Admin API app. They're for display only: access still comes from tags alone, and nothing on the site ends access on these dates. Time-boxed access is a Flow that waits and removes the tag (see [Shopify Flow recipes](shopify-flow.md)).
+
+## Overview, dashboard card and Status
+
+**Plugins → RedeemID → Overview** is the first page: anything that needs doing (setup steps left, webhook problems, open privacy requests), cards for sign-in, members, webhooks, access, privacy and setup with links to each, members by level, recent app events and links to the docs, the store's customers and Flow. The **RedeemID** card on the EmDash dashboard shows the same alerts and counts with links to Overview, Members, Access and Webhooks (or Setup while something is missing).
+
+**Status** shows the addresses to paste into Shopify (callback URI, JavaScript origin, logout URI, webhook URL) and the store domain as read-only fields with copy buttons, every setting as Set or Missing with the environment variable it comes from, and the template checks.
+
+The admin pages are built as Block Kit on the server. The package's admin entry (`@redeemid/emdash/admin`, loaded by EmDash from the plugin descriptor) renders them in the browser and adds what Block Kit has no block for: copy fields, dialogs and linked cards. It needs `react`, `@cloudflare/kumo` and `@emdash-cms/blocks`, which every EmDash site already has through `emdash`.
 
 ## Webhooks, app events and reports
 

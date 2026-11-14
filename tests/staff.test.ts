@@ -266,3 +266,22 @@ describe("access test", () => {
 		expect(out).toContain("Locked: asked to sign in");
 	});
 });
+
+describe("member detail", () => {
+	it("puts who the member is on top and splits the rest into tabs", async () => {
+		const { memberDetail } = await import("../src/staff.js");
+		const m = { ...emptyMember("42"), email: "ana@example.com", tags: ["pro", "supporter"], status: "enabled" as const, syncedAt: "2026-11-13T18:59:41.493Z", source: "customers/update" };
+		const page = memberDetail(config, m, undefined, "tags") as { blocks: Array<{ type: string; default_tab?: number; panels?: Array<{ label: string; blocks: unknown[] }>; elements?: unknown[] }> };
+		const tabs = page.blocks.find((b) => b.type === "tab")!;
+		expect(tabs.panels!.map((p) => p.label)).toEqual(["Membership", "Tags", "Account", "Privacy"]);
+		expect(tabs.default_tab).toBe(1);
+		const all = JSON.stringify(page);
+		expect(all).toContain('"title":"Add tags in Shopify"');
+		expect(all).toContain("https://s.myshopify.com/admin/customers/42");
+		expect(all).toContain("2026-11-13 18:59 UTC");
+		expect(all).toContain('"label":"Synced by","value":"customers/update"');
+		const exported = JSON.stringify(memberDetail(config, m, undefined, "privacy", { hello: "export" }));
+		expect(exported).toContain('"default_tab":3');
+		expect(exported).toContain("hello");
+	});
+});

@@ -8,7 +8,12 @@ describe("admin pages", () => {
 		expect(redeemidPlugin({}).adminPages).toBe(PAGES);
 	});
 
-	it("keep every page path the admin route handles", () => {
-		expect(PAGES.map((p) => p.path).sort()).toEqual(["/", "/access", "/events", "/privacy", "/reports", "/setup", "/status", "/test", "/webhooks"]);
+	it("open on Overview, then the day-to-day pages, then the store connection", () => {
+		expect(PAGES.map((p) => p.label)).toEqual(["Overview", "Members", "Access", "Reports", "Privacy", "Webhooks", "App events", "Status", "Setup"]);
+		expect(PAGES.map((p) => p.path).sort()).toEqual(["/", "/access", "/events", "/members", "/privacy", "/reports", "/setup", "/status", "/webhooks"]);
+	});
+
+	it("render in the browser through the admin entry", () => {
+		expect(redeemidPlugin({}).adminEntry).toBe("@redeemid/emdash/admin");
 	});
 });

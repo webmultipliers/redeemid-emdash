@@ -47,11 +47,12 @@ The rest of a level is how it looks and where it leads:
 
 Everything about who reads what can be set in the EmDash admin, so a new content type, taxonomy or level never needs a code change. Under **Plugins → RedeemID → Access**:
 
-- **Levels.** Add, rename and remove levels and the Shopify tags that grant them: one group per line, commas between tags, and `all:` before a line that needs every tag on it. Tick the levels each one includes, and set its plan products, members' home and badge colour. Name them anything; the slug is made from the name. A level that rules, features or folders still use can't be removed; removing one drops it from other levels' includes.
-- **Site rules.** The site default, how term rules combine, the meter and the wall's join link.
-- **Content types.** Who can read each collection, with drip, the meter and the teaser. Every collection on the site is listed, including ones made after RedeemID was set up.
-- **Taxonomies.** Rules for terms in every taxonomy, for one collection or every collection the taxonomy is on.
-- **Features** and **Protected files.**
+- **Levels.** **Add a level** (or Edit in the table) opens a dialog: the name, the Shopify tags that grant it (one group per line, commas between tags, and `all:` before a line that needs every tag on it) and the levels it includes. **More options** holds its wall text, join link, plan products, members' home and badge colour. Name levels anything; the slug is made from the name. A level that rules, features or folders still use can't be removed; removing one drops it from other levels' includes.
+- **Features.** Perks held through a level or a tag, added and edited in a dialog.
+- **Rules.** The site default and how term rules combine; the meter and the wall's join link (a form of their own); and who can read each content type, with drip, the meter and the teaser. Every collection on the site is listed, including ones made after RedeemID was set up.
+- **Terms.** Rules for terms in every taxonomy, for one collection or every collection the taxonomy is on, added in a dialog.
+- **Files.** Protected media folders, added in a dialog.
+- **Test.** What an entry needs and whether a reader with some tags passes. Nothing is saved.
 
 The first save of a setting copies its value from your code config, so nothing is lost, and from then on the admin's value is used. **Use the code's setting** removes the admin's copy. Saved settings are kept in the site's database. Each server keeps the last ones it read and checks one small record per request to see whether anyone saved since, so the whole set is read again only after a save. If the database can't be read, the settings last read stand; a server that has read none yet locks every entry (and refuses files in any media folder) until it can, rather than falling back to the code's settings and opening what the admin locked.
 

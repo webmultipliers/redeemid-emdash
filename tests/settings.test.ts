@@ -141,6 +141,36 @@ describe("saved settings over code", () => {
 		expect(now.meter).toEqual(code.meter);
 	});
 
+	it("saves the site default and the meter with the join link from their own forms", async () => {
+		await accessAction(await env(), { action_id: "site_save", block_id: "site:meter", values: { meter_limit: 5, meter_period: "week", join_href: "/join/" } });
+		let now = await live();
+		expect(now.meter).toEqual({ limit: 5, period: "week" });
+		expect(now.join).toEqual({ href: "/join/" });
+		expect(now.rules).toEqual(code.rules);
+		await accessAction(await env(), { action_id: "site_save", block_id: "site", values: { who: "signed-in", combine: "any" } });
+		now = await live();
+		expect(now.meter).toEqual({ limit: 5, period: "week" });
+		expect(now.join).toEqual({ href: "/join/" });
+		expect(now.combine).toBe("any");
+		expect(requirement(now.rules, "pages")).toEqual([[]]);
+	});
+
+	it("adds and edits levels and features in dialogs, and tests access on its own tab", async () => {
+		const page = (await accessPage(await env())) as { blocks: Array<{ type: string; panels?: Array<{ label: string; blocks: Array<Record<string, unknown>> }> }> };
+		const tabs = page.blocks.find((b) => b.type === "tab")!.panels!;
+		expect(tabs.map((t) => t.label)).toEqual(["Levels", "Features", "Rules", "Terms", "Files", "Test"]);
+		const add = tabs[0]!.blocks.find((b) => b.type === "redeemid_modal")!;
+		expect(add).toMatchObject({ title: "Add a level", trigger: { label: "Add a level" } });
+		expect(JSON.stringify(add)).toContain('"condition":{"field":"more","eq":true}');
+		expect(tabs[1]!.blocks.some((b) => b.type === "redeemid_modal" && b.title === "Add a feature")).toBe(true);
+		const edit = JSON.stringify(await accessAction(await env(), { action_id: "level_menu", value: "edit:member" }));
+		expect(edit).toContain('"block_id":"modal:level:member"');
+		expect(edit).toContain('"open":true');
+		const tested = JSON.stringify(await accessAction(await env(), { action_id: "access_test", values: { collection: "posts", terms: "category:members", tags: "member", signed_in: true } }));
+		expect(tested).toContain('"default_tab":5');
+		expect(tested).toContain("This reader can read it");
+	});
+
 	it("protects folders and adds features from the admin", async () => {
 		await accessAction(await env(), { action_id: "feature_save", block_id: "feature:new", values: { name: "Ad-free", levels: ["member"] } });
 		await accessAction(await env(), { action_id: "file_save", block_id: "file", values: { folder: "Member downloads", members: true, levels: ["member"], features: ["ad-free"] } });

@@ -483,7 +483,7 @@ function customerOfBody(body: string): string {
 	}
 }
 
-function eventRow(e: LogEntry) {
+export function eventRow(e: LogEntry) {
 	const status = e.status === "ok" ? "OK" : cap(e.status);
 	return {
 		event: LOG_EVENTS[e.event] ?? e.event,
