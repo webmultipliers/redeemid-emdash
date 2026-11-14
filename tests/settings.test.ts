@@ -158,16 +158,16 @@ describe("saved settings over code", () => {
 	it("adds and edits levels and features in dialogs, and tests access on its own tab", async () => {
 		const page = (await accessPage(await env())) as { blocks: Array<{ type: string; panels?: Array<{ label: string; blocks: Array<Record<string, unknown>> }> }> };
 		const tabs = page.blocks.find((b) => b.type === "tab")!.panels!;
-		expect(tabs.map((t) => t.label)).toEqual(["Levels", "Features", "Rules", "Terms", "Files", "Test"]);
-		const add = tabs[0]!.blocks.find((b) => b.type === "redeemid_modal")!;
+		expect(tabs.map((t) => t.label)).toEqual(["Map", "Levels", "Features", "Rules", "Terms", "Files", "Test"]);
+		const add = tabs[1]!.blocks.find((b) => b.type === "redeemid_modal")!;
 		expect(add).toMatchObject({ title: "Add a level", trigger: { label: "Add a level" } });
 		expect(JSON.stringify(add)).toContain('"condition":{"field":"more","eq":true}');
-		expect(tabs[1]!.blocks.some((b) => b.type === "redeemid_modal" && b.title === "Add a feature")).toBe(true);
+		expect(tabs[2]!.blocks.some((b) => b.type === "redeemid_modal" && b.title === "Add a feature")).toBe(true);
 		const edit = JSON.stringify(await accessAction(await env(), { action_id: "level_menu", value: "edit:member" }));
 		expect(edit).toContain('"block_id":"modal:level:member"');
 		expect(edit).toContain('"open":true');
 		const tested = JSON.stringify(await accessAction(await env(), { action_id: "access_test", values: { collection: "posts", terms: "category:members", tags: "member", signed_in: true } }));
-		expect(tested).toContain('"default_tab":5');
+		expect(tested).toContain('"default_tab":6');
 		expect(tested).toContain("This reader can read it");
 	});
 
@@ -177,6 +177,28 @@ describe("saved settings over code", () => {
 		const now = await live();
 		expect(now.features).toEqual([{ slug: "ad-free", name: "Ad-free", levels: ["member"] }]);
 		expect(now.files).toEqual([{ folder: "Member downloads", levels: ["member"], features: ["ad-free"] }]);
+	});
+
+	it("maps who gets what, with included levels marked via, and goes to where each is changed", async () => {
+		await accessAction(await env(), { action_id: "level_save", block_id: "level:new", values: { name: "Pro", tags: "pro", includes: ["member"] } });
+		await accessAction(await env(), { action_id: "feature_save", block_id: "feature:new", values: { name: "Ad-free", levels: ["member"] } });
+		await accessAction(await env(), { action_id: "file_save", block_id: "file", values: { folder: "Extras", members: false, features: ["ad-free"] } });
+		const page = (await accessPage(await env())) as { blocks: Array<{ type: string; default_tab?: number; panels?: Array<{ label: string; blocks: Array<Record<string, unknown>> }> }> };
+		const tab = page.blocks.find((b) => b.type === "tab")!;
+		expect(tab.default_tab).toBe(0);
+		const map = tab.panels![0]!.blocks.find((b) => b.type === "redeemid_map") as { action_id: string; rows: Array<{ id: string; chain: string[]; includes: string[]; items: Array<{ kind: string; label: string; via?: string }> }> };
+		expect(map.action_id).toBe("map_go");
+		expect(map.rows.map((r) => r.id)).toEqual(["everyone", "signed-in", "member", "pro"]);
+		const member = map.rows.find((r) => r.id === "member")!;
+		expect(member.items).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "term", label: "Categories: members" }), expect.objectContaining({ kind: "feature", label: "Ad-free" }), expect.objectContaining({ kind: "folder", label: "Extras", via: "Ad-free" })]));
+		const pro = map.rows.find((r) => r.id === "pro")!;
+		expect(pro.includes).toEqual(["Member"]);
+		expect(pro.chain).toEqual(["member", "signed-in", "everyone"]);
+		expect(pro.items).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "term", via: "Member" }), expect.objectContaining({ kind: "feature", label: "Ad-free", via: "Member" })]));
+		const toLevel = JSON.stringify(await accessAction(await env(), { action_id: "map_go", value: JSON.stringify({ level: "pro" }) }));
+		expect(toLevel).toContain('"block_id":"modal:level:pro"');
+		const toTerms = JSON.stringify(await accessAction(await env(), { action_id: "map_go", value: JSON.stringify({ tab: "taxonomies" }) }));
+		expect(toTerms).toContain('"default_tab":4');
 	});
 
 	it("shows site code for a level or feature, with its slug and the Shopify note", async () => {

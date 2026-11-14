@@ -231,7 +231,7 @@ try {
 			body: JSON.stringify({ type: "page_load", page }),
 		});
 	const overview = await adminPage("/");
-	check("Overview comes first with status cards, members by level and recent activity", overview.res.status === 200 && overview.text.includes('"type":"redeemid_cards"') && overview.text.includes("Members by level") && overview.text.includes("Recent activity"), overview.text.slice(0, 300));
+	check("Overview comes first with status cards, members by level and recent activity", overview.res.status === 200 && overview.text.includes('"type":"redeemid_cards"') && overview.text.includes("Explore the access map") && overview.text.includes("Recent activity"), overview.text.slice(0, 300));
 	const dashCard = await adminPage("widget:status");
 	check("the dashboard card counts members and links into RedeemID", dashCard.text.includes('"label":"Members"') && dashCard.text.includes('"path":"/members"') && dashCard.text.includes('"path":"/"'), dashCard.text.slice(0, 300));
 	const membersPage = await adminPage("/members");
@@ -358,9 +358,9 @@ try {
 	const test = await adminAct({ type: "form_submit", action_id: "access_test", values: { collection: "posts", terms: "category:members, category:pro", tags: "member", signed_in: true }, page: "/test" });
 	check("access test shows what an entry needs and the verdict", test.text.includes("Member or Pro + Pro") || test.text.includes("Pro"), test.text.slice(0, 400));
 	check("access test says a Member is kept out of a Members + Pro post", test.text.includes("This reader is kept out"));
-	check("access test answers on the Access page's Test tab", test.text.includes('"label":"Test"') && test.text.includes('"default_tab":5'));
+	check("access test answers on the Access page's Test tab", test.text.includes('"label":"Test"') && test.text.includes('"default_tab":6'));
 	const oldTest = await adminPage("/test");
-	check("the old Access test page opens Access on its Test tab", oldTest.text.includes('"default_tab":5') && oldTest.text.includes('"label":"Levels"'));
+	check("the old Access test page opens Access on its Test tab", oldTest.text.includes('"default_tab":6') && oldTest.text.includes('"label":"Levels"'));
 	// Member preferences: read from and saved to the member's own Shopify customer.
 	const prefsPage = await member.go("/account");
 	check("Preferences shows the member's fields, not the membership namespace", prefsPage.text.includes("Topics") && prefsPage.text.includes("Weekly newsletter") && prefsPage.text.includes("Reader level:") && !prefsPage.text.includes("Member since"), prefsPage.text.slice(0, 300));

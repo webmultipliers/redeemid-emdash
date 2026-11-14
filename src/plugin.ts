@@ -346,6 +346,12 @@ async function accessEnv(config: RedeemIDConfig): Promise<AccessEnv> {
 		saved: await loadAccess(store),
 		collections: collections.map((c) => ({ slug: c.slug, label: c.label || c.slug })),
 		taxonomies: taxonomies.map((t) => ({ name: t.name, label: t.label || t.name, collections: t.collections ?? [] })),
+		holders: async () => {
+			const levels = config.levels ?? [];
+			const out: Record<string, number> = Object.fromEntries(levels.map((l) => [l.slug, 0]));
+			for (const m of await allMembers()) if (m.status === "enabled") for (const slug of levelsFor(m.tags, levels)) out[slug] = (out[slug] ?? 0) + 1;
+			return out;
+		},
 		terms: async (taxonomy) => {
 			type Node = { slug: string; label?: string; name?: string; children?: Node[] };
 			const out: Array<{ slug: string; label: string }> = [];
@@ -1023,7 +1029,10 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 	const counts = s.levels.map((l) => ({
 		level: l.name,
 		members: s.members.filter((m) => m.status === "enabled" && levelsFor(m.tags, s.levels).includes(l.slug)).length,
+		includes: (l.includes ?? []).map((x) => s.levels.find((o) => o.slug === x)?.name ?? x).join(", "),
+		features: (config.features ?? []).filter((f) => f.levels?.includes(l.slug)).map((f) => f.name).join(", "),
 		rules: rules.filter((r) => r.levels.includes(l.slug)).length,
+		folders: (config.files ?? []).filter((f) => f.levels?.includes(l.slug)).length,
 	}));
 	const domain = storeDomain(config);
 	const shop = domain && !domain.startsWith("http") ? `https://${domain.replace(/^https?:\/\//, "")}` : null;
@@ -1048,7 +1057,7 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 					{ title: "Setup", value: required.length ? `${done} of ${required.length}` : "Unknown", tone: required.length && done === required.length ? "ok" : "warn", text: done === required.length ? "Every step is done" : `Next: ${required.find((x) => x.state !== "done")?.title ?? ""}`, link: page("/setup"), label: "Setup" },
 				],
 			},
-			{ type: "header", text: "Members by level" },
+			{ type: "header", text: "Levels" },
 			counts.length
 				? {
 						type: "table",
@@ -1056,11 +1065,15 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 						columns: [
 							{ key: "level", label: "Level" },
 							{ key: "members", label: "Members", format: "number" },
+							{ key: "includes", label: "Includes" },
+							{ key: "features", label: "Features" },
 							{ key: "rules", label: "Rules", format: "number" },
+							{ key: "folders", label: "Folders", format: "number" },
 						],
 						rows: counts,
 					}
 				: { type: "empty", title: "No levels yet", description: "Levels name the readers who hold some Shopify tags.", size: "sm", actions: [{ type: "link", label: "Add a level", target: page("/access"), appearance: "primary" }] },
+			...(counts.length ? [{ type: "actions", elements: [{ type: "link", label: "Explore the access map", target: page("/access"), appearance: "secondary" }] }] : []),
 			{ type: "header", text: "Recent activity" },
 			{
 				type: "table",

@@ -57,7 +57,7 @@ export function linkHref(target: LinkTarget): string | null {
 	return null;
 }
 
-const CUSTOM = new Set(["redeemid_copy", "redeemid_modal", "redeemid_cards", "fields", "stats", "columns", "tab", "accordion"]);
+const CUSTOM = new Set(["redeemid_map", "redeemid_copy", "redeemid_modal", "redeemid_cards", "fields", "stats", "columns", "tab", "accordion"]);
 
 interface Ctx {
 	send: Send;
@@ -87,6 +87,8 @@ function One({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 			return h(Cards, { items: block.items as Card[] });
 		case "redeemid_modal":
 			return h(Modal, { block, ctx });
+		case "redeemid_map":
+			return h(AccessMap, { block, ctx });
 		case "columns": {
 			const cols = block.columns as Block[][];
 			return h(
@@ -194,12 +196,150 @@ function Cards({ items }: { items: Card[] }): ReactNode {
 	);
 }
 
+type MapGo = { tab: string } | { level: string } | { feature: string } | { entry: { collection: string; id: string } };
+type MapItem = { kind: "feature" | "content" | "term" | "entry" | "folder"; label: string; note?: string; via?: string; go: MapGo };
+type MapRow = { id: string; name: string; who: string; members?: number; includes: string[]; chain: string[]; items: MapItem[] };
+
+const KINDS: Array<{ kind: MapItem["kind"]; label: string }> = [
+	{ kind: "feature", label: "Features" },
+	{ kind: "content", label: "Content types" },
+	{ kind: "term", label: "Terms" },
+	{ kind: "entry", label: "Entries" },
+	{ kind: "folder", label: "Folders" },
+];
+
+/**
+ * The access map: one row per reader (everyone, signed in, each level), a
+ * count per kind of thing it opens, and the picked row's full list with
+ * "via" for what comes from an included level and a way to change each one.
+ */
+function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
+	const rows = block.rows as MapRow[];
+	const [picked, setPicked] = useState(rows[2]?.id ?? rows[0]?.id ?? "");
+	const [inherited, setInherited] = useState(true);
+	const row = rows.find((r) => r.id === picked) ?? rows[0];
+	const go = (target: MapGo) => void ctx.send({ type: "block_action", action_id: String(block.action_id), value: JSON.stringify(target) });
+	const cell = { padding: "0.6rem 0.75rem", borderBottom: "1px solid var(--color-kumo-line)", verticalAlign: "top" as const, textAlign: "left" as const };
+	const count = (r: MapRow, kind: MapItem["kind"]) => {
+		const of = r.items.filter((i) => i.kind === kind);
+		const own = of.filter((i) => !i.via).length;
+		if (!of.length) return "";
+		const via = of.length - own;
+		return h("span", { style: { whiteSpace: "nowrap" } }, own ? h("span", { className: "font-semibold" }, String(own)) : null, via ? h("span", { className: "text-kumo-subtle text-xs", style: own ? { marginLeft: "0.35rem" } : undefined }, `+${via} via`) : null);
+	};
+	const shown = (row?.items ?? []).filter((i) => inherited || !i.via);
+	return h(
+		"div",
+		{ className: "flex flex-col gap-4" },
+		h(
+			"div",
+			{ style: { overflowX: "auto" } },
+			h(
+				"table",
+				{ className: "w-full text-sm", style: { borderCollapse: "collapse", minWidth: "44rem" } },
+				h(
+					"thead",
+					null,
+					h(
+						"tr",
+						{ className: "text-kumo-subtle" },
+						["Reader", "Who", "Members", "Includes", ...KINDS.map((k) => k.label)].map((label) => h("th", { key: label, scope: "col", style: { ...cell, fontWeight: 500 } }, label)),
+					),
+				),
+				h(
+					"tbody",
+					null,
+					rows.map((r) => {
+						const on = r.id === row?.id;
+						const inChain = !on && Boolean(row?.chain.includes(r.id));
+						return h(
+							"tr",
+							{
+								key: r.id,
+								onClick: () => setPicked(r.id),
+								style: { cursor: "pointer", background: on ? "var(--color-kumo-info-tint)" : inChain ? "var(--color-kumo-tint)" : undefined, boxShadow: on ? "inset 3px 0 0 var(--color-kumo-brand)" : inChain ? "inset 3px 0 0 var(--color-kumo-line)" : undefined },
+							},
+							h(
+								"th",
+								{ scope: "row", style: { ...cell, fontWeight: 600 } },
+								h("button", { type: "button", "aria-pressed": on, className: "text-left font-semibold text-kumo-default hover:underline", onClick: () => setPicked(r.id) }, r.name),
+								inChain ? h("div", { className: "text-xs text-kumo-subtle font-normal" }, `${row?.name} gets this too`) : null,
+							),
+							h("td", { style: cell }, r.who),
+							h("td", { style: cell }, r.members === undefined ? "" : String(r.members)),
+							h("td", { style: cell }, r.includes.join(", ")),
+							...KINDS.map((k) => h("td", { key: k.kind, style: cell }, count(r, k.kind))),
+						);
+					}),
+				),
+			),
+		),
+		row
+			? h(
+					"section",
+					{ "aria-live": "polite", className: "rounded-lg border border-kumo-line p-4 flex flex-col gap-4" },
+					h(
+						"div",
+						{ className: "flex flex-wrap items-start justify-between gap-3" },
+						h(
+							"div",
+							{ className: "min-w-0" },
+							h("h3", { className: "text-lg font-semibold text-kumo-default" }, `What ${row.name} opens`),
+							h("p", { className: "text-sm text-kumo-subtle" }, [row.who, row.includes.length ? `includes ${row.includes.join(", ")}` : ""].filter(Boolean).join(" · ")),
+						),
+						h(
+							"div",
+							{ className: "flex flex-wrap gap-2" },
+							row.id !== "everyone" && row.id !== "signed-in" ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => go({ level: row.id }) }, "Edit level") : null,
+							h("label", { className: "flex items-center gap-2 text-sm text-kumo-default" }, h("input", { type: "checkbox", checked: inherited, onChange: (e: { target: { checked: boolean } }) => setInherited(e.target.checked) }), "Show what comes via others"),
+						),
+					),
+					shown.length
+						? h(
+								"div",
+								{ className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
+								KINDS.map((k) => {
+									const list = shown.filter((i) => i.kind === k.kind);
+									if (!list.length) return null;
+									return h(
+										"div",
+										{ key: k.kind, className: "min-w-0" },
+										h("h4", { className: "text-sm font-semibold text-kumo-subtle mb-1" }, `${k.label} (${list.length})`),
+										h(
+											"ul",
+											{ className: "flex flex-col" },
+											list.map((i, n) =>
+												h(
+													"li",
+													{ key: n, className: "flex items-start justify-between gap-3 py-1.5", style: { borderBottom: "1px solid var(--color-kumo-hairline)" } },
+													h(
+														"div",
+														{ className: "min-w-0" },
+														h("div", { className: "text-sm text-kumo-default break-words" }, i.label, i.via ? h("span", { className: "text-xs text-kumo-subtle", style: { marginLeft: "0.5rem", whiteSpace: "nowrap" } }, `via ${i.via}`) : null),
+														i.note ? h("div", { className: "text-xs text-kumo-subtle break-words" }, i.note) : null,
+													),
+													"entry" in i.go
+														? h("a", { href: linkHref({ kind: "content", collection: i.go.entry.collection, id: i.go.entry.id }) ?? "#", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline" }, "Open →")
+														: h("button", { type: "button", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline", onClick: () => go(i.go) }, "Change →"),
+												),
+											),
+										),
+									);
+								}),
+							)
+						: h("p", { className: "text-sm text-kumo-subtle" }, inherited ? "Nothing on this site names it yet." : "Nothing of its own. Tick \"Show what comes via others\" to see what it gets from other rows."),
+				)
+			: null,
+	);
+}
+
 function TabBlock({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 	const panels = block.panels as Array<{ label: string; blocks: Block[] }>;
 	const start = Number(block.default_tab ?? 0);
 	const [active, setActive] = useState(start);
 	// A response that opens another tab (after a save there) moves to it.
-	useEffect(() => setActive(start), [start]);
+	// Every response names its tab, so any new response (a new block) moves there.
+	useEffect(() => setActive(start), [start, block]);
 	return h(
 		"div",
 		null,

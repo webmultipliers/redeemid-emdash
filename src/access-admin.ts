@@ -16,6 +16,7 @@
 import type { StorageCollection } from "emdash";
 
 import { applyEntryRule, badgeColor, describe, requirement, ruleSource, SIGNED_IN, termTree, type Requirement, type Terms } from "./access.js";
+import { accessMap, type MapGo } from "./access-map.js";
 import { accessTest } from "./staff.js";
 import { groupsOf, type FeatureConfig, type FileRule, type LevelConfig, type MeterConfig, type RedeemIDConfig, type RuleConfig, type TagGroup } from "./config.js";
 import {
@@ -63,12 +64,14 @@ export interface AccessEnv {
 	taxonomies: TaxonomyInfo[];
 	/** Terms of a taxonomy, parents before children, labels showing the path. */
 	terms(taxonomy: string): Promise<TermInfo[]>;
+	/** Members holding each level, for the map (left out in tests). */
+	holders?(): Promise<Record<string, number>>;
 }
 
-export const TABS = ["levels", "site", "types", "taxonomies", "features", "files", "test"] as const;
+export const TABS = ["map", "levels", "site", "types", "taxonomies", "features", "files", "test"] as const;
 export type Tab = (typeof TABS)[number];
-/** Which panel holds each part: Levels, Features, Rules, Terms, Files, Test. */
-const PANEL: Record<Tab, number> = { levels: 0, features: 1, site: 2, types: 2, taxonomies: 3, files: 4, test: 5 };
+/** Which panel holds each part: Map, Levels, Features, Rules, Terms, Files, Test. */
+const PANEL: Record<Tab, number> = { map: 0, levels: 1, features: 2, site: 3, types: 3, taxonomies: 4, files: 5, test: 6 };
 
 /**
  * A button that opens a dialog around `blocks` (rendered by admin.ts). With
@@ -256,6 +259,17 @@ function inSite(kind: "level" | "feature", slug: string, named?: string): unknow
 			{ type: "actions", elements: [{ type: "link", label: "Developer API", target: { kind: "external", url: API_DOCS }, appearance: "secondary" }] },
 		],
 	};
+}
+
+/** The whole picture: who gets what, and through which level. */
+async function mapTab(env: AccessEnv): Promise<unknown[]> {
+	const config = effective(env);
+	const holders = env.holders ? await env.holders().catch(() => undefined) : undefined;
+	const rows = accessMap({ config, entries: env.saved.entries, collections: env.collections, taxonomies: env.taxonomies, tagWords: groupsWords, holders });
+	return [
+		{ type: "context", text: "Who gets what. Pick a row to see everything it opens and where to change it. A level also gets what its included levels, signed-in members and everyone get, counted as \"via\". This shows which settings name a reader; to see which rule wins on one post, use the Test tab." },
+		{ type: "redeemid_map", action_id: "map_go", rows },
+	];
 }
 
 function levelsTab(env: AccessEnv, editing?: string): unknown[] {
@@ -558,9 +572,10 @@ function filesTab(env: AccessEnv): unknown[] {
 }
 
 /** The Access page, opened on `tab`. `test` holds the Test tab's last answer. */
-export async function accessPage(env: AccessEnv, tab: Tab = "levels", toast?: Toast, edit?: { level?: string; feature?: string }, test?: Record<string, unknown>): Promise<Blocks> {
+export async function accessPage(env: AccessEnv, tab: Tab = "map", toast?: Toast, edit?: { level?: string; feature?: string }, test?: Record<string, unknown>): Promise<Blocks> {
 	const tested = (await accessTest(effective(env), test)).blocks.filter((b) => (b as { type: string }).type !== "header");
 	const panels = [
+		{ label: "Map", blocks: await mapTab(env) },
 		{ label: "Levels", blocks: levelsTab(env, edit?.level) },
 		{ label: "Features", blocks: featuresTab(env, edit?.feature) },
 		{ label: "Rules", blocks: [...siteTab(env), { type: "divider" }, ...typesTab(env)] },
@@ -612,7 +627,7 @@ export interface Interaction {
 	values?: Record<string, unknown>;
 }
 
-const ACCESS_ACTIONS = new Set(["access_test", "reset", "level_menu", "level_cancel", "level_save", "site_save", "type_save", "term_save", "term_remove", "feature_menu", "feature_save", "file_save", "file_remove"]);
+const ACCESS_ACTIONS = new Set(["map_go", "access_test", "reset", "level_menu", "level_cancel", "level_save", "site_save", "type_save", "term_save", "term_remove", "feature_menu", "feature_save", "file_save", "file_remove"]);
 
 export function isAccessAction(id: string | undefined): boolean {
 	return Boolean(id && ACCESS_ACTIONS.has(id));
@@ -626,6 +641,15 @@ export async function accessAction(env: AccessEnv, i: Interaction): Promise<Bloc
 	const target = String(i.block_id ?? "").split(":").slice(1).join(":");
 
 	switch (i.action_id) {
+		case "map_go": {
+			// From the map to where that part is changed.
+			const go = JSON.parse(String(i.value ?? "{}")) as MapGo;
+			if ("level" in go) return accessPage(env, "levels", undefined, { level: go.level });
+			if ("feature" in go) return accessPage(env, "features", undefined, { feature: go.feature });
+			if ("tab" in go && (TABS as readonly string[]).includes(go.tab)) return accessPage(env, go.tab);
+			return accessPage(env);
+		}
+
 		case "access_test":
 			return accessPage(env, "test", undefined, undefined, values);
 
