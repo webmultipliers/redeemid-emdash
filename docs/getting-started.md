@@ -12,7 +12,7 @@ From an empty EmDash site to a locked post that opens for a tagged customer.
 
 ## 1. Set up Shopify
 
-Follow [Connect a store](shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and a webhook app. Once the package is installed, **Plugins → RedeemID → Connection** walks through the same steps for your site, one tab each, with its own callback URI filled in, and marks the ones that are done.
+Follow [Connect a store](shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and an Admin API app (staff tools, resyncs and webhooks). Once the package is installed, **Plugins → RedeemID → Connection** walks through the same steps for your site, one tab each, with its own callback URI filled in, and marks the ones that are done.
 
 ## 2. Install
 

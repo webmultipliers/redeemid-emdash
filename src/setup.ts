@@ -24,7 +24,7 @@ import type { Stores } from "./storage.js";
 type Toast = { message: string; type: "success" | "error" | "info" };
 export type Blocks = { blocks: unknown[]; toast?: Toast };
 
-/** Scopes the webhook app needs for staff tools and webhook registration. */
+/** Scopes the Admin API app needs for staff tools and webhook registration. */
 export const SETUP_SCOPES = ["read_customers", "write_customers"] as const;
 
 export const CALLBACK = "/_emdash/api/auth/redeemid/callback";
@@ -134,8 +134,8 @@ export function setupSteps(f: SetupFacts): Step[] {
 	return [
 		{ key: "store", title: "Connect the store", state: store ? "done" : "todo" },
 		{ key: "sign_in", title: "Create the sign-in client", state: signIn ? "done" : store ? "todo" : "waiting", waitingFor: "Connect the store first." },
-		{ key: "app", title: "Connect the webhook app", state: app ? "done" : store ? "todo" : "waiting", waitingFor: "Connect the store first." },
-		{ key: "webhooks", title: "Register the webhooks", state: hooks ? "done" : app ? "todo" : "waiting", waitingFor: "Connect the webhook app first: webhooks are registered through it." },
+		{ key: "app", title: "Connect the Admin API app", state: app ? "done" : store ? "todo" : "waiting", waitingFor: "Connect the store first." },
+		{ key: "webhooks", title: "Register the webhooks", state: hooks ? "done" : app ? "todo" : "waiting", waitingFor: "Connect the Admin API app first: webhooks are registered through it." },
 		{ key: "level", title: "Create your first level", state: level ? "done" : "todo" },
 		{ key: "try", title: "Try a sign-in", state: f.signedIn > 0 ? "done" : ready ? "todo" : "waiting", waitingFor: "Finish the steps above first." },
 		{ key: "storefront", title: "Add Storefront tokens (for plans and the shop)", state: f.storefront ? "done" : "optional" },
@@ -200,7 +200,7 @@ function stepBlocks(step: Step, f: SetupFacts): unknown[] {
 					? `Shopify refused the app: ${f.admin} The app must be installed on this store and be in the same Shopify organization.`
 					: f.admin === "ok"
 						? `The app is connected but lacks ${missingScopes(f).join(" and ")}. Add the scopes, release a new version and let the store accept it.`
-						: "Shopify signs webhooks with an app's client secret, and RedeemID uses the same app to register webhooks and to resync members.";
+						: "RedeemID uses an Admin API app for the staff tools (resyncs, tag edits, member lookups) and to register webhooks, and Shopify signs webhooks with its client secret.";
 			return [
 				...out,
 				{ type: "section", text: why },
@@ -268,7 +268,7 @@ function stepBlocks(step: Step, f: SetupFacts): unknown[] {
 
 /** Connection's tab address for each step (/connection/sign-in). */
 export const STEP_TABS: Record<Step["key"], string> = { store: "store", sign_in: "sign-in", app: "app", webhooks: "webhooks", level: "level", try: "try", storefront: "storefront" };
-const SHORT: Record<Step["key"], string> = { store: "Store", sign_in: "Sign-in", app: "Webhook app", webhooks: "Webhooks", level: "First level", try: "Try it", storefront: "Storefront" };
+const SHORT: Record<Step["key"], string> = { store: "Store", sign_in: "Sign-in", app: "Admin app", webhooks: "Webhooks", level: "First level", try: "Try it", storefront: "Storefront" };
 
 /** The steps that count toward "set up" (Storefront is optional). */
 export const requiredSteps = (steps: Step[]) => steps.filter((s) => s.key !== "storefront");

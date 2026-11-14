@@ -2,7 +2,7 @@
 
 ## Staff tools
 
-With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API token for the webhook app with the client credentials grant. The app must be in the same Shopify organization as the store, as Dev Dashboard apps are, and needs `read_customers` and `write_customers`. Then, under **Plugins → RedeemID**:
+With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API token for the Admin API app with the client credentials grant. The app must be in the same Shopify organization as the store, as Dev Dashboard apps are, and needs `read_customers` and `write_customers`. Then, under **Plugins → RedeemID**:
 
 - **Member detail.** Account, levels and tag count on top, then tabs: Membership (levels, features, membership dates and level history), Tags (add in a dialog, remove), Account (email, consent, last sync and the site user) and Privacy. Resync from Shopify, and on a myshopify.com store, open the customer in Shopify. Tag edits are made in Shopify and read back. Nothing is granted on the site.
 - **Site user.** Signing in links a customer to the site user with the same verified email. When the emails differ, staff link the customer to an existing Subscriber by that user's email on the member's page (never a staff account, never a user linked to another customer), or unlink them. This part needs no Admin API app.
@@ -29,7 +29,7 @@ RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they 
 
 **Plugins → RedeemID → Overview** is the first page: anything that needs doing (setup steps left, webhook problems, open privacy requests), cards for sign-in, members, webhooks, access, privacy and setup with links to each, members by level, recent app events and links to the docs, the store's customers and Flow. The **RedeemID** card on the EmDash dashboard shows the same alerts and counts with links to Overview, Members, Access and Events (or Connection while a setup step is left).
 
-**Connection** holds the store link: **Status** (the values to copy into Shopify, and every setting as Set or Missing), then one tab per setup step: Store, Sign-in, Webhook app, Webhooks, First level, Try it and Storefront. A finished step's tab shows a check mark. It opens on the first step not done, then on Status once they all are.
+**Connection** holds the store link: **Status** (the values to copy into Shopify, and every setting as Set or Missing), then one tab per setup step: Store, Sign-in, Admin app, Webhooks, First level, Try it and Storefront. A finished step's tab shows a check mark. It opens on the first step not done, then on Status once they all are.
 
 **Events** shows what happened, in three tabs: Webhook, App and Health. Each tab of both pages has its own address, such as `/_emdash/admin/plugins/redeemid/connection/sign-in` or `/_emdash/admin/plugins/redeemid/events/app`, which the dashboard card and Overview link to.
 

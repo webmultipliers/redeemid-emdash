@@ -91,7 +91,7 @@ describe("setup steps", () => {
 		expect(state(f).try).toBe("done");
 		expect(nextStep(f)).toBeNull();
 		expect(text(f)).toContain("Optional");
-		expect(setupPanels(f).map((p) => p.label)).toEqual(["Store ✓", "Sign-in ✓", "Webhook app ✓", "Webhooks ✓", "First level ✓", "Try it ✓", "Storefront"]);
+		expect(setupPanels(f).map((p) => p.label)).toEqual(["Store ✓", "Sign-in ✓", "Admin app ✓", "Webhooks ✓", "First level ✓", "Try it ✓", "Storefront"]);
 	});
 
 	it("counts the required steps only", () => {
@@ -127,7 +127,7 @@ describe("setup facts", () => {
 		expect(f.scopes).toContain("read_customers");
 		expect(f.webhooksMissing).toEqual(["CUSTOMERS_MERGE"]);
 		const page = text({ ...f, discovery: "ok" });
-		expect(page).toContain("Connect the webhook app: Done");
+		expect(page).toContain("Connect the Admin API app: Done");
 		expect(page).toContain("customers/merge");
 	});
 });

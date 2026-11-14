@@ -82,7 +82,7 @@ Set the secrets, open **Plugins → RedeemID → Connection** in the admin, and 
 | Guide | What's in it |
 | --- | --- |
 | [Getting started](docs/getting-started.md) | Requirements, install, config, secrets, templates and a first check |
-| [Connect a store](docs/shopify-setup.md) | The Shopify side: sign-in client, Storefront tokens and the webhook app |
+| [Connect a store](docs/shopify-setup.md) | The Shopify side: sign-in client, Storefront tokens and the Admin API app |
 | [Shopify Flow recipes](docs/shopify-flow.md) | Tag on a paid order, remove on refund or cancellation, passes that end |
 | [Content and templates](docs/content.md) | `<Content>`, the Paywall break, Members only, the wall, `<Gate>`, badges, plan cards, site search and replacement text |
 | [Access](docs/access.md) | Rules, levels, the Access page and the entry panel, meter and drip, selling one entry, features and protected files |

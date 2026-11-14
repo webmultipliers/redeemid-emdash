@@ -47,8 +47,8 @@ Set the secrets. On Cloudflare Workers:
 npx wrangler secret put REDEEMID_SHOPIFY_STORE_DOMAIN                   # e.g. my-store.myshopify.com, unless `shop` is in the config
 npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID     # Customer Account API client ID
 npx wrangler secret put REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET # confidential clients only
-npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET        # the webhook app's client secret
-npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID            # optional; the webhook app's client ID, for the staff tools
+npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET        # the Admin API app's client secret (signs webhooks)
+npx wrangler secret put REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID            # optional; the Admin API app's client ID, for the staff tools
 npx wrangler secret put REDEEMID_EVENTS_SECRET                          # optional; signs outbound events (events.url)
 npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN       # optional; the Storefront API private token, to sell on the site (plans, shop, checkout)
 npx wrangler secret put REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN        # optional; used only without the private token
