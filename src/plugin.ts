@@ -34,7 +34,7 @@ import { deleteAccess, entryKey, loadAccess, onLevels, withSaved } from "./setti
 import { env, ENV, shopOrigin, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
-import { EDITOR_PANELS, PAGES, WIDGETS } from "./descriptor.js";
+import { CONNECTION_TABS, EDITOR_PANELS, PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, recentRequests, requestShopifyErasure } from "./privacy.js";
@@ -288,14 +288,12 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 						if (i.page === "/") return await overviewPage(config, ctx);
 						if (i.page === "/members") return await membersPage(config);
 						if (i.page === "/access") return await accessPage(await accessEnv(config));
-						// Access test moved to Access → Test; old links land there.
-						if (i.page === "/test") return await accessPage(await accessEnv(config), "test");
 						if (i.page === "/reports") return await reportsPage(config, await memberStores());
-						// Status, Setup, Webhooks, Health and App events are tabs of Connection; the old pages open their tab.
-						const conn = CONNECTION_PATHS[i.page ?? ""];
-						if (conn !== undefined) {
+						// Connection, or one of its tabs by address (/connection/webhooks).
+						if (i.page === "/connection" || i.page?.startsWith("/connection/")) {
 							await scheduleHealth(ctx);
-							return await connectionPage(config, ctx, conn ?? undefined);
+							const tab = i.page.split("/")[2] as ConnectionTab | undefined;
+							return await connectionPage(config, ctx, tab && CONNECTION_TABS.includes(tab) ? tab : undefined);
 						}
 						if (i.page === "/privacy") return await privacyPage(await memberStores());
 						if (i.page === "widget:status") return await statusWidget(config, ctx);
@@ -791,10 +789,7 @@ function textSummary(config: RedeemIDConfig): string {
 	return ignored ? `${all - ignored} in use, ${ignored} ignored` : `${all} in use`;
 }
 
-type ConnectionTab = "status" | "setup" | "webhooks" | "health" | "events";
-const CONNECTION_TABS: ConnectionTab[] = ["status", "setup", "webhooks", "health", "events"];
-/** Connection, and the pages that are now its tabs (null: pick the tab from the setup state). */
-const CONNECTION_PATHS: Record<string, ConnectionTab | null> = { "/connection": null, "/status": "status", "/setup": "setup", "/webhooks": "webhooks", "/health": "health", "/events": "events" };
+type ConnectionTab = (typeof CONNECTION_TABS)[number];
 
 type Built = { blocks: unknown[]; toast?: unknown };
 const withoutHeader = (b: Built) => b.blocks.filter((x, n) => !(n === 0 && (x as { type?: string }).type === "header"));
@@ -1050,7 +1045,7 @@ async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 					{ type: "link", label: "Overview", target: page("/"), appearance: "primary" },
 					{ type: "link", label: "Members", target: page("/members"), appearance: "secondary" },
 					{ type: "link", label: "Access", target: page("/access"), appearance: "secondary" },
-					{ type: "link", label: s.signIn && !s.check?.problems.length ? "Webhooks" : "Setup", target: page(s.signIn && !s.check?.problems.length ? "/webhooks" : "/setup"), appearance: "secondary" },
+					{ type: "link", label: s.signIn && !s.check?.problems.length ? "Webhooks" : "Setup", target: page(s.signIn && !s.check?.problems.length ? "/connection/webhooks" : "/connection/setup"), appearance: "secondary" },
 				],
 			},
 		],
@@ -1093,12 +1088,12 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 			{
 				type: "redeemid_cards",
 				items: [
-					{ title: "Sign-in", value: s.signIn ? "Ready" : "Not ready", tone: s.signIn ? "ok" : "error", text: domain ? `Store: ${domain.replace(/^https?:\/\//, "")}` : "No store set", link: page("/status"), label: "Status" },
+					{ title: "Sign-in", value: s.signIn ? "Ready" : "Not ready", tone: s.signIn ? "ok" : "error", text: domain ? `Store: ${domain.replace(/^https?:\/\//, "")}` : "No store set", link: page("/connection/status"), label: "Status" },
 					{ title: "Members", value: String(s.members.length), text: `${s.active} with a level, ${s.signedIn} signed in here`, link: page("/members"), label: "Members" },
-					{ title: "Webhooks", value: hooks.value, tone: hooks.tone, text: s.delivery ? `Last delivery ${ago(s.delivery.receivedAt)} (${s.delivery.topic})` : "None received yet", link: page("/webhooks"), label: "Webhooks" },
+					{ title: "Webhooks", value: hooks.value, tone: hooks.tone, text: s.delivery ? `Last delivery ${ago(s.delivery.receivedAt)} (${s.delivery.topic})` : "None received yet", link: page("/connection/webhooks"), label: "Webhooks" },
 					{ title: "Access", value: count(s.levels.length, "level"), text: [count(rules.length, "rule"), count((config.features ?? []).length, "feature"), count((config.files ?? []).length, "protected folder")].join(", "), link: page("/access"), label: "Access" },
 					{ title: "Privacy", value: s.openRequests ? `${s.openRequests} open` : "Nothing open", tone: s.openRequests ? "warn" : undefined, text: "Exports and erasures from members, staff and Shopify", link: page("/privacy"), label: "Privacy" },
-					{ title: "Setup", value: required.length ? `${done} of ${required.length}` : "Unknown", tone: required.length && done === required.length ? "ok" : "warn", text: done === required.length ? "Every step is done" : `Next: ${required.find((x) => x.state !== "done")?.title ?? ""}`, link: page("/setup"), label: "Setup" },
+					{ title: "Setup", value: required.length ? `${done} of ${required.length}` : "Unknown", tone: required.length && done === required.length ? "ok" : "warn", text: done === required.length ? "Every step is done" : `Next: ${required.find((x) => x.state !== "done")?.title ?? ""}`, link: page("/connection/setup"), label: "Setup" },
 				],
 			},
 			{ type: "header", text: "Levels" },
@@ -1134,7 +1129,7 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 					return { event, about, result, at };
 				}),
 			},
-			{ type: "actions", elements: [{ type: "link", label: "All app events", target: page("/events"), appearance: "secondary" }, { type: "link", label: "Reports", target: page("/reports"), appearance: "secondary" }] },
+			{ type: "actions", elements: [{ type: "link", label: "All app events", target: page("/connection/events"), appearance: "secondary" }, { type: "link", label: "Reports", target: page("/reports"), appearance: "secondary" }] },
 			{ type: "header", text: "Resources" },
 			{
 				type: "redeemid_cards",

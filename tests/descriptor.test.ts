@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PAGE_ALIASES, PAGES, redeemidPlugin } from "../src/descriptor.js";
+import { PAGES, redeemidPlugin, TAB_PATHS } from "../src/descriptor.js";
 
 describe("admin pages", () => {
 	it("share one RedeemID sidebar folder", () => {
@@ -13,8 +13,8 @@ describe("admin pages", () => {
 		expect(PAGES.map((p) => p.path).sort()).toEqual(["/", "/access", "/connection", "/members", "/privacy", "/reports"]);
 	});
 
-	it("keep the old Status, Setup, Webhooks and App events links as aliases for their tabs", () => {
-		expect(PAGE_ALIASES).toEqual(["/test", "/status", "/setup", "/webhooks", "/health", "/events"]);
+	it("give each Connection tab its own address", () => {
+		expect(TAB_PATHS).toEqual(["/connection/status", "/connection/setup", "/connection/webhooks", "/connection/health", "/connection/events"]);
 	});
 
 	it("render in the browser through the admin entry", () => {

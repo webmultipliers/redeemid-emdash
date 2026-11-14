@@ -24,8 +24,9 @@ export const PAGES = [
 	{ path: "/privacy", label: "Privacy", icon: "shield-check", group: GROUP },
 	{ path: "/connection", label: "Connection", icon: "plugs-connected", group: GROUP },
 ];
-/** Pages that became tabs (Access → Test, Connection's tabs); links to them and old bookmarks open that tab. */
-export const PAGE_ALIASES = ["/test", "/status", "/setup", "/webhooks", "/health", "/events"];
+/** Connection's tabs by address (/connection/webhooks), so a link can open one. */
+export const CONNECTION_TABS = ["status", "setup", "webhooks", "health", "events"] as const;
+export const TAB_PATHS = CONNECTION_TABS.map((t) => `/connection/${t}`);
 /** The Access panel on every saved entry, in every collection (new ones too). */
 export const EDITOR_PANELS = [{ id: "access", title: "Access", route: "access-panel", order: 10 }];
 export const WIDGETS = [{ id: "status", title: "RedeemID", size: "half" as const }];

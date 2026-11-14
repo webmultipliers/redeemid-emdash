@@ -29,7 +29,7 @@ RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they 
 
 **Plugins → RedeemID → Overview** is the first page: anything that needs doing (setup steps left, webhook problems, open privacy requests), cards for sign-in, members, webhooks, access, privacy and setup with links to each, members by level, recent app events and links to the docs, the store's customers and Flow. The **RedeemID** card on the EmDash dashboard shows the same alerts and counts with links to Overview, Members, Access and Connection's Webhooks tab (or its Setup tab while something is missing).
 
-**Connection** holds everything about the store link in five tabs: Status, Setup, Webhooks, Health and App events. It opens on Setup until every step is done, then on Status. Links to the old Status, Setup, Webhooks and App events pages open the matching tab.
+**Connection** holds everything about the store link in five tabs: Status, Setup, Webhooks, Health and App events. It opens on Setup until every step is done, then on Status. Each tab has its own address, such as `/_emdash/admin/plugins/redeemid/connection/webhooks`, which the dashboard card and Overview link to.
 
 **Status** shows the addresses to paste into Shopify (callback URI, JavaScript origin, logout URI, webhook URL) and the store domain as read-only fields with copy buttons, every setting as Set or Missing with the environment variable it comes from, the template checks and the webhook subscriptions.
 
