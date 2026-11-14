@@ -12,7 +12,7 @@ From an empty EmDash site to a locked post that opens for a tagged customer.
 
 ## 1. Set up Shopify
 
-Follow [Connect a store](shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and a webhook app. Once the package is installed, **Plugins → RedeemID → Connection → Setup** walks through the same steps for your site, with its own callback URI filled in, and says which are done.
+Follow [Connect a store](shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and an Admin API app (staff tools, resyncs and webhooks). Once the package is installed, **Plugins → RedeemID → Connection** walks through the same steps for your site, one tab each, with its own callback URI filled in, and marks the ones that are done.
 
 ## 2. Install
 
@@ -68,7 +68,7 @@ REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET=…          # verifies webhooks
 REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN=…         # only to sell on the site: plans, shop and checkout
 ```
 
-The [secrets reference](reference.md#secrets) lists the rest. Connection → Setup prints the command for each secret its steps need.
+The [secrets reference](reference.md#secrets) lists the rest. Connection prints the command for each secret its steps need.
 
 ## 5. Render content through RedeemID
 
@@ -89,6 +89,6 @@ Use `<Content>` in place of `<PortableText>` for every body that may be locked, 
 ## 6. Check it
 
 1. Finish EmDash setup as staff first. Store customers can't create the first account.
-2. Open **Plugins → RedeemID → Connection → Setup**. Work down the steps until it says RedeemID is set up (it registers the webhooks for you). **Status** lists every setting as Set or Missing.
+2. Open **Plugins → RedeemID → Connection**. Work through the step tabs until each has a check mark (the Webhooks tab registers the webhooks for you). **Status** lists every setting as Set or Missing.
 3. Tag a test customer `member` in Shopify, open a locked post, and sign in as that customer. The post opens.
 4. Remove the tag in Shopify. The post locks again once the webhook arrives.

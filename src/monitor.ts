@@ -1,11 +1,12 @@
 /**
  * Watching what RedeemID does, in the admin (Block Kit):
  *
- * - Webhooks: what Shopify sent and what became of it (Received), whether
- *   deliveries are flowing (Health: the daily check, rejected and failed
- *   deliveries, and when to warn staff by email), and where Shopify sends them
- *   (Setup: endpoint, signatures, subscriptions).
- * - App events: the log in log.ts, newest first, by event or problems only.
+ * - Webhooks: what Shopify sent and what became of it (Events → Webhook),
+ *   whether deliveries are flowing (Events → Health: the daily check, rejected
+ *   and failed deliveries, and when to warn staff by email), and where Shopify
+ *   sends them (Connection → Webhooks: endpoint, signatures, subscriptions).
+ * - App events (Events → App): the log in log.ts, newest first, by event or
+ *   problems only.
  * - Reports: members by level, who joined and left, sign-ins and metered reads.
  *
  * The daily check re-creates subscriptions Shopify dropped and never changes
@@ -129,7 +130,7 @@ export async function healthCheck(env_: MonitorEnv): Promise<HealthResult> {
 
 	const last = await lastDelivery(s);
 	if (settings.quietDays > 0) {
-		if (!last) problems.push({ level: "warn", text: "No webhooks received yet. Check the webhook subscriptions under Connection → Status." });
+		if (!last) problems.push({ level: "warn", text: "No webhooks received yet. Check the webhook subscriptions under Connection → Webhooks." });
 		else if (Date.parse(last.receivedAt) < now - settings.quietDays * DAY) {
 			const days = Math.floor((now - Date.parse(last.receivedAt)) / DAY);
 			problems.push({ level: "warn", text: `No webhooks for ${days} days. Quiet stores are normal; if customers changed in Shopify since, check Setup.` });
@@ -140,7 +141,7 @@ export async function healthCheck(env_: MonitorEnv): Promise<HealthResult> {
 	const rejected = await count(s, "webhook.rejected", day);
 	if (rejected) problems.push({ level: "warn", text: `${rejected} ${rejected === 1 ? "delivery was" : "deliveries were"} turned away in the last day (bad signature): check the webhook signing secret.` });
 	const failed = await count(s, "webhook.failed", day);
-	if (failed) problems.push({ level: "error", text: `${failed} ${failed === 1 ? "delivery" : "deliveries"} failed to save in the last day. Shopify sends them again; see App events.` });
+	if (failed) problems.push({ level: "error", text: `${failed} ${failed === 1 ? "delivery" : "deliveries"} failed to save in the last day. Shopify sends them again; see Events → App.` });
 
 	const result: HealthResult = { at: new Date(now).toISOString(), problems, registered, subscriptions };
 	result.emailed = await alert(env_, settings, result, now);
@@ -195,10 +196,7 @@ export async function tidy(s: Stores): Promise<void> {
 
 export { topicName };
 
-// ---------------------------------------------------------------- Webhooks page
-
-export const WEBHOOK_TABS = ["received", "health", "setup"] as const;
-export type WebhookTab = (typeof WEBHOOK_TABS)[number];
+// ---------------------------------------------------------------- Webhook panels
 
 const OUTCOMES: Record<string, string> = {
 	processed: "Processed",
@@ -210,7 +208,11 @@ const OUTCOMES: Record<string, string> = {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export async function webhooksPage(env_: MonitorEnv, tab: WebhookTab = "received", toast?: Toast, cursor?: string): Promise<Blocks> {
+/**
+ * The webhook parts of the admin: deliveries and their health (Events →
+ * Webhook and Health) and the app's subscriptions (Connection → Webhooks).
+ */
+export async function webhookPanels(env_: MonitorEnv, cursor?: string): Promise<{ received: unknown[]; health: unknown[]; subscriptions: unknown[]; attention: boolean }> {
 	const { s, kv } = env_;
 	const now = env_.now?.() ?? Date.now();
 	const month = since(now, LOG_DAYS);
@@ -236,7 +238,7 @@ export async function webhooksPage(env_: MonitorEnv, tab: WebhookTab = "received
 				{ label: "Failed", value: String(failed), ...(failed ? { trend: "down" } : {}) },
 			],
 		},
-		...(cursor ? [{ type: "actions", elements: [{ type: "button", action_id: "webhooks_tab", value: "received", label: "Back to the newest", style: "secondary" }] }] : []),
+		...(cursor ? [{ type: "actions", elements: [{ type: "button", action_id: "deliveries_page", value: "", label: "Back to the newest", style: "secondary" }] }] : []),
 		{
 			type: "table",
 			page_action_id: "deliveries_page",
@@ -303,7 +305,7 @@ export async function webhooksPage(env_: MonitorEnv, tab: WebhookTab = "received
 		},
 	];
 
-	const setupTab = [
+	const subscriptions = [
 		{ type: "context", text: "Where Shopify sends deliveries, how they're checked, and the app's webhook subscriptions." },
 		{ type: "section", text: `Endpoint: ${env_.uri}` },
 		{
@@ -316,21 +318,7 @@ export async function webhooksPage(env_: MonitorEnv, tab: WebhookTab = "received
 		{ type: "context", text: "customers/redact, customers/data_request and shop/redact are set in the app's compliance webhooks, not here." },
 	];
 
-	return {
-		blocks: [
-			{ type: "header", text: "Webhooks" },
-			{
-				type: "tab",
-				default_tab: WEBHOOK_TABS.indexOf(tab),
-				panels: [
-					{ label: "Received", blocks: receivedTab },
-					{ label: attention ? "Health (!)" : "Health", blocks: healthTab },
-					{ label: "Setup", blocks: setupTab },
-				],
-			},
-		],
-		...(toast ? { toast } : {}),
-	};
+	return { received: receivedTab, health: healthTab, subscriptions, attention };
 }
 
 const SUBS: Record<HealthResult["subscriptions"], string> = {
@@ -385,7 +373,6 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 	const failed = cursor ? null : await s.failedEvents.query({ orderBy: { at: "desc" }, limit: 50 }).catch(() => null);
 	return {
 		blocks: [
-			{ type: "header", text: "App events" },
 			{
 				type: "context",
 				text: `What RedeemID did and what came of it: webhooks, sign-ins, calls to Shopify, staff actions, settings saves and outbound events. Kept ${LOG_DAYS} days. Never bodies, tokens or emails.`,
@@ -467,7 +454,7 @@ function failedBlocks(list: FailedEvent[]): unknown[] {
 					action_id: "failed_clear_all",
 					label: "Clear all",
 					style: "danger",
-					confirm: { title: "Clear every failed event?", text: "They won't be sent. App events keeps the record that they failed.", confirm: "Clear all", deny: "Cancel", style: "danger" },
+					confirm: { title: "Clear every failed event?", text: "They won't be sent. Events → App keeps the record that they failed.", confirm: "Clear all", deny: "Cancel", style: "danger" },
 				},
 			],
 		},
@@ -559,7 +546,7 @@ export async function reportsPage(config: RedeemIDConfig, s: Stores, now = Date.
 			{ type: "header", text: "Reports" },
 			{
 				type: "context",
-				text: "A level is joined or left when Shopify adds or removes its tag. Counts come from each member's tag dates; sign-ins and metered reads from App events (kept 30 days).",
+				text: "A level is joined or left when Shopify adds or removes its tag. Counts come from each member's tag dates; sign-ins and metered reads from Events → App (kept 30 days).",
 			},
 			{
 				type: "stats",

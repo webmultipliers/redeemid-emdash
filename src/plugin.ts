@@ -34,17 +34,17 @@ import { deleteAccess, entryKey, loadAccess, onLevels, withSaved } from "./setti
 import { env, ENV, shopOrigin, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
-import { CONNECTION_TABS, EDITOR_PANELS, PAGES, WIDGETS } from "./descriptor.js";
+import { CONNECTION_TABS, EDITOR_PANELS, EVENTS_TABS, PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, recentRequests, requestShopifyErasure } from "./privacy.js";
 import { bulkResync, BULK_BATCH, memberDetail, privacyPage, registerWebhooks, resyncOne, staffLink, staffUnlink, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
 import { cacheFindings, gatedFindings, templateFindings } from "./template-scan.js";
-import { setupFacts, setupPage, setupSteps, WEBHOOK } from "./setup.js";
+import { nextStep, requiredSteps, setupFacts, setupPanels, setupSteps, STEP_TABS, WEBHOOK } from "./setup.js";
 import { record } from "./log.js";
 import { resend } from "./events.js";
-import { eventRow, eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, WEBHOOK_TABS, webhooksPage, type MonitorEnv, type WebhookTab } from "./monitor.js";
+import { eventRow, eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, webhookPanels, type MonitorEnv } from "./monitor.js";
 import { z } from "astro/zod";
 import { AgentError, explainAccess, findProducts, getCollection, getMember, getProduct, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
 
@@ -289,11 +289,14 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 						if (i.page === "/members") return await membersPage(config);
 						if (i.page === "/access") return await accessPage(await accessEnv(config));
 						if (i.page === "/reports") return await reportsPage(config, await memberStores());
-						// Connection, or one of its tabs by address (/connection/webhooks).
+						// Connection and Events, or one of their tabs by address (/connection/sign-in, /events/app).
 						if (i.page === "/connection" || i.page?.startsWith("/connection/")) {
 							await scheduleHealth(ctx);
-							const tab = i.page.split("/")[2] as ConnectionTab | undefined;
-							return await connectionPage(config, ctx, tab && CONNECTION_TABS.includes(tab) ? tab : undefined);
+							return await connectionPage(config, ctx, tabOf(CONNECTION_TABS, i.page.split("/")[2]));
+						}
+						if (i.page === "/events" || i.page?.startsWith("/events/")) {
+							await scheduleHealth(ctx);
+							return await eventsAdminPage(config, ctx, tabOf(EVENTS_TABS, i.page.split("/")[2]));
 						}
 						if (i.page === "/privacy") return await privacyPage(await memberStores());
 						if (i.page === "widget:status") return await statusWidget(config, ctx);
@@ -484,14 +487,11 @@ async function setupAction(
 	config: RedeemIDConfig,
 	live: () => Promise<RedeemIDConfig>,
 	ctx: RouteContext,
-	i: { action_id?: string; values?: Record<string, unknown> },
+	i: { action_id?: string; value?: unknown; values?: Record<string, unknown> },
 ) {
-	const s = await memberStores();
 	const origin = siteOrigin(ctx);
-	const page = async (toast?: { type: "success" | "error" | "info"; message: string }) => {
-		const now = await live();
-		return connectionPage(now, ctx, "setup", { setup: setupPage(await setupFacts(now, s, origin), toast) });
-	};
+	const tab: ConnectionTab = i.action_id === "setup_register" ? "webhooks" : i.action_id === "setup_level" ? "level" : (tabOf(CONNECTION_TABS, i.value) ?? "status");
+	const page = async (toast?: { type: "success" | "error" | "info"; message: string }) => connectionPage(await live(), ctx, tab, toast);
 	if (i.action_id === "setup_register") {
 		try {
 			const { added, failed } = await registerWebhooks(config, origin + WEBHOOK);
@@ -588,41 +588,37 @@ async function action(
 				const done = added.length ? `Registered ${added.length} webhooks.` : failed.length ? "" : "Nothing was missing.";
 				const refused = failed.map((f) => `Shopify refused ${f.topic}: ${f.message}`).join(" ");
 				await record({ event: "staff.webhooks", label: "register", status: failed.length ? `${failed.length} refused` : `${added.length} registered`, level: failed.length ? "warn" : "ok", origin: "staff" });
-				return connectionPage(config, ctx, "status", { hooks: await webhooksPage(monitor(), "setup", { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") }) });
+				return connectionPage(config, ctx, "webhooks", { type: failed.length ? "error" : "success", message: [done, refused].filter(Boolean).join(" ") });
 			} catch (e) {
-				return connectionPage(config, ctx, "status", { hooks: await webhooksPage(monitor(), "setup", fail(e)) });
+				return connectionPage(config, ctx, "webhooks", fail(e));
 			}
 		}
-		case "webhooks_tab": {
-			const tab = WEBHOOK_TABS.includes(i.value as WebhookTab) ? (i.value as WebhookTab) : "received";
-			return connectionPage(config, ctx, tab === "setup" ? "status" : tab === "health" ? "health" : "webhooks");
-		}
 		case "deliveries_page":
-			return connectionPage(config, ctx, "webhooks", { hooks: await webhooksPage(monitor(), "received", undefined, cursorOf(i.value)) });
+			return eventsAdminPage(config, ctx, "webhook", { cursor: cursorOf(i.value) });
 		case "health_check": {
 			const r = await healthCheck({ ...monitor(), by: "staff" });
 			const message = r.problems.length ? `Checked: ${r.problems.length === 1 ? "1 problem" : `${r.problems.length} problems`}.` : "Checked: subscriptions are in place and deliveries look healthy.";
-			return connectionPage(config, ctx, "health", { hooks: await webhooksPage(monitor(), "health", { type: r.problems.length ? "info" : "success", message }) });
+			return eventsAdminPage(config, ctx, "health", {}, { type: r.problems.length ? "info" : "success", message });
 		}
 		case "monitor_save":
-			return connectionPage(config, ctx, "health", { hooks: await webhooksPage(monitor(), "health", await saveMonitor(ctx.kv, i.values)) });
+			return eventsAdminPage(config, ctx, "health", {}, await saveMonitor(ctx.kv, i.values));
 		case "events_filter":
-			return connectionPage(config, ctx, "events", { events: await eventsPage(s, { event: String(i.values?.event ?? "") || undefined, problems: i.values?.problems === true }) });
+			return eventsAdminPage(config, ctx, "app", { events: await eventsPage(s, { event: String(i.values?.event ?? "") || undefined, problems: i.values?.problems === true }) });
 		case "events_show":
-			return connectionPage(config, ctx, "events", { events: await eventsPage(s, { event: String(i.value ?? "") || undefined }) });
+			return eventsAdminPage(config, ctx, "app", { events: await eventsPage(s, { event: String(i.value ?? "") || undefined }) });
 		case "events_page":
-			return connectionPage(config, ctx, "events", { events: await eventsPage(s, parseFilter(i.block_id), cursorOf(i.value)) });
+			return eventsAdminPage(config, ctx, "app", { events: await eventsPage(s, parseFilter(i.block_id), cursorOf(i.value)) });
 		case "failed_resend": {
 			const sent = await resend(config, s, String(i.value ?? "")).catch(() => false);
-			return connectionPage(config, ctx, "events", { events: await eventsPage(s, {}, undefined, sent ? { type: "success", message: "Sent. It's off the failed list." } : { type: "error", message: "The receiver still didn't take it. It stays on the list." }) });
+			return eventsAdminPage(config, ctx, "app", {}, sent ? { type: "success", message: "Sent. It's off the failed list." } : { type: "error", message: "The receiver still didn't take it. It stays on the list." });
 		}
 		case "failed_clear":
 			await s.failedEvents.delete(String(i.value ?? ""));
-			return connectionPage(config, ctx, "events", { events: await eventsPage(s, {}, undefined, { type: "success", message: "Cleared." }) });
+			return eventsAdminPage(config, ctx, "app", {}, { type: "success", message: "Cleared." });
 		case "failed_clear_all": {
 			const { items } = await s.failedEvents.query({ limit: 100 });
 			await s.failedEvents.deleteMany(items.map((r) => r.id));
-			return connectionPage(config, ctx, "events", { events: await eventsPage(s, {}, undefined, { type: "success", message: "Failed events cleared." }) });
+			return eventsAdminPage(config, ctx, "app", {}, { type: "success", message: "Failed events cleared." });
 		}
 		case "member_export": {
 			const id = String(i.value ?? "");
@@ -790,45 +786,70 @@ function textSummary(config: RedeemIDConfig): string {
 }
 
 type ConnectionTab = (typeof CONNECTION_TABS)[number];
+type EventsTab = (typeof EVENTS_TABS)[number];
+type Toast = { type: "success" | "error" | "info"; message: string };
 
-type Built = { blocks: unknown[]; toast?: unknown };
-const withoutHeader = (b: Built) => b.blocks.filter((x, n) => !(n === 0 && (x as { type?: string }).type === "header"));
-const panelsOf = (b: Built) => ((b.blocks.find((x) => (x as { type?: string }).type === "tab") as { panels?: Array<{ blocks: unknown[] }> } | undefined)?.panels ?? []).map((p) => p.blocks);
+/** A tab name from an address or a button value, if it's one of these. */
+function tabOf<T extends string>(tabs: readonly T[], v: unknown): T | undefined {
+	return tabs.includes(v as T) ? (v as T) : undefined;
+}
+const withoutHeader = (b: { blocks: unknown[] }) => b.blocks.filter((x, n) => !(n === 0 && (x as { type?: string }).type === "header"));
 
 /**
- * Everything about the store connection on one page: the values Shopify
- * needs (Status), the setup steps, webhook deliveries and their health, and
- * the app's event log. An action passes the part it rebuilt (with its
- * toast); the other tabs load as usual. Opens on Setup until it's done.
+ * How this site talks to Shopify: Status (the values to copy into Shopify
+ * and what the site reads from its environment), then one tab per setup
+ * step, each with a check mark once done. Webhooks also holds the app's
+ * subscriptions. Opens on the first step not done, or on Status.
  */
-async function connectionPage(config: RedeemIDConfig, ctx: RouteContext, tab?: ConnectionTab, given: { hooks?: Built; events?: Built; setup?: Built } = {}) {
+async function connectionPage(config: RedeemIDConfig, ctx: RouteContext, tab?: ConnectionTab, toast?: Toast) {
 	const s = await memberStores();
-	const [hooks, events, facts, status] = await Promise.all([
-		given.hooks ?? webhooksPage(monitorEnv(config, s, ctx)),
-		given.events ?? eventsPage(s),
-		setupFacts(config, s, siteOrigin(ctx)),
-		statusPage(config, ctx.request),
-	]);
-	const setup = given.setup ?? setupPage(facts);
-	const steps = setupSteps(facts).filter((x) => x.state !== "optional" && x.key !== "storefront");
-	const ready = steps.every((x) => x.state === "done");
-	const [received = [], health = [], subscriptions = []] = panelsOf(hooks);
-	const attention = JSON.stringify(hooks.blocks).includes('"label":"Health (!)"');
-	const open = tab ?? (ready ? "status" : "setup");
-	const toast = (given.hooks ?? given.events ?? given.setup)?.toast;
+	const [facts, status, hooks] = await Promise.all([setupFacts(config, s, siteOrigin(ctx)), statusPage(config, ctx.request), webhookPanels(monitorEnv(config, s, ctx))]);
+	const panels = setupPanels(facts);
+	const next = nextStep(facts);
+	const steps = requiredSteps(setupSteps(facts));
+	const open = tab ?? (next ? (STEP_TABS[next.key] as ConnectionTab) : "status");
+	const progress = next
+		? [{ type: "banner", variant: "alert", title: `Setup: ${steps.filter((x) => x.state === "done").length} of ${steps.length} steps done`, description: `Work through the tabs. Each one checks the site as it is, so set a secret, redeploy or restart, and press Check again. Next: ${next.title}.` }]
+		: [];
+	// The Webhooks step has its own Register button while it's to do.
+	const ownButton = panels.some((p) => p.tab === "webhooks" && JSON.stringify(p.blocks).includes('"setup_register"'));
+	const subscriptions = ownButton ? hooks.subscriptions.filter((b) => !JSON.stringify(b).includes('"webhooks_register"')) : hooks.subscriptions;
 	return {
 		blocks: [
 			{ type: "header", text: "Connection" },
-			{ type: "context", text: "How this site talks to Shopify: the values to copy into Shopify, the setup steps, webhook deliveries and what RedeemID has done." },
+			{ type: "context", text: "How this site talks to Shopify: the values to copy into the store, and each setup step." },
 			{
 				type: "tab",
 				default_tab: CONNECTION_TABS.indexOf(open),
 				panels: [
-					{ label: "Status", blocks: [...withoutHeader(status), { type: "divider" }, { type: "header", text: "Webhook subscriptions" }, ...subscriptions] },
-					{ label: ready ? "Setup" : `Setup (${steps.filter((x) => x.state === "done").length}/${steps.length})`, blocks: withoutHeader(setup) },
-					{ label: "Webhooks", blocks: received },
-					{ label: attention ? "Health (!)" : "Health", blocks: health },
-					{ label: "App events", blocks: withoutHeader(events) },
+					{ label: "Status", blocks: [...progress, ...withoutHeader(status)] },
+					...panels.map((p) => (p.tab === "webhooks" ? { label: p.label, blocks: [...p.blocks, { type: "divider" }, { type: "header", text: "Subscriptions" }, ...subscriptions] } : { label: p.label, blocks: p.blocks })),
+				],
+			},
+		],
+		...(toast ? { toast } : {}),
+	};
+}
+
+/**
+ * What happened: webhook deliveries from Shopify, what RedeemID did (App),
+ * and whether deliveries are healthy. An action passes the App panel it
+ * rebuilt (a filter or a page) or a deliveries cursor.
+ */
+async function eventsAdminPage(config: RedeemIDConfig, ctx: RouteContext, tab: EventsTab = "webhook", given: { events?: { blocks: unknown[] }; cursor?: string } = {}, toast?: Toast) {
+	const s = await memberStores();
+	const [hooks, events] = await Promise.all([webhookPanels(monitorEnv(config, s, ctx), given.cursor), given.events ?? eventsPage(s)]);
+	return {
+		blocks: [
+			{ type: "header", text: "Events" },
+			{ type: "context", text: "What Shopify sent, what RedeemID did with it, and whether deliveries are healthy." },
+			{
+				type: "tab",
+				default_tab: EVENTS_TABS.indexOf(tab),
+				panels: [
+					{ label: "Webhook", blocks: hooks.received },
+					{ label: "App", blocks: events.blocks },
+					{ label: hooks.attention ? "Health (!)" : "Health", blocks: hooks.health },
 				],
 			},
 		],
@@ -848,7 +869,7 @@ async function statusPage(config: RedeemIDConfig, request: Request) {
 			{ type: "header", text: "Status" },
 			ready
 				? { type: "banner", variant: "default", title: "Sign-in is ready", description: "Members can sign in with their store customer account." }
-				: { type: "banner", variant: "alert", title: "Sign-in isn't ready", description: "Set the missing values below as environment secrets, then reload. Setup walks through each one." },
+				: { type: "banner", variant: "alert", title: "Sign-in isn't ready", description: "Set the missing values below as environment secrets, then reload. The tabs after Status walk through each one." },
 			...customDomainBlocks(config),
 			{ type: "header", text: "Shopify settings" },
 			{ type: "context", text: "Copy these into the store: the first three into the Customer Account API settings of the Headless storefront, the webhook URL into the app's webhook subscriptions." },
@@ -1045,7 +1066,7 @@ async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 					{ type: "link", label: "Overview", target: page("/"), appearance: "primary" },
 					{ type: "link", label: "Members", target: page("/members"), appearance: "secondary" },
 					{ type: "link", label: "Access", target: page("/access"), appearance: "secondary" },
-					{ type: "link", label: s.signIn && !s.check?.problems.length ? "Webhooks" : "Setup", target: page(s.signIn && !s.check?.problems.length ? "/connection/webhooks" : "/connection/setup"), appearance: "secondary" },
+					{ type: "link", label: s.signIn && !s.check?.problems.length ? "Events" : "Connection", target: page(s.signIn && !s.check?.problems.length ? "/events/webhook" : "/connection"), appearance: "secondary" },
 				],
 			},
 		],
@@ -1060,8 +1081,7 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 		setupFacts(config, st, siteOrigin(ctx)).catch(() => null),
 		st.log.query({ orderBy: { at: "desc" }, limit: 8 }).catch(() => ({ items: [] as Array<{ data: Parameters<typeof eventRow>[0] }> })),
 	]);
-	const steps = facts ? setupSteps(facts) : [];
-	const required = steps.filter((x) => x.state !== "optional");
+	const required = facts ? requiredSteps(setupSteps(facts)) : [];
 	const done = required.filter((x) => x.state === "done").length;
 	const hooks = webhookWord(s);
 	const rules = config.rules ?? [];
@@ -1090,10 +1110,10 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 				items: [
 					{ title: "Sign-in", value: s.signIn ? "Ready" : "Not ready", tone: s.signIn ? "ok" : "error", text: domain ? `Store: ${domain.replace(/^https?:\/\//, "")}` : "No store set", link: page("/connection/status"), label: "Status" },
 					{ title: "Members", value: String(s.members.length), text: `${s.active} with a level, ${s.signedIn} signed in here`, link: page("/members"), label: "Members" },
-					{ title: "Webhooks", value: hooks.value, tone: hooks.tone, text: s.delivery ? `Last delivery ${ago(s.delivery.receivedAt)} (${s.delivery.topic})` : "None received yet", link: page("/connection/webhooks"), label: "Webhooks" },
+					{ title: "Webhooks", value: hooks.value, tone: hooks.tone, text: s.delivery ? `Last delivery ${ago(s.delivery.receivedAt)} (${s.delivery.topic})` : "None received yet", link: page("/events/webhook"), label: "Webhooks" },
 					{ title: "Access", value: count(s.levels.length, "level"), text: [count(rules.length, "rule"), count((config.features ?? []).length, "feature"), count((config.files ?? []).length, "protected folder")].join(", "), link: page("/access"), label: "Access" },
 					{ title: "Privacy", value: s.openRequests ? `${s.openRequests} open` : "Nothing open", tone: s.openRequests ? "warn" : undefined, text: "Exports and erasures from members, staff and Shopify", link: page("/privacy"), label: "Privacy" },
-					{ title: "Setup", value: required.length ? `${done} of ${required.length}` : "Unknown", tone: required.length && done === required.length ? "ok" : "warn", text: done === required.length ? "Every step is done" : `Next: ${required.find((x) => x.state !== "done")?.title ?? ""}`, link: page("/connection/setup"), label: "Setup" },
+					{ title: "Setup", value: required.length ? `${done} of ${required.length}` : "Unknown", tone: required.length && done === required.length ? "ok" : "warn", text: done === required.length ? "Every step is done" : `Next: ${required.find((x) => x.state !== "done")?.title ?? ""}`, link: page("/connection"), label: "Setup" },
 				],
 			},
 			{ type: "header", text: "Levels" },
@@ -1129,7 +1149,7 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 					return { event, about, result, at };
 				}),
 			},
-			{ type: "actions", elements: [{ type: "link", label: "All app events", target: page("/connection/events"), appearance: "secondary" }, { type: "link", label: "Reports", target: page("/reports"), appearance: "secondary" }] },
+			{ type: "actions", elements: [{ type: "link", label: "All app events", target: page("/events/app"), appearance: "secondary" }, { type: "link", label: "Reports", target: page("/reports"), appearance: "secondary" }] },
 			{ type: "header", text: "Resources" },
 			{
 				type: "redeemid_cards",

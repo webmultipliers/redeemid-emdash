@@ -48,5 +48,5 @@ Each action counts separately per visitor (by `CF-Connecting-IP`), and Cloudflar
 - **A setting shows Missing on Connection → Status.** Check the name: Connection → Status lists any `REDEEMID_` variable it doesn't read. Set it as a runtime secret, not a build variable. On Workers, a deploy can remove plain-text dashboard variables, so use encrypted secrets.
 - **Sign-in comes back with a notice.** The code says why; see [notices](reference.md#notices). `sign_in_unavailable` means store discovery failed, usually a wrong `shop`. `not_configured` means the client ID or `shop` is missing.
 - **Register webhooks names a refused topic.** The app lacks a scope, such as `read_customer_merge` for `customers/merge`. Add it to the app, have the store accept the new version, and press Register again.
-- **Tags changed in Shopify but the site didn't follow.** Check Connection → Webhooks and Health, and App events with Problems only. Resync the member from their page, or ask them to press Refresh membership.
+- **Tags changed in Shopify but the site didn't follow.** Check Events → Webhook and Health, and Events → App with Problems only. Resync the member from their page, or ask them to press Refresh membership.
 - **A member sees the visitor's page.** A cache is serving it. See [caching](#caching).

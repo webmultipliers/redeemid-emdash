@@ -329,24 +329,24 @@ try {
 	await new Promise((r) => setTimeout(r, 7500));
 	check("a failed event is tried three times", shop.eventsRefused === 3, String(shop.eventsRefused));
 	shop.eventsDown = false;
-	const failedList = await adminPage("/connection/events");
+	const failedList = await adminPage("/events/app");
 	const failedId = /"action_id":"failed_resend","label":"Send again","style":"primary","value":"([^"]+)"/.exec(failedList.text)?.[1];
 	check("App events lists the failed event with Send again", failedList.text.includes("Failed events") && failedList.text.includes('"event":"member.signed_in"') && Boolean(failedId), failedList.text.slice(0, 600));
 	const eventsBefore = shop.events.length;
-	const resent = await adminAct({ type: "block_action", action_id: "failed_resend", value: failedId, page: "/connection" });
+	const resent = await adminAct({ type: "block_action", action_id: "failed_resend", value: failedId, page: "/events" });
 	check("Send again delivers it with its delivery id and takes it off the list", resent.text.includes("Sent.") && !resent.text.includes("Failed events") && shop.events.length === eventsBefore + 1 && shop.events.at(-1).headers["x-redeemid-delivery"] === failedId, resent.text.slice(0, 300));
 	const bulk = await adminAct({ type: "block_action", action_id: "members_resync", page: "/members" });
 	check("bulk resync reads a batch from Shopify", bulk.text.includes("Read 1 members again"), bulk.text.slice(0, 300));
-	const setupBefore = await adminPage("/connection/setup");
-	check("Setup shows each step and offers to register the missing webhooks", setupBefore.text.includes("5 of 6 steps done") && setupBefore.text.includes("Connect the store: Done") && setupBefore.text.includes("Register the webhooks: To do") && setupBefore.text.includes("Register 8 webhooks") && setupBefore.text.includes("setup_register"), setupBefore.text.slice(0, 400));
+	const setupBefore = await adminPage("/connection");
+	check("Connection opens on the first step not done, with a tab per step", setupBefore.text.includes("5 of 6 steps done") && setupBefore.text.includes('"default_tab":4') && setupBefore.text.includes('"label":"Store ✓"') && setupBefore.text.includes("Register the webhooks: To do") && setupBefore.text.includes("Register 8 webhooks") && setupBefore.text.includes("setup_register"), setupBefore.text.slice(0, 400));
 	const hooksNow = await adminPage("/connection/webhooks");
-	check("Webhooks Setup lists missing webhooks with a Register button", hooksNow.text.includes("webhooks_register") && hooksNow.text.includes("Missing") && hooksNow.text.includes("Setup"), hooksNow.text.slice(0, 300));
+	check("the Webhooks tab lists the missing subscriptions under its one Register button", hooksNow.text.includes("Missing") && hooksNow.text.includes('"text":"Subscriptions"') && !hooksNow.text.includes("webhooks_register"), hooksNow.text.slice(0, 300));
 	const registered = await adminAct({ type: "block_action", action_id: "webhooks_register", value: "", page: "/connection" });
-	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks.") && registered.text.includes('"default_tab":0') && registered.text.includes("Webhook subscriptions"), JSON.stringify(shop.subscriptions.slice(0, 2)));
+	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks.") && registered.text.includes('"default_tab":4') && registered.text.includes('"label":"Webhooks ✓"'), JSON.stringify(shop.subscriptions.slice(0, 2)));
 	const statusLinks = (await adminPage("/connection/status")).text;
-	check("Status, Setup, Webhooks, Health and App events are tabs of Connection, Status first with copy fields", ['"label":"Status"', '"label":"Webhooks"', '"label":"App events"', '"text":"Connection"', '"type":"redeemid_copy"'].every((x) => statusLinks.includes(x)), statusLinks.slice(0, 300));
-	const setupAfter = await adminPage("/connection/setup");
-	check("Setup is done once the webhooks are in and a member has signed in", setupAfter.text.includes("RedeemID is set up") && setupAfter.text.includes("Register the webhooks: Done") && setupAfter.text.includes("Try a sign-in: Done"), setupAfter.text.slice(0, 400));
+	check("Connection is Status then a tab per step, Status first with copy fields", ['"label":"Status"', '"label":"Sign-in ✓"', '"label":"Webhooks ✓"', '"text":"Connection"', '"type":"redeemid_copy"'].every((x) => statusLinks.includes(x)) && !statusLinks.includes('"label":"App events"'), statusLinks.slice(0, 300));
+	const setupAfter = await adminPage("/connection");
+	check("once the webhooks are in and a member has signed in, Connection opens on Status", setupAfter.text.includes('"default_tab":0') && !setupAfter.text.includes("steps done") && setupAfter.text.includes("Register the webhooks: Done") && setupAfter.text.includes("Try a sign-in: Done"), setupAfter.text.slice(0, 400));
 	const setupAgain = await adminAct({ type: "block_action", action_id: "setup_register", page: "/connection" });
 	check("Setup's Register says nothing was missing", setupAgain.text.includes("Nothing was missing.") && shop.subscriptions.length === 8, setupAgain.text.slice(0, 300));
 	const setupNoTag = await adminAct({ type: "form_submit", action_id: "setup_level", block_id: "setup_level", values: { name: "Setup Test", tags: "" }, page: "/connection" });
@@ -628,22 +628,22 @@ try {
 	const proNow = await member.go("/posts/pro-only");
 	check("Pro post opens after the tag webhook", proNow.text.includes("PRO-BODY"));
 
-	// Webhooks, App events and Reports, like the WordPress plugin's pages.
-	const received = await adminPage("/connection/webhooks");
-	check("Webhooks Received lists the delivery with its result and customer", received.text.includes("customer.tags_added") && received.text.includes(`"topic":"customer.tags_added","result":"Processed","customer":"${shop.customer.id}"`), received.text.slice(0, 400));
-	const checked = await adminAct({ type: "block_action", action_id: "health_check", page: "/connection" });
-	check("Check now checks with Shopify and shows the turned-away delivery", checked.text.includes("Checked") && checked.text.includes("turned away") && checked.text.includes('"default_tab":3'), checked.text.slice(0, 400));
-	const savedMonitor = await adminAct({ type: "form_submit", action_id: "monitor_save", block_id: "monitor", values: { quiet_days: 5, alert_email: "" }, page: "/connection" });
+	// Events (Webhook, App, Health) and Reports, like the WordPress plugin's pages.
+	const received = await adminPage("/events/webhook");
+	check("Events → Webhook lists the delivery with its result and customer", received.text.includes("customer.tags_added") && received.text.includes(`"topic":"customer.tags_added","result":"Processed","customer":"${shop.customer.id}"`), received.text.slice(0, 400));
+	const checked = await adminAct({ type: "block_action", action_id: "health_check", page: "/events" });
+	check("Check now checks with Shopify and shows the turned-away delivery on Events → Health", checked.text.includes("Checked") && checked.text.includes("turned away") && checked.text.includes('"default_tab":2') && checked.text.includes('"text":"Events"'), checked.text.slice(0, 400));
+	const savedMonitor = await adminAct({ type: "form_submit", action_id: "monitor_save", block_id: "monitor", values: { quiet_days: 5, alert_email: "" }, page: "/events" });
 	check("Health saves when to warn", savedMonitor.text.includes('"initial_value":5') && savedMonitor.text.includes("Saved."), savedMonitor.text.slice(0, 300));
-	const appEvents = await adminPage("/connection/events");
+	const appEvents = await adminPage("/events/app");
 	check("App events lists the newest first", appEvents.text.includes('"event":"Webhook received","about":"customer.tags_added"') && appEvents.text.includes("Webhook rejected"), appEvents.text.slice(0, 600));
 	const kinds = {};
 	for (const [event, text] of [["member.signed_in", '"event":"Sign-in"'], ["shopify.admin", '"event":"Admin API call","about":"Customers"'], ["staff.resync", '"event":"Resync"'], ["staff.tags", '"event":"Tag edit","about":"added"'], ["staff.webhooks", '"event":"Webhook registration","about":"register"'], ["settings.saved", '"event":"Settings saved","about":"access'], ["meter.exhausted", '"event":"Metered read, meter used up"']]) {
-		kinds[event] = (await adminAct({ type: "block_action", action_id: "events_show", value: event, page: "/connection" })).text.includes(text);
+		kinds[event] = (await adminAct({ type: "block_action", action_id: "events_show", value: event, page: "/events" })).text.includes(text);
 	}
 	check("App events records sign-ins, Admin API calls, staff actions, settings saves and the meter", Object.values(kinds).every(Boolean), JSON.stringify(kinds));
 	check("App events never show an email", !appEvents.text.includes(shop.customer.email));
-	const problems = await adminAct({ type: "form_submit", action_id: "events_filter", block_id: "events_filter", values: { event: "", problems: true }, page: "/connection" });
+	const problems = await adminAct({ type: "form_submit", action_id: "events_filter", block_id: "events_filter", values: { event: "", problems: true }, page: "/events" });
 	check("Problems only shows warnings and errors", problems.text.includes("Webhook rejected") && !problems.text.includes('"event":"Webhook received","about":"customer.tags_added"'), problems.text.slice(0, 400));
 	const reports = await adminPage("/reports");
 	check("Reports count members by level, joins and sign-ins", reports.text.includes("On a level") && reports.text.includes('"chart_type":"custom"') && reports.text.includes("Sign-ins"), reports.text.slice(0, 400));
