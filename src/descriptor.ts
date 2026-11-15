@@ -16,8 +16,13 @@ import { VERSION } from "./version.js";
  * with Status and one tab per setup step.
  */
 const GROUP = "RedeemID";
+/**
+ * Overview has its own address, not "/": EmDash lights a "/" page in the
+ * sidebar on every page under the plugin. The plugin root opens it too.
+ */
+export const OVERVIEW = "/overview";
 export const PAGES = [
-	{ path: "/", label: "Overview", icon: "identification-card", group: GROUP },
+	{ path: OVERVIEW, label: "Overview", icon: "identification-card", group: GROUP },
 	{ path: "/members", label: "Members", icon: "users", group: GROUP },
 	{ path: "/access", label: "Access", icon: "lock", group: GROUP },
 	{ path: "/reports", label: "Reports", icon: "chart", group: GROUP },
@@ -38,6 +43,8 @@ export const WIDGETS = [{ id: "status", title: "RedeemID", size: "half" as const
 export function redeemidPlugin(config: RedeemIDConfig): PluginDescriptor<RedeemIDConfig> {
 	return {
 		id: "redeemid",
+		displayName: "RedeemID",
+		description: "Shopify commerce for EmDash: storefront, cart, checkout, customer accounts, memberships and paywalls.",
 		version: VERSION,
 		entrypoint: "@redeemid/emdash/plugin",
 		componentsEntry: "@redeemid/emdash/blocks",

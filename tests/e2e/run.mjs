@@ -230,10 +230,10 @@ try {
 			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
 			body: JSON.stringify({ type: "page_load", page }),
 		});
-	const overview = await adminPage("/");
+	const overview = await adminPage("/overview");
 	check("Overview comes first with status cards, members by level and recent activity", overview.res.status === 200 && overview.text.includes('"type":"redeemid_cards"') && overview.text.includes("Explore the access map") && overview.text.includes("Recent activity"), overview.text.slice(0, 300));
 	const dashCard = await adminPage("widget:status");
-	check("the dashboard card counts members and links into RedeemID", dashCard.text.includes('"label":"Members"') && dashCard.text.includes('"path":"/members"') && dashCard.text.includes('"path":"/"'), dashCard.text.slice(0, 300));
+	check("the dashboard card counts members and links into RedeemID", dashCard.text.includes('"label":"Members"') && dashCard.text.includes('"path":"/members"') && dashCard.text.includes('"path":"/overview"'), dashCard.text.slice(0, 300));
 	const membersPage = await adminPage("/members");
 	check("Members page lists the signed-in member", membersPage.res.status === 200 && membersPage.text.includes(shop.customer.email), `${membersPage.res.status} ${membersPage.text.slice(0, 200)}`);
 	const statusPage = await adminPage("/connection/status");
@@ -244,7 +244,7 @@ try {
 	const memberAdmin = await member.go("/_emdash/api/plugins/redeemid/admin", {
 		method: "POST",
 		headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
-		body: JSON.stringify({ type: "page_load", page: "/" }),
+		body: JSON.stringify({ type: "page_load", page: "/overview" }),
 	});
 	check("members can't open the plugin's admin pages", memberAdmin.res.status === 401 || memberAdmin.res.status === 403, String(memberAdmin.res.status));
 
@@ -731,7 +731,7 @@ try {
 	check("Delete my data refuses another origin", crossSite.res.status === 403, String(crossSite.res.status));
 	const erased = await reader.go("/_emdash/api/auth/redeemid/privacy", form("&confirm=yes"));
 	check("Delete my data erases and signs out", erased.url.searchParams.get("redeemid_notice") === "data_erased" && erased.text.includes("Your data on this site is deleted"), erased.url.href);
-	const goneMembers = await adminPage("/");
+	const goneMembers = await adminPage("/overview");
 	check("the erased member is gone from Members", !goneMembers.text.includes(`"${original.id}"`) && !goneMembers.text.includes(original.email));
 	const afterErase = await reader.go("/posts/members-only");
 	check("the erased member reads as signed out", !afterErase.text.includes("MEMBER-BODY"));

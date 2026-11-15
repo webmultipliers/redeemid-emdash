@@ -301,7 +301,7 @@ export async function webhookPanels(env_: MonitorEnv, cursor?: string): Promise<
 			type: "context",
 			text: env_.email
 				? "One email when problems start or change, and once a week while they last."
-				: "No email provider is set up in EmDash, so warnings show here and on the dashboard only. Add an email plugin to get them by email.",
+				: "No email provider is set up in EmDash, so warnings show here and on the dashboard only. Choose one under Settings → Email (SMTP or an email plugin) to get them by email.",
 		},
 	];
 

@@ -4,7 +4,7 @@ From an empty EmDash site to a locked post that opens for a tagged customer.
 
 ## Requirements
 
-- **EmDash 1.4 or later** with Astro 6 or later, on Node or Cloudflare Workers (the Workers free plan is enough). The MCP tools need an EmDash version with plugin MCP tools.
+- **EmDash 1.5 or later** with Astro 6 or later, on Node or Cloudflare Workers (the Workers free plan is enough). On Workers, keep `emdash` and `@emdash-cms/cloudflare` on the same version and update them together.
 - **A Shopify store with the new customer accounts** (Settings → Customer accounts). Classic accounts have no Customer Account API.
 - **The Headless sales channel**, for the sign-in client and Storefront API tokens.
 - **An Admin API app on the store**, such as a Dev Dashboard app. It runs the staff tools, resyncs, tag edits and preferences, registers the webhooks, and Shopify signs every webhook with its client secret.
