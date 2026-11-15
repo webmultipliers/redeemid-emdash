@@ -197,8 +197,8 @@ function Cards({ items }: { items: Card[] }): ReactNode {
 }
 
 type MapGo = { tab: string } | { level: string } | { feature: string } | { entry: { collection: string; id: string } };
-type MapItem = { kind: "feature" | "content" | "term" | "entry" | "folder"; label: string; note?: string; via?: string; go: MapGo };
-type MapRow = { id: string; name: string; who: string; members?: number; includes: string[]; chain: string[]; items: MapItem[] };
+type MapItem = { kind: "feature" | "content" | "term" | "entry" | "folder"; label: string; note?: string; via?: string; through?: string; go: MapGo };
+type MapRow = { id: string; name: string; who: string; count?: number; includes: string[]; chain: string[]; items: MapItem[] };
 
 const KINDS: Array<{ kind: MapItem["kind"]; label: string }> = [
 	{ kind: "feature", label: "Features" },
@@ -208,73 +208,181 @@ const KINDS: Array<{ kind: MapItem["kind"]; label: string }> = [
 	{ kind: "folder", label: "Folders" },
 ];
 
+const itemKey = (i: MapItem) => `${i.kind}:${i.label}:${i.note ?? ""}`;
+// The diagram's measures, in px.
+const NODE_H = 50;
+const NODE_GAP = 10;
+const HEAD_H = 30;
+const GROUP_H = 26;
+const SIDE = 48;
+
+type Picked = { reader: string } | { item: string } | null;
+
 /**
- * The access map: one row per reader (everyone, signed in, each level), a
- * count per kind of thing it opens, and the picked row's full list with
- * "via" for what comes from an included level and a way to change each one.
+ * The access map, as a diagram: readers (everyone, signed in, each level) are
+ * nodes on the left, and what the settings open (features, content types,
+ * terms, entries, folders) are nodes on the right. A line joins a reader to
+ * each thing a setting gives it directly; an arc on the left joins a level to
+ * the readers it builds on, and one on the right joins a feature to a folder
+ * it opens. Picking a node lights up what it reaches (or who reaches it) and
+ * lists it below with a way to change each one.
  */
 function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 	const rows = block.rows as MapRow[];
-	const [picked, setPicked] = useState(rows[2]?.id ?? rows[0]?.id ?? "");
-	const [inherited, setInherited] = useState(true);
-	const row = rows.find((r) => r.id === picked) ?? rows[0];
+	const [picked, setPicked] = useState<Picked>(rows[2] ? { reader: rows[2].id } : null);
+	const box = useRef<HTMLDivElement | null>(null);
+	const [width, setWidth] = useState(900);
+	useEffect(() => {
+		const el = box.current;
+		if (!el) return;
+		const measure = () => setWidth(Math.max(640, el.clientWidth));
+		measure();
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
 	const go = (target: MapGo) => void ctx.send({ type: "block_action", action_id: String(block.action_id), value: JSON.stringify(target) });
-	const cell = { padding: "0.6rem 0.75rem", borderBottom: "1px solid var(--color-kumo-line)", verticalAlign: "top" as const, textAlign: "left" as const };
-	const count = (r: MapRow, kind: MapItem["kind"]) => {
-		const of = r.items.filter((i) => i.kind === kind);
-		const own = of.filter((i) => !i.via).length;
-		if (!of.length) return "";
-		const via = of.length - own;
-		return h("span", { style: { whiteSpace: "nowrap" } }, own ? h("span", { className: "font-semibold" }, String(own)) : null, via ? h("span", { className: "text-kumo-subtle text-xs", style: own ? { marginLeft: "0.35rem" } : undefined }, `+${via} via`) : null);
+
+	// Every thing once, in the order of KINDS.
+	const things = new Map<string, MapItem>();
+	for (const r of rows) for (const i of r.items) if (!things.has(itemKey(i))) things.set(itemKey(i), i);
+	const groups = KINDS.map((k) => ({ ...k, items: [...things.values()].filter((i) => i.kind === k.kind) })).filter((g) => g.items.length);
+
+	// Where each node sits.
+	const gap = Math.max(110, Math.round(width * 0.2));
+	const colW = Math.floor((width - SIDE * 2 - gap) / 2);
+	const leftX = SIDE;
+	const rightX = SIDE + colW + gap;
+	const readerY = new Map(rows.map((r, n) => [r.id, HEAD_H + n * (NODE_H + NODE_GAP)]));
+	const thingY = new Map<string, number>();
+	const groupY: Array<{ label: string; y: number }> = [];
+	let y = HEAD_H;
+	for (const g of groups) {
+		groupY.push({ label: g.label, y });
+		y += GROUP_H;
+		for (const i of g.items) {
+			thingY.set(itemKey(i), y);
+			y += NODE_H + NODE_GAP;
+		}
+		y += 6;
+	}
+	const height = Math.max(HEAD_H + rows.length * (NODE_H + NODE_GAP), y) + 8;
+
+	// The lines: reader to thing (given directly), reader to the reader it builds on, feature to folder.
+	const idOf = (name: string) => rows.find((r) => r.name === name)?.id;
+	const builds = rows.flatMap((r) => {
+		if (r.id === "everyone") return [];
+		if (r.id === "signed-in") return [{ from: r.id, to: "everyone" }];
+		const parents = r.includes.map(idOf).filter((x): x is string => Boolean(x));
+		return (parents.length ? parents : ["signed-in"]).map((to) => ({ from: r.id, to }));
+	});
+	const gives = rows.flatMap((r) => r.items.filter((i) => !i.via).map((i) => ({ from: r.id, to: itemKey(i) })));
+	const featureKey = (label: string) => [...things.values()].find((i) => i.kind === "feature" && i.label === label);
+	const opens = [...things.values()].flatMap((i) => {
+		const f = i.through ? featureKey(i.through) : undefined;
+		return f ? [{ from: itemKey(f), to: itemKey(i) }] : [];
+	});
+
+	// What the pick lights up.
+	const pickedRow = picked && "reader" in picked ? rows.find((r) => r.id === picked.reader) : undefined;
+	const pickedThing = picked && "item" in picked ? things.get(picked.item) : undefined;
+	const litReaders = new Set<string>();
+	const litThings = new Set<string>();
+	if (pickedRow) {
+		litReaders.add(pickedRow.id);
+		for (const id of pickedRow.chain) litReaders.add(id);
+		for (const i of pickedRow.items) litThings.add(itemKey(i));
+	} else if (pickedThing) {
+		const key = itemKey(pickedThing);
+		litThings.add(key);
+		for (const r of rows) if (r.items.some((i) => itemKey(i) === key)) litReaders.add(r.id);
+		for (const o of opens) {
+			if (o.to === key) litThings.add(o.from);
+			if (o.from === key) litThings.add(o.to);
+		}
+	}
+	const any = Boolean(pickedRow || pickedThing);
+	const giveLit = (e: { from: string; to: string }) => (pickedRow ? litReaders.has(e.from) : pickedThing ? e.to === itemKey(pickedThing) : false);
+	const buildLit = (e: { from: string; to: string }) => litReaders.has(e.from) && litReaders.has(e.to) && (pickedRow ? true : false);
+	const openLit = (e: { from: string; to: string }) => litThings.has(e.from) && litThings.has(e.to);
+
+	const mid = NODE_H / 2;
+	const stroke = (lit: boolean) => ({ fill: "none", stroke: lit ? "var(--color-kumo-brand)" : "var(--color-kumo-line)", strokeWidth: lit ? 2 : 1.25, opacity: any && !lit ? 0.35 : 1 });
+	const arc = (x: number, y1: number, y2: number, side: -1 | 1) => {
+		const d = side * Math.min(SIDE - 10, 14 + Math.abs(y2 - y1) / 14);
+		return `M ${x} ${y1} C ${x + d} ${y1}, ${x + d} ${y2}, ${x} ${y2}`;
 	};
-	const shown = (row?.items ?? []).filter((i) => inherited || !i.via);
+	const lines = [
+		...gives.map((e) => ({ lit: giveLit(e), d: `M ${leftX + colW} ${readerY.get(e.from)! + mid} C ${leftX + colW + gap / 2} ${readerY.get(e.from)! + mid}, ${rightX - gap / 2} ${thingY.get(e.to)! + mid}, ${rightX} ${thingY.get(e.to)! + mid}` })),
+		...builds.map((e) => ({ lit: buildLit(e), d: arc(leftX, readerY.get(e.from)! + mid, readerY.get(e.to)! + mid, -1) })),
+		...opens.map((e) => ({ lit: openLit(e), d: arc(rightX + colW, thingY.get(e.from)! + mid, thingY.get(e.to)! + mid, 1) })),
+	].sort((a, b) => Number(a.lit) - Number(b.lit));
+
+	const node = (key: string, x: number, top: number, on: boolean, lit: boolean, title: string, note: string, onPick: () => void, badge?: string) =>
+		h(
+			"button",
+			{
+				key,
+				type: "button",
+				"aria-pressed": on,
+				title: note ? `${title}: ${note}` : title,
+				onClick: (e: { stopPropagation(): void }) => {
+					e.stopPropagation();
+					onPick();
+				},
+				className: "text-left rounded-lg",
+				style: {
+					position: "absolute",
+					left: x,
+					top,
+					width: colW,
+					height: NODE_H,
+					padding: "0.3rem 0.7rem",
+					display: "flex",
+					alignItems: "center",
+					gap: "0.5rem",
+					background: on ? "var(--color-kumo-info-tint)" : "var(--color-kumo-base)",
+					border: `${on ? 2 : 1}px solid ${on || lit ? "var(--color-kumo-brand)" : "var(--color-kumo-line)"}`,
+					opacity: any && !on && !lit ? 0.4 : 1,
+					cursor: "pointer",
+					transition: "opacity 120ms",
+				},
+			},
+			h(
+				"span",
+				{ style: { minWidth: 0, flex: 1, display: "flex", flexDirection: "column" } },
+				h("span", { className: "text-sm font-semibold text-kumo-default", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, title),
+				note ? h("span", { className: "text-xs text-kumo-subtle", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, note) : null,
+			),
+			badge !== undefined ? h("span", { className: "text-xs font-semibold text-kumo-default", style: { flexShrink: 0, padding: "0.1rem 0.5rem", borderRadius: "999px", background: "var(--color-kumo-tint)" }, "aria-label": `${badge} hold it now` }, badge) : null,
+		);
+	const head = (x: number, text: string, top = 0) => h("div", { key: `${text}-${top}`, className: "text-xs font-semibold text-kumo-subtle", style: { position: "absolute", left: x, top, height: 20, textTransform: "uppercase", letterSpacing: "0.04em" } }, text);
+
+	const holders = pickedThing ? rows.filter((r) => r.items.some((i) => itemKey(i) === itemKey(pickedThing))).map((r) => ({ row: r, item: r.items.find((i) => itemKey(i) === itemKey(pickedThing))! })) : [];
+	const change = (i: MapItem) =>
+		"entry" in i.go
+			? h("a", { href: linkHref({ kind: "content", collection: i.go.entry.collection, id: i.go.entry.id }) ?? "#", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline" }, "Open →")
+			: h("button", { type: "button", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline", onClick: () => go(i.go) }, "Change →");
+	const line = { borderBottom: "1px solid var(--color-kumo-hairline)" };
+
 	return h(
 		"div",
 		{ className: "flex flex-col gap-4" },
 		h(
 			"div",
-			{ style: { overflowX: "auto" } },
+			{ ref: box, style: { overflowX: "auto" } },
 			h(
-				"table",
-				{ className: "w-full text-sm", style: { borderCollapse: "collapse", minWidth: "44rem" } },
-				h(
-					"thead",
-					null,
-					h(
-						"tr",
-						{ className: "text-kumo-subtle" },
-						["Reader", "Who", "Members", "Includes", ...KINDS.map((k) => k.label)].map((label) => h("th", { key: label, scope: "col", style: { ...cell, fontWeight: 500 } }, label)),
-					),
-				),
-				h(
-					"tbody",
-					null,
-					rows.map((r) => {
-						const on = r.id === row?.id;
-						const inChain = !on && Boolean(row?.chain.includes(r.id));
-						return h(
-							"tr",
-							{
-								key: r.id,
-								onClick: () => setPicked(r.id),
-								style: { cursor: "pointer", background: on ? "var(--color-kumo-info-tint)" : inChain ? "var(--color-kumo-tint)" : undefined, boxShadow: on ? "inset 3px 0 0 var(--color-kumo-brand)" : inChain ? "inset 3px 0 0 var(--color-kumo-line)" : undefined },
-							},
-							h(
-								"th",
-								{ scope: "row", style: { ...cell, fontWeight: 600 } },
-								h("button", { type: "button", "aria-pressed": on, className: "text-left font-semibold text-kumo-default hover:underline", onClick: () => setPicked(r.id) }, r.name),
-								inChain ? h("div", { className: "text-xs text-kumo-subtle font-normal" }, `${row?.name} gets this too`) : null,
-							),
-							h("td", { style: cell }, r.who),
-							h("td", { style: cell }, r.members === undefined ? "" : String(r.members)),
-							h("td", { style: cell }, r.includes.join(", ")),
-							...KINDS.map((k) => h("td", { key: k.kind, style: cell }, count(r, k.kind))),
-						);
-					}),
-				),
+				"div",
+				{ role: "group", "aria-label": "Access map", onClick: () => setPicked(null), style: { position: "relative", width, height } },
+				h("svg", { width, height, "aria-hidden": true, style: { position: "absolute", inset: 0, pointerEvents: "none" } }, lines.map((l, n) => h("path", { key: n, d: l.d, ...stroke(l.lit) }))),
+				head(leftX, "Readers"),
+				head(rightX, "What they get"),
+				...groupY.map((g) => head(rightX, g.label, g.y + 4)),
+				...rows.map((r) => node(`r-${r.id}`, leftX, readerY.get(r.id)!, pickedRow?.id === r.id, litReaders.has(r.id), r.name, r.who, () => setPicked({ reader: r.id }), r.count === undefined ? undefined : String(r.count))),
+				...[...things.values()].map((i) => node(`t-${itemKey(i)}`, rightX, thingY.get(itemKey(i))!, pickedThing ? itemKey(pickedThing) === itemKey(i) : false, litThings.has(itemKey(i)), i.label, i.note ?? "", () => setPicked({ item: itemKey(i) }))),
 			),
 		),
-		row
+		pickedRow
 			? h(
 					"section",
 					{ "aria-live": "polite", className: "rounded-lg border border-kumo-line p-4 flex flex-col gap-4" },
@@ -284,22 +392,17 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 						h(
 							"div",
 							{ className: "min-w-0" },
-							h("h3", { className: "text-lg font-semibold text-kumo-default" }, `What ${row.name} opens`),
-							h("p", { className: "text-sm text-kumo-subtle" }, [row.who, row.includes.length ? `includes ${row.includes.join(", ")}` : ""].filter(Boolean).join(" · ")),
+							h("h3", { className: "text-lg font-semibold text-kumo-default" }, `What ${pickedRow.name} gets`),
+							h("p", { className: "text-sm text-kumo-subtle" }, [pickedRow.who, pickedRow.count === undefined ? "" : `${pickedRow.count} hold it now`, pickedRow.includes.length ? `includes ${pickedRow.includes.join(", ")}` : ""].filter(Boolean).join(" · ")),
 						),
-						h(
-							"div",
-							{ className: "flex flex-wrap gap-2" },
-							row.id !== "everyone" && row.id !== "signed-in" ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => go({ level: row.id }) }, "Edit level") : null,
-							h("label", { className: "flex items-center gap-2 text-sm text-kumo-default" }, h("input", { type: "checkbox", checked: inherited, onChange: (e: { target: { checked: boolean } }) => setInherited(e.target.checked) }), "Show what comes via others"),
-						),
+						pickedRow.id !== "everyone" && pickedRow.id !== "signed-in" ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => go({ level: pickedRow.id }) }, "Edit level") : null,
 					),
-					shown.length
+					pickedRow.items.length
 						? h(
 								"div",
 								{ className: "grid grid-cols-1 md:grid-cols-2 gap-4" },
 								KINDS.map((k) => {
-									const list = shown.filter((i) => i.kind === k.kind);
+									const list = pickedRow.items.filter((i) => i.kind === k.kind);
 									if (!list.length) return null;
 									return h(
 										"div",
@@ -311,25 +414,51 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 											list.map((i, n) =>
 												h(
 													"li",
-													{ key: n, className: "flex items-start justify-between gap-3 py-1.5", style: { borderBottom: "1px solid var(--color-kumo-hairline)" } },
+													{ key: n, className: "flex items-start justify-between gap-3 py-1.5", style: line },
 													h(
 														"div",
 														{ className: "min-w-0" },
 														h("div", { className: "text-sm text-kumo-default break-words" }, i.label, i.via ? h("span", { className: "text-xs text-kumo-subtle", style: { marginLeft: "0.5rem", whiteSpace: "nowrap" } }, `via ${i.via}`) : null),
 														i.note ? h("div", { className: "text-xs text-kumo-subtle break-words" }, i.note) : null,
 													),
-													"entry" in i.go
-														? h("a", { href: linkHref({ kind: "content", collection: i.go.entry.collection, id: i.go.entry.id }) ?? "#", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline" }, "Open →")
-														: h("button", { type: "button", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline", onClick: () => go(i.go) }, "Change →"),
+													change(i),
 												),
 											),
 										),
 									);
 								}),
 							)
-						: h("p", { className: "text-sm text-kumo-subtle" }, inherited ? "Nothing on this site names it yet." : "Nothing of its own. Tick \"Show what comes via others\" to see what it gets from other rows."),
+						: h("p", { className: "text-sm text-kumo-subtle" }, "Nothing on this site names it yet."),
 				)
-			: null,
+			: pickedThing
+				? h(
+						"section",
+						{ "aria-live": "polite", className: "rounded-lg border border-kumo-line p-4 flex flex-col gap-3" },
+						h(
+							"div",
+							{ className: "flex flex-wrap items-start justify-between gap-3" },
+							h(
+								"div",
+								{ className: "min-w-0" },
+								h("h3", { className: "text-lg font-semibold text-kumo-default" }, `Who gets ${pickedThing.label}`),
+								h("p", { className: "text-sm text-kumo-subtle" }, [KINDS.find((k) => k.kind === pickedThing.kind)?.label.replace(/s$/, ""), pickedThing.note].filter(Boolean).join(" · ")),
+							),
+							change(pickedThing),
+						),
+						h(
+							"ul",
+							{ className: "flex flex-col" },
+							holders.map(({ row: r, item }) =>
+								h(
+									"li",
+									{ key: r.id, className: "flex items-start justify-between gap-3 py-1.5", style: line },
+									h("button", { type: "button", className: "text-sm font-medium text-kumo-default hover:underline text-left", onClick: () => setPicked({ reader: r.id }) }, r.name),
+									h("span", { className: "text-xs text-kumo-subtle", style: { whiteSpace: "nowrap" } }, item.via ? `via ${item.via}` : "set for it directly"),
+								),
+							),
+						),
+					)
+				: h("p", { className: "text-sm text-kumo-subtle" }, "Pick a reader to see everything it gets, or a thing on the right to see who gets it."),
 	);
 }
 

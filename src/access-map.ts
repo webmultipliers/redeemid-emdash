@@ -1,5 +1,5 @@
 /**
- * The access map: for each kind of reader (visitors, any signed-in member,
+ * The access map (drawn as a diagram of nodes in admin.ts): for each kind of reader (visitors, any signed-in member,
  * each level) what the site's settings give them, and through what. It reads
  * only the settings (levels, features, rules, entry rules, folders), so it
  * says which rules name a level, not which rule wins on a given post; the
@@ -22,6 +22,8 @@ export interface MapItem {
 	note?: string;
 	/** The level, feature or "Signed in" it comes through, when not held directly. */
 	via?: string;
+	/** The feature that opens it (a folder opened to a feature), whoever holds that feature. */
+	through?: string;
 	go: MapGo;
 }
 
@@ -31,8 +33,8 @@ export interface MapRow {
 	name: string;
 	/** Who is in it: tags, or a sentence for the two built-in rows. */
 	who: string;
-	/** Members holding it now (levels only, when counted). */
-	members?: number;
+	/** How many hold it now (levels only, when counted). */
+	count?: number;
 	/** Levels it includes, by name. */
 	includes: string[];
 	/** Ids of every row this one also gets (itself not included). */
@@ -97,11 +99,11 @@ export function accessMap(input: AccessMapInput): MapRow[] {
 	const gather = (ids: Array<{ id: string; via?: string }>): MapItem[] => {
 		const out: MapItem[] = [];
 		const seen = new Set<string>();
-		const push = (item: MapItem, via?: string) => {
+		const push = (item: MapItem, via?: string, through?: string) => {
 			const key = `${item.kind}:${item.label}:${item.note ?? ""}`;
 			if (seen.has(key)) return;
 			seen.add(key);
-			out.push(via ? { ...item, via } : item);
+			out.push({ ...item, ...(via ? { via } : {}), ...(through ? { through } : {}) });
 		};
 		for (const { id, via } of ids) {
 			for (const item of direct.get(id) ?? []) {
@@ -109,7 +111,7 @@ export function accessMap(input: AccessMapInput): MapRow[] {
 				// A folder opened to a feature this reader holds.
 				if (item.kind === "feature") {
 					const slug = (item.go as { feature: string }).feature;
-					for (const folder of featureFolders.get(slug) ?? []) push(folder, via ?? item.label);
+					for (const folder of featureFolders.get(slug) ?? []) push(folder, via ?? item.label, item.label);
 				}
 			}
 		}
@@ -127,7 +129,7 @@ export function accessMap(input: AccessMapInput): MapRow[] {
 			id: l.slug,
 			name: l.name,
 			who: input.tagWords(l),
-			members: input.holders?.[l.slug],
+			count: input.holders?.[l.slug],
 			includes: (l.includes ?? []).map(levelName),
 			chain: [...chain.slice(1), "signed-in", "everyone"],
 			items: gather([...chain.map((slug, i) => ({ id: slug, via: i ? levelName(slug) : undefined })), { id: "signed-in", via: "Signed in" }, { id: "everyone", via: "Everyone" }]),
