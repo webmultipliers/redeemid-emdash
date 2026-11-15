@@ -10,7 +10,7 @@
  * preferences.saved, member.erased.
  * Sending never blocks or breaks the page: events go out after the response
  * (waitUntil on Workers), are tried three times, and one that fails every
- * try is kept under App events → Failed events, where staff can send it
+ * try is kept under Events → App → Failed events, where staff can send it
  * again or clear it.
  * No event carries an email address or a name; match people by `customerId`.
  */

@@ -6,7 +6,7 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API toke
 
 - **Member detail.** Account, levels and tag count on top, then tabs: Membership (levels, features, membership dates and level history), Tags (add in a dialog, remove), Account (email, consent, last sync and the site user) and Privacy. Resync from Shopify, and on a myshopify.com store, open the customer in Shopify. Tag edits are made in Shopify and read back. Nothing is granted on the site.
 - **Site user.** Signing in links a customer to the site user with the same verified email. When the emails differ, staff link the customer to an existing Subscriber by that user's email on the member's page (never a staff account, never a user linked to another customer), or unlink them. This part needs no Admin API app.
-- **Bulk resync.** Reads the 25 members synced longest ago, few enough for the Workers free limit of 50 database queries a request. Press it again for the next 25. It never runs on its own.
+- **Bulk resync** (on Members). Reads the 25 members synced longest ago, few enough for the Workers free limit of 50 database queries a request. Press it again for the next 25. It never runs on its own.
 - **Webhook subscriptions.** Connection → Webhooks lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
 - **Access → Test.** A collection, an entry, terms and a reader's tags in; the verdict out.
 

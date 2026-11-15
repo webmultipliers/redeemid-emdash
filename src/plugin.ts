@@ -7,8 +7,8 @@
  *   })
  *
  * It adds Portable Text blocks to the editor, an Access panel on every entry,
- * admin pages (Overview, Members, Access, Reports, Privacy, Webhooks, App
- * events, Status, Setup), a daily webhook health check and a dashboard
+ * admin pages (Overview, Members, Access, Reports, Events, Privacy,
+ * Connection), a daily webhook health check and a dashboard
  * widget. The pages are Block Kit built here; admin.ts renders them in the
  * browser. Sign-in, webhooks and checkout stay on the auth provider's routes.
  *
@@ -1039,7 +1039,7 @@ async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 	const s = await summary(config, ctx);
 	const hooks = webhookWord(s);
 	const alerts: unknown[] = [];
-	if (!s.signIn) alerts.push({ type: "banner", variant: "error", title: "Sign-in isn't ready", description: "Members can't sign in until the store settings are complete. See Setup." });
+	if (!s.signIn) alerts.push({ type: "banner", variant: "error", title: "Sign-in isn't ready", description: "Members can't sign in until the store settings are complete. See Connection." });
 	if (s.check?.problems.length) alerts.push({ type: "banner", variant: "alert", title: "Webhooks need attention", description: s.check.problems[0]!.text });
 	if (s.openRequests) alerts.push({ type: "banner", variant: "alert", title: `${s.openRequests} privacy ${s.openRequests === 1 ? "request is" : "requests are"} open`, description: "Staff need to finish them under Privacy." });
 	return {
