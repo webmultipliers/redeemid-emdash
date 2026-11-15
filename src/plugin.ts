@@ -7,7 +7,7 @@
  *   })
  *
  * It adds Portable Text blocks to the editor, an Access panel on every entry,
- * admin pages (Overview, Members, Access, Reports, Events, Privacy,
+ * admin pages (Overview, Members, Products, Access, Reports, Events, Privacy,
  * Connection), a daily webhook health check and a dashboard
  * widget. The pages are Block Kit built here; admin.ts renders them in the
  * browser. Sign-in, webhooks and checkout stay on the auth provider's routes.
@@ -46,6 +46,8 @@ import { record } from "./log.js";
 import { resend } from "./events.js";
 import { eventRow, eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, webhookPanels, type MonitorEnv } from "./monitor.js";
 import { z } from "astro/zod";
+import { contentEntries, guardSave, productOptions, productsCollection, readProduct } from "./products.js";
+import { isProductsAction, productsAction, productsPage, type ProductsEnv } from "./products-admin.js";
 import { AgentError, explainAccess, findProducts, getCollection, getMember, getProduct, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
 
 import {
@@ -142,7 +144,11 @@ function blocks(config: RedeemIDConfig) {
 			icon: "tag",
 			description: "A Shopify product with Add to cart and Buy now",
 			placeholder: "Shopify product handle",
-			fields: [{ type: "text_input" as const, action_id: "handle", label: "Shopify product handle", placeholder: "harbor-tote" }],
+			fields: [
+				// Filled from the site's product entries (Plugins → RedeemID → Products) on each admin load.
+				{ type: "combobox" as const, action_id: "pick", label: "Product from the catalog", options: productOptions() },
+				{ type: "text_input" as const, action_id: "handle", label: "Or a Shopify product handle", placeholder: "harbor-tote" },
+			],
 		},
 		{
 			type: COLLECTION_BLOCK,
@@ -211,8 +217,9 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 		version: VERSION,
 		// content:read: the editor's Access panel reads the entry, and its
 		// rule follows the entry's slug and goes with the entry.
+		// content:write: product entries keep Shopify's fields on save (content:beforeSave).
 		// email:send: the daily webhook check can warn staff by email.
-		capabilities: ["content:read", "email:send"],
+		capabilities: ["content:read", "content:write", "email:send"],
 		// No admin.entry here: EmDash turns off Block Kit editor panels for a
 		// plugin with one. The descriptor's adminEntry alone loads admin.ts,
 		// which renders the pages; the Access panel stays Block Kit.
@@ -230,6 +237,15 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 			cron: async (event, ctx) => {
 				if (event.name !== HEALTH_TASK) return;
 				await healthCheck(monitorEnv(await live(), await memberStores(), ctx));
+			},
+			"content:beforeSave": async (event) => {
+				// Product entries: only Shopify changes Shopify's fields.
+				if (event.collection !== productsCollection(code)) return;
+				const config = await live();
+				const { getDb } = await import("emdash/runtime");
+				const db = await getDb();
+				const existing = event.id ? await contentEntries(db, event.collection).byId(event.id).catch(() => null) : null;
+				return guardSave(event.content, existing?.data ?? null, (handle) => readProduct(config, { handle }));
 			},
 			"content:afterSave": async (event) => {
 				const id = typeof event.content.id === "string" ? event.content.id : null;
@@ -282,11 +298,13 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 							if (out.toast?.type === "success") await record({ event: "settings.saved", label: `access: ${String(i.action_id).replace(/_/g, " ")}`, status: "ok", origin: "staff" });
 							return out;
 						}
+						if ((i.type === "block_action" || i.type === "form_submit") && isProductsAction(i.action_id)) return await productsAction(await productsEnv(config, ctx), i);
 						if ((i.type === "block_action" || i.type === "form_submit") && isSetupAction(i.action_id)) return await setupAction(config, live, ctx, i);
 						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx, i);
 						if (i.type !== "page_load") return { blocks: [] };
 						if (i.page === OVERVIEW) return await overviewPage(config, ctx);
 						if (i.page === "/members") return await membersPage(config);
+						if (i.page === "/products") return await productsPage(await productsEnv(config, ctx));
 						if (i.page === "/access") return await accessPage(await accessEnv(config));
 						if (i.page === "/reports") return await reportsPage(config, await memberStores());
 						// Connection and Events, or one of their tabs by address (/connection/sign-in, /events/app).
@@ -308,6 +326,12 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 			},
 		},
 	});
+}
+
+/** What the Products page works with. */
+async function productsEnv(config: RedeemIDConfig, ctx: PluginContext): Promise<ProductsEnv> {
+	const { getDb } = await import("emdash/runtime");
+	return { config, db: await getDb(), kv: ctx.kv as ProductsEnv["kv"], webhookUri: ctx.url(WEBHOOK_PATH) };
 }
 
 /** What the Webhooks page and the daily check work with. */

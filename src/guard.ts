@@ -36,6 +36,10 @@ import { guardSearch, SEARCH_PATH, SUGGEST_PATH } from "./search-guard.js";
 import { accessWrites } from "./settings.js";
 import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
 import { shareConfig, siteConfig } from "./site-config.js";
+import { refreshProductOptions } from "./products.js";
+
+/** EmDash's admin manifest, which carries the editor's block fields. */
+const MANIFEST_PATH = "/_emdash/api/manifest";
 
 const SUBSCRIBER = 10;
 
@@ -161,6 +165,12 @@ async function guard(context: Context, next: Next): Promise<Response> {
 			console.error("[redeemid] search check failed:", (e as Error).message);
 			return new Response(JSON.stringify({ error: { code: "SEARCH_ERROR", message: "Search failed" } }), { status: 500, headers: { "content-type": "application/json", "cache-control": "private, no-store" } });
 		}
+	}
+
+	// Staff loading the admin: fill the Product block's catalog picker first.
+	if (url.pathname === MANIFEST_PATH && user && (user.role ?? 0) > SUBSCRIBER) {
+		const db = (locals as { emdash?: { db?: unknown } }).emdash?.db;
+		if (db) await refreshProductOptions(db, config).catch((e) => console.error("[redeemid] product picker:", (e as Error).message));
 	}
 
 	if (!user || user.role !== SUBSCRIBER) return next();

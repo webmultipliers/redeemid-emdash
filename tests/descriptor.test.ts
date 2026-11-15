@@ -9,8 +9,8 @@ describe("admin pages", () => {
 	});
 
 	it("open on Overview, then the day-to-day pages, then the store connection", () => {
-		expect(PAGES.map((p) => p.label)).toEqual(["Overview", "Members", "Access", "Reports", "Events", "Privacy", "Connection"]);
-		expect(PAGES.map((p) => p.path).sort()).toEqual(["/access", "/connection", "/events", "/members", "/overview", "/privacy", "/reports"]);
+		expect(PAGES.map((p) => p.label)).toEqual(["Overview", "Members", "Products", "Access", "Reports", "Events", "Privacy", "Connection"]);
+		expect(PAGES.map((p) => p.path).sort()).toEqual(["/access", "/connection", "/events", "/members", "/overview", "/privacy", "/products", "/reports"]);
 	});
 
 	it("give each Connection and Events tab its own address", () => {

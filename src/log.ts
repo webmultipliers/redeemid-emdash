@@ -44,6 +44,7 @@ export const LOG_EVENTS: Record<string, string> = {
 	"staff.tags": "Tag edit",
 	"staff.link": "Account link",
 	"staff.webhooks": "Webhook registration",
+	"staff.products": "Products",
 	"settings.saved": "Settings saved",
 	"events.failed": "Outbound event failed",
 	"events.resent": "Outbound event sent again",

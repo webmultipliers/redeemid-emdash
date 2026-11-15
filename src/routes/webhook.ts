@@ -17,6 +17,9 @@ import { adminConfigured, resync } from "../admin-api.js";
 import type { RedeemIDConfig } from "../config.js";
 import { record } from "../log.js";
 import { apply, customerOf, kindOf, mergeIds, verifyHmac, type Outcome } from "../webhooks.js";
+import { contentEntries, hasProductsCollection, productsCollection, productWebhook } from "../products.js";
+
+const PRODUCT_TOPICS = new Set(["products/create", "products/update", "products/delete"]);
 
 export const prerender = false;
 
@@ -46,7 +49,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	const delivery = request.headers.get("x-shopify-event-id") || request.headers.get("x-shopify-webhook-id");
-	if (!kindOf(topic)) return new Response("Ignored", { status: 200 });
+	const product = PRODUCT_TOPICS.has(topic);
+	if (!kindOf(topic) && !product) return new Response("Ignored", { status: 200 });
 
 	let payload: Record<string, unknown>;
 	try {
@@ -58,7 +62,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	const s = stores(emdash.db);
 	const started = Date.now();
-	const customerId = topic === "shop/redact" ? null : customerOf(payload);
+	const customerId = topic === "shop/redact" || product ? null : customerOf(payload);
 	const receivedAt = new Date().toISOString();
 	if (delivery) {
 		const claim = () => s.deliveries.compareAndSet(delivery, null, { topic, receivedAt, outcome: "pending", customerId });
@@ -80,6 +84,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	try {
 		const config = await siteConfig(locals);
+		if (product) {
+			const outcome = await productDelivery(config, emdash.db, topic, payload);
+			if (delivery) await s.deliveries.put(delivery, { topic, receivedAt, outcome, customerId: null }).catch(() => undefined);
+			await record({ event: "webhook.received", label: topic, status: outcome, origin: "webhook", ms: Date.now() - started, note: typeof payload.handle === "string" ? payload.handle : undefined });
+			return new Response(outcome, { status: 200 });
+		}
 		const outcome = (await currentTags(config, s, topic, customerId)) ?? (await apply(s, topic, payload, (before, after) => levelChange(config, before, after, topic), config));
 		if (outcome === "processed" && kindOf(topic) === "merge") await mergedTags(config, s, topic, payload);
 		if (delivery) await s.deliveries.put(delivery, { topic, receivedAt, outcome, customerId }).catch(() => undefined);
@@ -92,6 +102,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		return new Response("Retry", { status: 500 });
 	}
 };
+
+/**
+ * A product webhook keeps the site's product entries in step: Shopify's
+ * product is read again (the payload is only the trigger), and an entry the
+ * site has is updated, or set to draft when Shopify no longer sells it here.
+ * "ignored" when the site has no product entries.
+ */
+async function productDelivery(config: RedeemIDConfig | null, db: unknown, topic: string, payload: Record<string, unknown>): Promise<string> {
+	const collection = productsCollection(config);
+	if (!config || !collection || !(await hasProductsCollection(db, collection))) return "ignored";
+	return productWebhook(config, contentEntries(db, collection), topic, payload);
+}
 
 /**
  * Tag webhooks carry only the change, and can arrive out of order. With the

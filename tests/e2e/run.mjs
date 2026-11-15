@@ -349,6 +349,7 @@ try {
 	check("once the webhooks are in and a member has signed in, Connection opens on Status", setupAfter.text.includes('"default_tab":0') && !setupAfter.text.includes("steps done") && setupAfter.text.includes("Register the webhooks: Done") && setupAfter.text.includes("Try a sign-in: Done"), setupAfter.text.slice(0, 400));
 	const setupAgain = await adminAct({ type: "block_action", action_id: "setup_register", page: "/connection" });
 	check("Setup's Register says nothing was missing", setupAgain.text.includes("Nothing was missing.") && shop.subscriptions.length === 8, setupAgain.text.slice(0, 300));
+
 	const setupNoTag = await adminAct({ type: "form_submit", action_id: "setup_level", block_id: "setup_level", values: { name: "Setup Test", tags: "" }, page: "/connection" });
 	check("Setup refuses a level without a tag", setupNoTag.text.includes("Give it at least one Shopify tag."), setupNoTag.text.slice(0, 300));
 	const setupLevel = await adminAct({ type: "form_submit", action_id: "setup_level", block_id: "setup_level", values: { name: "Setup Test", tags: "setup-test" }, page: "/connection" });
@@ -570,7 +571,7 @@ try {
 	});
 	check("api/cart answers 422 for a sold-out choice", jsonUnavailable.res.status === 422 && JSON.parse(jsonUnavailable.text).notice === "plan_unavailable");
 	const guestState = JSON.parse((await shopper.go("/_emdash/api/auth/redeemid/api/state")).text);
-	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.5.0", JSON.stringify(guestState));
+	check("api/state for a guest: signed out, with the cart count", guestState.signedIn === false && guestState.cart.count > 0 && guestState.apiVersion === "1.6.0", JSON.stringify(guestState));
 	const guestCheckout = JSON.parse(
 		(await shopper.go("/_emdash/api/auth/redeemid/api/cart", { method: "POST", headers: { "content-type": "application/json", origin: SITE }, body: JSON.stringify({ action: "checkout" }) })).text,
 	);
@@ -835,6 +836,53 @@ try {
 	const called = await mcp("tools/call", { name: "redeemid__explain_access", arguments: { collection: "posts", terms: { category: ["pro"] }, tags: ["pro"] } });
 	const callText = called.result?.content?.[0]?.text ?? "";
 	check("an agent's explain_access answers like the CLI", callText.includes('"canRead": true'), JSON.stringify(called).slice(0, 400));
+	{
+		// Product entries: staff pick Shopify products to keep as entries; Shopify's fields follow Shopify.
+		const productsEmpty = await adminPage("/products");
+		check("Products page counts no products and offers product webhooks", productsEmpty.text.includes('"label":"Products","value":"0"') && productsEmpty.text.includes("products_webhooks") && productsEmpty.text.includes("Add all from Shopify"), productsEmpty.text.slice(0, 400));
+		const found = await adminAct({ type: "form_submit", action_id: "products_find", block_id: "products_find", values: { query: "tote" }, page: "/products" });
+		check("staff search the store for products to add", found.text.includes("Harbor tote") && found.text.includes('"action_id":"products_add_one"'), found.text.slice(0, 400));
+		const addedTote = await adminAct({ type: "block_action", action_id: "products_add_one", value: "harbor-tote", page: "/products" });
+		check("adding one makes a published entry from Shopify's fields", addedTote.text.includes("1 added") && addedTote.text.includes('"label":"Products","value":"1"') && addedTote.text.includes("20.0 USD"), addedTote.text.slice(0, 400));
+		const toteApi = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
+		const tote = toteApi.data?.item ?? toteApi.item ?? toteApi.data;
+		check("the entry is in EmDash's content, published, with the handle as its slug", tote?.status === "published" && tote?.slug === "harbor-tote" && tote?.data?.shopify_id === shop.products["harbor-tote"].id, JSON.stringify(toteApi).slice(0, 300));
+		const editTote = await admin.go(`/_emdash/api/content/products/${tote?.id}`, {
+			method: "PUT",
+			headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
+			body: JSON.stringify({ data: { title: "Cheap tote", price: "1.0", content: [{ _type: "block", _key: "s1", style: "normal", children: [{ _type: "span", _key: "s1a", text: "STORY-OF-THE-TOTE", marks: [] }], markDefs: [] }] } }),
+		});
+		const toteAfterEdit = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
+		const edited = toteAfterEdit.data?.item ?? toteAfterEdit.item ?? toteAfterEdit.data;
+		check("an editor's save keeps their story and puts Shopify's title and price back", editTote.res.status < 300 && edited?.data?.title === "Harbor tote" && edited?.data?.price === "20.0" && JSON.stringify(edited?.data?.content ?? "").includes("STORY-OF-THE-TOTE"), `${editTote.res.status} ${editTote.text.slice(0, 200)} ${JSON.stringify(edited?.data ?? {}).slice(0, 300)}`);
+		const storyPage = await visitor.go("/shop/harbor-tote/");
+		check("the product page sells it live with the entry's story under it", storyPage.text.includes("data-redeemid-product") && storyPage.text.includes("STORY-OF-THE-TOTE"), storyPage.text.slice(0, 200));
+		const hooksOn = await adminAct({ type: "block_action", action_id: "products_webhooks", page: "/products" });
+		check("Turn on product updates registers products/create, update and delete", shop.subscriptions.filter((x) => x.topic.startsWith("PRODUCTS_")).length === 3 && hooksOn.text.includes("Shopify now sends products/create"), hooksOn.text.slice(0, 300));
+		shop.products["harbor-tote"].title = "Harbor tote, waxed";
+		const hookUpdate = await webhook("products/update", { id: 1, admin_graphql_api_id: shop.products["harbor-tote"].id, handle: "harbor-tote" });
+		const toteAfterHook = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
+		check("products/update reads Shopify again and updates the entry", hookUpdate.text === "updated" && JSON.stringify(toteAfterHook).includes("Harbor tote, waxed"), `${hookUpdate.status} ${hookUpdate.text}`);
+		const hookOther = await webhook("products/update", { id: 2, admin_graphql_api_id: shop.products["pro-plan"].id, handle: "pro-plan" });
+		check("a product staff didn't pick isn't added by a webhook", hookOther.text === "absent", hookOther.text);
+		const all1 = await adminAct({ type: "block_action", action_id: "products_all", page: "/products" });
+		const catalog = await visitor.go("/shop/catalog");
+		check("Add all adds every product the channel sells, and the catalog page lists them from EmDash", all1.text.includes("Added the last batch") && catalog.text.includes("Harbor tote, waxed") && !catalog.text.includes("CATALOG-EMPTY") && !catalog.text.includes("Pro plan"), `${all1.text.slice(0, 300)} ${catalog.text.slice(0, 200)}`);
+		const pickManifest = await admin.go("/_emdash/api/manifest");
+		check("the Product block's catalog picker lists the entries", pickManifest.text.includes('"action_id":"pick"') && pickManifest.text.includes("harbor-tote"), (pickManifest.text.match(/"action_id":"pick".{0,300}/) ?? [""])[0]);
+		const productMap = await visitor.go("/sitemap-products.xml");
+		check("the product sitemap leaves out products EmDash's sitemap already lists", productMap.res.status === 200 && !productMap.text.includes("/shop/harbor-tote/"), productMap.text.slice(0, 300));
+		const savedTote = shop.products["harbor-tote"];
+		delete shop.products["harbor-tote"];
+		const hookDelete = await webhook("products/delete", { id: 1, admin_graphql_api_id: savedTote.id });
+		const toteGone = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
+		const gone = toteGone.data?.item ?? toteGone.item ?? toteGone.data;
+		check("products/delete takes the entry off sale (draft) and keeps the story", hookDelete.text === "delisted" && gone?.status === "draft" && !gone?.data?.listed && JSON.stringify(gone?.data?.content ?? "").includes("STORY-OF-THE-TOTE"), `${hookDelete.text} ${gone?.status} listed=${JSON.stringify(gone?.data?.listed)}`);
+		shop.products["harbor-tote"] = { ...savedTote, title: "Harbor tote" };
+		const refreshed = await adminAct({ type: "block_action", action_id: "products_refresh", page: "/products" });
+		const toteBack = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
+		check("Refresh brings back a product Shopify sells again", refreshed.text.includes("back on sale") && (toteBack.data?.item ?? toteBack.item ?? toteBack.data)?.status === "published", refreshed.text.slice(0, 300));
+	}
 } catch (e) {
 	failures++;
 	console.error(e);

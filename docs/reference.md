@@ -24,6 +24,7 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 | `checkout` | `{ signIn?: false }` | `signIn: false` stops passing a member's store sign-in to checkout. |
 | `schema` | `false` | Turn off the paywalled-content JSON-LD. |
 | `memberPaths` | `string[]` | Extra `/_emdash` path prefixes signed-in members may use. Everything else there is refused to them. |
+| `products` | `false` \| `{ collection?, follow? }` | Product entries: the collection they live in (default `"products"`), and `follow: "all"` to add products Shopify creates later. `false` turns them off. See [product entries](products.md). |
 | `entries` | `{ ["collection:id"]: EntryRule }` | Entries' own rules. Usually set in the editor's Access panel. |
 | `allowInsecureShop` | `boolean` | Local tests only: lets `shop` be an `http://` fake store. Never set it on a live site. |
 
@@ -83,7 +84,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | Members only / Members only: end | `redeemid-members`, `redeemid-members-end` | A members-only part in the middle of a body |
 | Sold on its own | `redeemid-item` | Sells the entry by itself to holders of a tag |
 | Plan | `redeemid-plan` | A product with a buy button |
-| Product | `redeemid-product` | A product with variants and Add to cart |
+| Product | `redeemid-product` | A product with variants and Add to cart, picked from the catalog or by handle |
 | Collection | `redeemid-collection` | A grid of products, optionally with filters, pages and Add to cart |
 | Product search | `redeemid-search` | A search box with Shopify's results |
 | Contribution | `redeemid-contribution` | Pay what you want |
@@ -98,6 +99,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `@redeemid/emdash/features` | `hasFeature()`, `viewerFeatures()` |
 | `@redeemid/emdash/preferences` | `readPreferences()`, `savePreferences()` |
 | `@redeemid/emdash/storefront` | `product()`, `collection()`, `plan()`, `money()` and the cart calls |
+| `@redeemid/emdash/products` | `entryCard()`, `catalogHandles()`, `productsCollection()` and `MIRROR_KEYS`, for [product entries](products.md) |
 | `@redeemid/emdash/catalog` | `searchProducts()`, `collectionPage()`, `suggest()`, `recommendations()`, `productSitemap()` |
 | `@redeemid/emdash/events` | `signBody(body, secret)`, the signature a receiver checks against `X-RedeemID-Signature` |
 | `@redeemid/emdash/text` | `STRINGS`, the list of every replaceable string |
