@@ -34,7 +34,7 @@ import { deleteAccess, entryKey, loadAccess, onLevels, withSaved } from "./setti
 import { env, ENV, shopOrigin, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
 import { stores, type MemberRecord, type Stores } from "./storage.js";
-import { CONNECTION_TABS, EDITOR_PANELS, EVENTS_TABS, PAGES, WIDGETS } from "./descriptor.js";
+import { CONNECTION_TABS, EDITOR_PANELS, EVENTS_TABS, OVERVIEW, PAGES, WIDGETS } from "./descriptor.js";
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, recentRequests, requestShopifyErasure } from "./privacy.js";
@@ -285,7 +285,7 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 						if ((i.type === "block_action" || i.type === "form_submit") && isSetupAction(i.action_id)) return await setupAction(config, live, ctx, i);
 						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx, i);
 						if (i.type !== "page_load") return { blocks: [] };
-						if (i.page === "/") return await overviewPage(config, ctx);
+						if (i.page === OVERVIEW) return await overviewPage(config, ctx);
 						if (i.page === "/members") return await membersPage(config);
 						if (i.page === "/access") return await accessPage(await accessEnv(config));
 						if (i.page === "/reports") return await reportsPage(config, await memberStores());
@@ -1063,7 +1063,7 @@ async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 			{
 				type: "actions",
 				elements: [
-					{ type: "link", label: "Overview", target: page("/"), appearance: "primary" },
+					{ type: "link", label: "Overview", target: page(OVERVIEW), appearance: "primary" },
 					{ type: "link", label: "Members", target: page("/members"), appearance: "secondary" },
 					{ type: "link", label: "Access", target: page("/access"), appearance: "secondary" },
 					{ type: "link", label: s.signIn && !s.check?.problems.length ? "Events" : "Connection", target: page(s.signIn && !s.check?.problems.length ? "/events/webhook" : "/connection"), appearance: "secondary" },

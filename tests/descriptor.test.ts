@@ -10,7 +10,7 @@ describe("admin pages", () => {
 
 	it("open on Overview, then the day-to-day pages, then the store connection", () => {
 		expect(PAGES.map((p) => p.label)).toEqual(["Overview", "Members", "Access", "Reports", "Events", "Privacy", "Connection"]);
-		expect(PAGES.map((p) => p.path).sort()).toEqual(["/", "/access", "/connection", "/events", "/members", "/privacy", "/reports"]);
+		expect(PAGES.map((p) => p.path).sort()).toEqual(["/access", "/connection", "/events", "/members", "/overview", "/privacy", "/reports"]);
 	});
 
 	it("give each Connection and Events tab its own address", () => {
@@ -27,6 +27,11 @@ describe("admin pages", () => {
 			"/events/app",
 			"/events/health",
 		]);
+	});
+
+	it("name the plugin RedeemID in EmDash's Plugins list", () => {
+		expect(redeemidPlugin({}).displayName).toBe("RedeemID");
+		expect(redeemidPlugin({}).description).toBeTruthy();
 	});
 
 	it("render in the browser through the admin entry", () => {

@@ -18,12 +18,12 @@
  * Written without JSX so the site's bundler needs no JSX settings for it.
  */
 
-import { ClipboardText, Collapsible, Dialog, DialogRoot, Button, Input, Loader, Tabs } from "@cloudflare/kumo";
+import { ClipboardText, Collapsible, Button, Input, LayerDialog, Loader, Tabs } from "@cloudflare/kumo";
 import { API_BASE, apiFetch, useNavigate } from "@emdash-cms/admin";
 import { BlockRenderer } from "@emdash-cms/blocks";
 import { createElement as h, Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { PAGES, TAB_PATHS } from "./descriptor.js";
+import { OVERVIEW, PAGES, TAB_PATHS } from "./descriptor.js";
 
 const PLUGIN = "redeemid";
 const ADMIN = "/_emdash/admin";
@@ -510,25 +510,27 @@ function Modal({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 			return out;
 		},
 	};
+	// EmDash's own dialog design (a bottom sheet on phones). The blocks bring
+	// their own submit button, so there is no action tray.
+	const D = LayerDialog as unknown as { Root: never; Content: never; Title: never; Description: never; Body: never };
 	return h(
 		Fragment,
 		null,
 		trigger ? h(Button as never, { variant: trigger.style === "primary" ? "primary" : "secondary", onClick: () => show(true) }, trigger.label) : null,
 		h(
-			DialogRoot as never,
-			{ open, onOpenChange: show },
+			D.Root,
+			{ open, onOpenChange: show } as never,
 			h(
-				Dialog as never,
-				{ className: "p-6", style: { width: "min(40rem, calc(100vw - 2rem))", maxHeight: "calc(100vh - 2rem)", overflowY: "auto" } },
+				D.Content,
+				{ size: "lg" } as never,
+				h(D.Title, null, String(block.title ?? "")),
+				block.description ? h(D.Description, null, String(block.description)) : null,
 				h(
-					"div",
-					{ className: "flex items-start justify-between gap-3 mb-2" },
-					h("h3", { className: "text-lg font-semibold text-kumo-default" }, String(block.title ?? "")),
-					h(Button as never, { variant: "secondary", size: "sm", onClick: () => show(false) }, "Close"),
+					D.Body,
+					null,
+					problem ? h("div", { role: "alert", className: "mb-4 rounded-lg border border-kumo-danger/50 bg-kumo-danger/10 px-4 py-3 text-sm text-kumo-danger" }, problem) : null,
+					h(Blocks, { key: round, blocks: (block.blocks as Block[]) ?? [], ctx: inner }),
 				),
-				block.description ? h("p", { className: "mb-2 text-sm text-kumo-subtle" }, String(block.description)) : null,
-				problem ? h("div", { role: "alert", className: "mb-2 rounded-lg border border-kumo-danger/50 bg-kumo-danger/10 px-4 py-3 text-sm text-kumo-danger" }, problem) : null,
-				h(Blocks, { key: round, blocks: (block.blocks as Block[]) ?? [], ctx: inner }),
 			),
 		),
 	);
@@ -632,3 +634,5 @@ export const pages: Record<string, () => ReactNode> = Object.fromEntries(
 		return [path, C];
 	}),
 );
+// The plugin's root (EmDash's Plugins list links there) opens Overview.
+pages["/"] = pages[OVERVIEW]!;

@@ -29,20 +29,22 @@ RedeemID reads them with the Admin API (resync, sign-in, tag webhooks), so they 
 
 **Plugins → RedeemID → Overview** is the first page: anything that needs doing (setup steps left, webhook problems, open privacy requests), cards for sign-in, members, webhooks, access, privacy and setup with links to each, members by level, recent app events and links to the docs, the store's customers and Flow. The **RedeemID** card on the EmDash dashboard shows the same alerts and counts with links to Overview, Members, Access and Events (or Connection while a setup step is left).
 
+All the pages sit in one **RedeemID** folder under Plugins in the sidebar. Each staff member can hide or reorder them, like any admin entry, under **Settings → Sidebars**.
+
 **Connection** holds the store link: **Status** (the values to copy into Shopify, and every setting as Set or Missing), then one tab per setup step: Store, Sign-in, Admin app, Webhooks, First level, Try it and Storefront. A finished step's tab shows a check mark. It opens on the first step not done, then on Status once they all are.
 
 **Events** shows what happened, in three tabs: Webhook, App and Health. Each tab of both pages has its own address, such as `/_emdash/admin/plugins/redeemid/connection/sign-in` or `/_emdash/admin/plugins/redeemid/events/app`, which the dashboard card and Overview link to.
 
 **Status** shows the addresses to paste into Shopify (callback URI, JavaScript origin, logout URI, webhook URL) and the store domain as read-only fields with copy buttons, every setting as Set or Missing with the environment variable it comes from, and the template checks.
 
-The admin pages are built as Block Kit on the server. The package's admin entry (`@redeemid/emdash/admin`, loaded by EmDash from the plugin descriptor) renders them in the browser and adds what Block Kit has no block for: copy fields, dialogs and linked cards. It needs `react`, `@cloudflare/kumo` and `@emdash-cms/blocks`, which every EmDash site already has through `emdash`.
+The admin pages are built as Block Kit on the server. The package's admin entry (`@redeemid/emdash/admin`, loaded by EmDash from the plugin descriptor) renders them in the browser and adds what Block Kit has no block for: copy fields, dialogs (in EmDash's own dialog design, a bottom sheet on phones) and linked cards. It needs `react`, `@cloudflare/kumo` and `@emdash-cms/blocks`, which every EmDash site already has through `emdash`.
 
 ## Webhooks, health, app events and reports
 
 Members gain and lose access only when Shopify sends tag changes, so RedeemID shows what arrived and warns when deliveries stop.
 
 - **Events → Webhook.** Each delivery's topic, what became of it (processed, skipped, older than what's stored, not used) and the customer ID, with counts of deliveries turned away (bad signature) and failed (storage errors; Shopify sends those again).
-- **Events → Health.** Once a day RedeemID registers again any subscription Shopify dropped (with the Admin API app), and warns when no webhook has come in for a number of days (3 by default, 0 turns it off), or when deliveries were turned away or failed in the last day. **Check now** runs it at once. Warnings show on the page and the dashboard widget. If you enter an address on the Health tab and the site has an EmDash email provider, they also go by email: once when problems start or change, then once a week while they last.
+- **Events → Health.** Once a day RedeemID registers again any subscription Shopify dropped (with the Admin API app), and warns when no webhook has come in for a number of days (3 by default, 0 turns it off), or when deliveries were turned away or failed in the last day. **Check now** runs it at once. Warnings show on the page and the dashboard widget. If you enter an address on the Health tab and the site has an EmDash email provider (Settings → Email: SMTP, or an email plugin), they also go by email: once when problems start or change, then once a week while they last.
 - **Subscriptions** (on Connection → Webhooks). The endpoint, whether signatures can be checked, and the subscriptions.
 - **Events → App.** What RedeemID did and what came of it: webhooks received, turned away and failed, sign-ins and refusals (by reason), Admin API calls (by operation, with timings), resyncs, tag edits, webhook registrations, settings saves, outbound events that failed, metered reads and the health checks. Filter by event or show problems only. Entries hold ids, labels and outcomes, never bodies, tokens or emails. Failed outbound events also keep the event body (ids and levels, never an email or a name) so they can be sent again.
 - **Reports.** Members on each level, who joined and left in the last 30 days and by week for 12 weeks (from each member's tag dates), sign-ins and metered reads.
