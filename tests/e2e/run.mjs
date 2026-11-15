@@ -233,14 +233,17 @@ try {
 	const overview = await adminPage("/overview");
 	check("Overview comes first with status cards, members by level and recent activity", overview.res.status === 200 && overview.text.includes('"type":"redeemid_cards"') && overview.text.includes("Explore the access map") && overview.text.includes("Recent activity"), overview.text.slice(0, 300));
 	const dashCard = await adminPage("widget:status");
-	check("the dashboard card counts members and links into RedeemID", dashCard.text.includes('"label":"Members"') && dashCard.text.includes('"path":"/members"') && dashCard.text.includes('"path":"/overview"'), dashCard.text.slice(0, 300));
-	const membersPage = await adminPage("/members");
-	check("Members page lists the signed-in member", membersPage.res.status === 200 && membersPage.text.includes(shop.customer.email), `${membersPage.res.status} ${membersPage.text.slice(0, 200)}`);
-	const statusPage = await adminPage("/connection/status");
-	check("Status page lists the ignored replacement", statusPage.text.includes("1 in use, 1 ignored") && statusPage.text.includes("text_problems"));
+	check("the dashboard card counts customers and links into RedeemID", dashCard.text.includes('"label":"Customers"') && dashCard.text.includes('"path":"/customers"') && dashCard.text.includes('"path":"/overview"'), dashCard.text.slice(0, 300));
+	check("Overview points to Resources instead of listing them", overview.text.includes('"path":"/resources"') && !overview.text.includes("Report a problem"), overview.text.slice(0, 300));
+	const resources = await adminPage("/resources");
+	check("Resources lists the guides and the store's own screens", resources.res.status === 200 && resources.text.includes("Developer API") && resources.text.includes("In your Shopify admin"), resources.text.slice(0, 300));
+	const membersPage = await adminPage("/customers");
+	check("Customers page lists the signed-in customer", membersPage.res.status === 200 && membersPage.text.includes('"text":"Customers"') && membersPage.text.includes(shop.customer.email), `${membersPage.res.status} ${membersPage.text.slice(0, 200)}`);
+	const statusPage = await adminPage("/connection/environment");
+	check("Environment lists the ignored replacement", statusPage.text.includes("1 in use, 1 ignored") && statusPage.text.includes("text_problems"));
 	check("an ignored replacement leaves the original", signIn.text.includes(">Sign out</button>") && !signIn.text.includes("Leave,"));
-	check("Status finds no template showing a gated body in full", statusPage.text.includes("Templates: none renders a gated collection") && !statusPage.text.includes("template_findings"), statusPage.text.slice(0, 300));
-	check("Status page reports sign-in ready", statusPage.text.includes("Sign-in is ready") && statusPage.text.includes("/_emdash/api/auth/redeemid/webhook"), statusPage.text.slice(0, 300));
+	check("Environment finds no template showing a gated body in full", statusPage.text.includes("Templates: none renders a gated collection") && !statusPage.text.includes("template_findings"), statusPage.text.slice(0, 300));
+	check("Connection never shows the webhook endpoint to copy", !statusPage.text.includes("/_emdash/api/auth/redeemid/webhook") && statusPage.text.includes('"label":"Store"') && statusPage.text.includes('"label":"Environment"'), statusPage.text.slice(0, 300));
 	const memberAdmin = await member.go("/_emdash/api/plugins/redeemid/admin", {
 		method: "POST",
 		headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE },
@@ -256,7 +259,8 @@ try {
 			body: JSON.stringify(input),
 		});
 	const accessPage = await accessCall({ type: "page_load", page: "/access" });
-	check("Access page lists levels, content types and taxonomies from the site", accessPage.res.status === 200 && accessPage.text.includes("Content types") && accessPage.text.includes("Posts") && accessPage.text.includes("Categories") && accessPage.text.includes("from the site's code"), accessPage.text.slice(0, 300));
+	check("Access page lists levels, content types and taxonomies from the site", accessPage.res.status === 200 && accessPage.text.includes('"label":"Content types"') && accessPage.text.includes('"label":"Sitewide"') && accessPage.text.includes('"label":"Meter"') && accessPage.text.includes('"label":"Code settings"') && accessPage.text.includes("Posts") && accessPage.text.includes("Categories"), accessPage.text.slice(0, 300));
+	check("each level has a code button that opens its snippet", accessPage.text.includes('"icon":"code"') && accessPage.text.includes("in your site"), accessPage.text.slice(0, 300));
 	const addLevel = await accessCall({ type: "form_submit", action_id: "level_save", block_id: "level:new", values: { name: "Patrons of the Arts", tags: "patron", match: "any" } });
 	check("staff add a level with their own name", addLevel.text.includes("Level added.") && addLevel.text.includes("patrons-of-the-arts"), addLevel.text.slice(0, 300));
 	const manifestAfter = await admin.go("/_emdash/api/manifest");
@@ -282,13 +286,13 @@ try {
 	check("back to the site rules, the entry is open again", backOpen.text.includes("starter post"));
 	const typeRule = await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "signed-in", drip: 0, no_meter: false, teaser: 0 } });
 	check("staff set a rule for a whole content type", typeRule.text.includes("Saved."), typeRule.text.slice(0, 200));
-	const statusTemplates = await adminPage("/connection/status");
-	check("with a Pages rule, Status names the template that renders Pages with PortableText", statusTemplates.text.includes("A template shows locked bodies in full") && statusTemplates.text.includes("src/pages/[slug].astro") && statusTemplates.text.includes('"collections":"pages"'), statusTemplates.text.slice(0, 300));
+	const statusTemplates = await adminPage("/connection/environment");
+	check("with a Pages rule, Environment names the template that renders Pages with PortableText", statusTemplates.text.includes("A template shows locked bodies in full") && statusTemplates.text.includes("src/pages/[slug].astro") && statusTemplates.text.includes('"collections":"pages"'), statusTemplates.text.slice(0, 300));
 	await accessCall({ type: "form_submit", action_id: "type_save", block_id: "type:pages", values: { who: "none", drip: 0, no_meter: false, teaser: 0 } });
 	const levelGone = await accessCall({ type: "block_action", action_id: "level_menu", value: "remove:patrons-of-the-arts" });
 	check("an unused level can be removed", levelGone.text.includes("Level removed."), levelGone.text.slice(0, 200));
 	const backToCode = await accessCall({ type: "block_action", action_id: "reset", value: "levels" });
-	check("levels go back to the code's", backToCode.text.includes("Using the code's setting again."));
+	check("levels go back to the code's, from the Code settings tab", backToCode.text.includes("Using the code's levels again.") && backToCode.text.includes('"default_tab":9'));
 
 	// Staff tools: member detail, resync, tag edits written to Shopify, bulk resync, webhooks, access test.
 	const adminAct = async (input) =>
@@ -298,16 +302,16 @@ try {
 			body: JSON.stringify(input),
 		});
 	const cid = String(shop.customer.id);
-	check("Members page has an Open button per member", membersPage.text.includes('"action_id":"member_open"') && membersPage.text.includes("Resync 25 from Shopify"));
-	const detail = await adminAct({ type: "block_action", action_id: "member_open", value: cid, page: "/members" });
+	check("Customers page has an Open button per customer and Resync all", membersPage.text.includes('"action_id":"member_open"') && membersPage.text.includes("Resync all from Shopify") && !membersPage.text.includes("Resync 25"));
+	const detail = await adminAct({ type: "block_action", action_id: "member_open", value: cid, page: "/customers" });
 	check("member detail shows levels, tags and the tag form", detail.text.includes("Shopify customer") && detail.text.includes("member_tag_add") && detail.text.includes('"action_id":"member_tag_remove"') && detail.text.includes('"label":"Membership"'), detail.text.slice(0, 300));
 	shop.customer.tags = ["member", "supporter"];
-	const resynced = await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/members" });
+	const resynced = await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/customers" });
 	check("Resync reads the customer from Shopify with a client-credentials token", resynced.text.includes("Read again from Shopify.") && resynced.text.includes("supporter") && shop.adminTokens >= 1, resynced.text.slice(0, 300));
 	const tokensAfterResync = shop.adminTokens;
-	const tagged = await adminAct({ type: "form_submit", action_id: "member_tag_add", block_id: `tags:${cid}`, values: { tags: "pro, vip" }, page: "/members" });
+	const tagged = await adminAct({ type: "form_submit", action_id: "member_tag_add", block_id: `tags:${cid}`, values: { tags: "pro, vip" }, page: "/customers" });
 	check("adding tags writes them to Shopify and reads them back", shop.tagEdits.at(-1)?.m === "tagsAdd" && JSON.stringify(shop.tagEdits.at(-1)?.tags) === JSON.stringify(["pro", "vip"]) && tagged.text.includes("Tags added in Shopify.") && tagged.text.includes("vip") && shop.adminTokens === tokensAfterResync);
-	const untagged = await adminAct({ type: "block_action", action_id: "member_tag_remove", value: { customerId: cid, tag: "vip" }, page: "/members" });
+	const untagged = await adminAct({ type: "block_action", action_id: "member_tag_remove", value: { customerId: cid, tag: "vip" }, page: "/customers" });
 	check("removing a tag removes it in Shopify", shop.tagEdits.at(-1)?.m === "tagsRemove" && !shop.customer.tags.includes("vip") && untagged.text.includes("Tag removed in Shopify."));
 	const levelEvent = shop.events.find((e) => e.headers["x-redeemid-event"] === "member.levels_changed" && JSON.parse(e.body).data.added.includes("pro"));
 	const sig = levelEvent ? createHmac("sha256", EVENTS_SECRET).update(levelEvent.body).digest("hex") : "";
@@ -335,31 +339,30 @@ try {
 	const eventsBefore = shop.events.length;
 	const resent = await adminAct({ type: "block_action", action_id: "failed_resend", value: failedId, page: "/events" });
 	check("Send again delivers it with its delivery id and takes it off the list", resent.text.includes("Sent.") && !resent.text.includes("Failed events") && shop.events.length === eventsBefore + 1 && shop.events.at(-1).headers["x-redeemid-delivery"] === failedId, resent.text.slice(0, 300));
-	const bulk = await adminAct({ type: "block_action", action_id: "members_resync", page: "/members" });
-	check("bulk resync reads a batch from Shopify", bulk.text.includes("Read 1 members again"), bulk.text.slice(0, 300));
+	const bulkStart = await adminAct({ type: "block_action", action_id: "customers_resync_start", value: "new", page: "/customers" });
+	check("Resync all starts a run over every customer", bulkStart.text.includes('"type":"redeemid_run"') && bulkStart.text.includes('"state":"running"') && bulkStart.text.includes('"total":1'), bulkStart.text.slice(0, 300));
+	const bulkStep = await adminAct({ type: "block_action", action_id: "customers_resync_next", page: "/customers" });
+	const bulkEnd = await adminAct({ type: "block_action", action_id: "customers_resync_next", page: "/customers" });
+	check("each batch reads the next customers, and the run finishes", bulkStep.text.includes('"done":1') && bulkEnd.text.includes('"state":"finished"'), `${bulkStep.text.slice(0, 200)} ${bulkEnd.text.slice(0, 200)}`);
+	const bulkDone = await adminAct({ type: "block_action", action_id: "customers_resync_done", page: "/customers" });
+	check("the finished run reloads Customers with what it did", bulkDone.text.includes("1 customers read") && bulkDone.text.includes('"text":"Customers"'), bulkDone.text.slice(0, 300));
 	const setupBefore = await adminPage("/connection");
-	check("Connection opens on the first step not done, with a tab per step", setupBefore.text.includes("5 of 6 steps done") && setupBefore.text.includes('"default_tab":4') && setupBefore.text.includes('"label":"Store ✓"') && setupBefore.text.includes("Register the webhooks: To do") && setupBefore.text.includes("Register 8 webhooks") && setupBefore.text.includes("setup_register"), setupBefore.text.slice(0, 400));
+	check("Connection opens on Status cards, with the next step named", setupBefore.text.includes("5 of 6 steps done") && setupBefore.text.includes('"default_tab":0') && setupBefore.text.includes('"type":"redeemid_cards"') && setupBefore.text.includes("Register the webhooks: To do") && setupBefore.text.includes("Register 8 webhooks") && setupBefore.text.includes("setup_register") && setupBefore.text.includes('"scope":"write_customers"'), setupBefore.text.slice(0, 400));
 	const hooksNow = await adminPage("/connection/webhooks");
 	check("the Webhooks tab lists the missing subscriptions under its one Register button", hooksNow.text.includes("Missing") && hooksNow.text.includes('"text":"Subscriptions"') && !hooksNow.text.includes("webhooks_register"), hooksNow.text.slice(0, 300));
 	const registered = await adminAct({ type: "block_action", action_id: "webhooks_register", value: "", page: "/connection" });
-	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks.") && registered.text.includes('"default_tab":4') && registered.text.includes('"label":"Webhooks ✓"'), JSON.stringify(shop.subscriptions.slice(0, 2)));
+	check("Register adds the 8 topics pointed at this site", shop.subscriptions.length === 8 && shop.subscriptions.every((x) => x.uri === `${SITE}/_emdash/api/auth/redeemid/webhook`) && registered.text.includes("Registered 8 webhooks.") && registered.text.includes('"default_tab":3'), JSON.stringify(shop.subscriptions.slice(0, 2)));
 	const statusLinks = (await adminPage("/connection/status")).text;
-	check("Connection is Status then a tab per step, Status first with copy fields", ['"label":"Status"', '"label":"Sign-in ✓"', '"label":"Webhooks ✓"', '"text":"Connection"', '"type":"redeemid_copy"'].every((x) => statusLinks.includes(x)) && !statusLinks.includes('"label":"App events"'), statusLinks.slice(0, 300));
+	check("Connection is Status, Store, Environment and Webhooks", ['"label":"Status"', '"label":"Store"', '"label":"Environment"', '"label":"Webhooks"', '"text":"Connection"', '"type":"redeemid_copy"'].every((x) => statusLinks.includes(x)) && !statusLinks.includes('"label":"App events"'), statusLinks.slice(0, 300));
 	const setupAfter = await adminPage("/connection");
-	check("once the webhooks are in and a member has signed in, Connection opens on Status", setupAfter.text.includes('"default_tab":0') && !setupAfter.text.includes("steps done") && setupAfter.text.includes("Register the webhooks: Done") && setupAfter.text.includes("Try a sign-in: Done"), setupAfter.text.slice(0, 400));
+	check("once the webhooks are in and a customer has signed in, Status says connected", setupAfter.text.includes('"default_tab":0') && !setupAfter.text.includes("steps done") && setupAfter.text.includes('"title":"Connected"') && setupAfter.text.includes("Register the webhooks: Done"), setupAfter.text.slice(0, 400));
 	const setupAgain = await adminAct({ type: "block_action", action_id: "setup_register", page: "/connection" });
 	check("Setup's Register says nothing was missing", setupAgain.text.includes("Nothing was missing.") && shop.subscriptions.length === 8, setupAgain.text.slice(0, 300));
 
-	const setupNoTag = await adminAct({ type: "form_submit", action_id: "setup_level", block_id: "setup_level", values: { name: "Setup Test", tags: "" }, page: "/connection" });
-	check("Setup refuses a level without a tag", setupNoTag.text.includes("Give it at least one Shopify tag."), setupNoTag.text.slice(0, 300));
-	const setupLevel = await adminAct({ type: "form_submit", action_id: "setup_level", block_id: "setup_level", values: { name: "Setup Test", tags: "setup-test" }, page: "/connection" });
-	check("Setup adds a level through Access", setupLevel.text.includes("Level added.") && setupLevel.text.includes("Setup Test (setup-test)"), setupLevel.text.slice(0, 300));
-	const setupGone = await accessCall({ type: "block_action", action_id: "level_menu", value: "remove:setup-test" });
-	check("the Setup level can be removed under Access", setupGone.text.includes("Level removed."), setupGone.text.slice(0, 300));
 	const test = await adminAct({ type: "form_submit", action_id: "access_test", values: { collection: "posts", terms: "category:members, category:pro", tags: "member", signed_in: true }, page: "/access" });
 	check("access test shows what an entry needs and the verdict", test.text.includes("Member or Pro + Pro") || test.text.includes("Pro"), test.text.slice(0, 400));
 	check("access test says a Member is kept out of a Members + Pro post", test.text.includes("This reader is kept out"));
-	check("access test answers on the Access page's Test tab", test.text.includes('"label":"Test"') && test.text.includes('"default_tab":6'));
+	check("access test answers on the Access page's Test tab", test.text.includes('"label":"Test"') && test.text.includes('"default_tab":8'));
 	// Member preferences: read from and saved to the member's own Shopify customer.
 	const prefsPage = await member.go("/account");
 	check("Preferences shows the member's fields, not the membership namespace", prefsPage.text.includes("Topics") && prefsPage.text.includes("Weekly newsletter") && prefsPage.text.includes("Reader level:") && !prefsPage.text.includes("Member since"), prefsPage.text.slice(0, 300));
@@ -401,11 +404,11 @@ try {
 		check(`a visitor gets no protected file from ${path.slice(0, 60)}`, !r.text.includes("PROTECTED-") && !/public/.test(r.res.headers.get("cache-control") ?? ""), `${r.res.status} ${r.res.headers.get("cache-control")}`);
 	}
 	shop.customer.tags = ["member"];
-	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/members" });
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/customers" });
 	const asMember = await member.go(fileUrl(proFile.key));
 	check("a member without the level is refused the file", asMember.res.status === 403 && !asMember.text.includes("PROTECTED-"), `${asMember.res.status}`);
 	shop.customer.tags = ["member", "pro"];
-	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/members" });
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/customers" });
 	const asPro = await member.go(fileUrl(proFile.key));
 	check("a Pro member downloads it, never cached", asPro.res.status === 200 && asPro.text.includes("PROTECTED-pro-guide.pdf") && asPro.res.headers.get("cache-control") === "private, no-store", `${asPro.res.status} ${asPro.res.headers.get("cache-control")}`);
 	const asStaff = await admin.go(fileUrl(proFile.key));
@@ -433,7 +436,7 @@ try {
 	}
 	check("a reader of the post downloads the file it uses", storyAsPro.res.status === 200 && storyAsPro.text.includes("PROTECTED-story.pdf"), String(storyAsPro.res.status));
 	shop.customer.tags = ["member"];
-	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/members" });
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/customers" });
 	const storyAsMember = await member.go(fileUrl(storyUp.storageKey));
 	check("a member who can't read the post is refused its file", storyAsMember.res.status === 403, String(storyAsMember.res.status));
 	const openFile = await visitor.go(fileUrl(openUp.key));
@@ -441,7 +444,7 @@ try {
 
 	// Put the store's customer back as the rest of the run expects.
 	shop.customer.tags = ["member"];
-	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/members" });
+	await adminAct({ type: "block_action", action_id: "member_resync", value: cid, page: "/customers" });
 
 	// The Join page shows Shopify's plan and starts a checkout for the member.
 	const join = await member.go("/join");
@@ -738,7 +741,7 @@ try {
 	check("the erased member reads as signed out", !afterErase.text.includes("MEMBER-BODY"));
 	await webhook("customers/data_request", { customer: { id: 4242, email: "x@example.com" }, data_request: { id: 9001 }, shop_domain: "s" });
 	const privacy = await adminPage("/privacy");
-	check("Privacy page lists the member's erase and Shopify's open data request", privacy.text.includes("Member, on the site") && privacy.text.includes("request 9001") && privacy.text.includes("privacy_done") && !privacy.text.includes("x@example.com"), privacy.text.slice(0, 300));
+	check("Privacy page lists the member's erase and Shopify's open data request", privacy.text.includes("Customer, on the site") && privacy.text.includes("request 9001") && privacy.text.includes("privacy_done") && !privacy.text.includes("x@example.com"), privacy.text.slice(0, 300));
 	const back = await reader.go("/_emdash/api/auth/redeemid/login?return=/posts/members-only");
 	check("signing in again links the member again", back.text.includes("MEMBER-BODY"), back.url.href);
 
@@ -865,9 +868,17 @@ try {
 		check("products/update reads Shopify again and updates the entry", hookUpdate.text === "updated" && JSON.stringify(toteAfterHook).includes("Harbor tote, waxed"), `${hookUpdate.status} ${hookUpdate.text}`);
 		const hookOther = await webhook("products/update", { id: 2, admin_graphql_api_id: shop.products["pro-plan"].id, handle: "pro-plan" });
 		check("a product staff didn't pick isn't added by a webhook", hookOther.text === "absent", hookOther.text);
-		const all1 = await adminAct({ type: "block_action", action_id: "products_all", page: "/products" });
+		// A run: start, then batches until it finishes (the admin page paces them).
+		const runAll = async (prefix) => {
+			let out = await adminAct({ type: "block_action", action_id: `${prefix}_start`, value: "new", page: "/products" });
+			for (let n = 0; n < 20 && out.text.includes('"state":"running"'); n++) out = await adminAct({ type: "block_action", action_id: `${prefix}_next`, page: "/products" });
+			const finished = out.text.includes('"state":"finished"');
+			const page = await adminAct({ type: "block_action", action_id: `${prefix}_done`, page: "/products" });
+			return { finished, text: page.text };
+		};
+		const all1 = await runAll("products_all");
 		const catalog = await visitor.go("/shop/catalog");
-		check("Add all adds every product the channel sells, and the catalog page lists them from EmDash", all1.text.includes("Added the last batch") && catalog.text.includes("Harbor tote, waxed") && !catalog.text.includes("CATALOG-EMPTY") && !catalog.text.includes("Pro plan"), `${all1.text.slice(0, 300)} ${catalog.text.slice(0, 200)}`);
+		check("Add all adds every product the channel sells, and the catalog page lists them from EmDash", all1.finished && all1.text.includes("products read") && catalog.text.includes("Harbor tote, waxed") && !catalog.text.includes("CATALOG-EMPTY") && !catalog.text.includes("Pro plan"), `${all1.text.slice(0, 300)} ${catalog.text.slice(0, 200)}`);
 		const pickManifest = await admin.go("/_emdash/api/manifest");
 		check("the Product block's catalog picker lists the entries", pickManifest.text.includes('"action_id":"pick"') && pickManifest.text.includes("harbor-tote"), (pickManifest.text.match(/"action_id":"pick".{0,300}/) ?? [""])[0]);
 		const productMap = await visitor.go("/sitemap-products.xml");
@@ -879,9 +890,9 @@ try {
 		const gone = toteGone.data?.item ?? toteGone.item ?? toteGone.data;
 		check("products/delete takes the entry off sale (draft) and keeps the story", hookDelete.text === "delisted" && gone?.status === "draft" && !gone?.data?.listed && JSON.stringify(gone?.data?.content ?? "").includes("STORY-OF-THE-TOTE"), `${hookDelete.text} ${gone?.status} listed=${JSON.stringify(gone?.data?.listed)}`);
 		shop.products["harbor-tote"] = { ...savedTote, title: "Harbor tote" };
-		const refreshed = await adminAct({ type: "block_action", action_id: "products_refresh", page: "/products" });
+		const refreshed = await runAll("products_refresh");
 		const toteBack = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
-		check("Refresh brings back a product Shopify sells again", refreshed.text.includes("back on sale") && (toteBack.data?.item ?? toteBack.item ?? toteBack.data)?.status === "published", refreshed.text.slice(0, 300));
+		check("Refresh brings back a product Shopify sells again", refreshed.finished && refreshed.text.includes("changed") && (toteBack.data?.item ?? toteBack.item ?? toteBack.data)?.status === "published", refreshed.text.slice(0, 300));
 	}
 } catch (e) {
 	failures++;

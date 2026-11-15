@@ -8,21 +8,17 @@ describe("admin pages", () => {
 		expect(redeemidPlugin({}).adminPages).toBe(PAGES);
 	});
 
-	it("open on Overview, then the day-to-day pages, then the store connection", () => {
-		expect(PAGES.map((p) => p.label)).toEqual(["Overview", "Members", "Products", "Access", "Reports", "Events", "Privacy", "Connection"]);
-		expect(PAGES.map((p) => p.path).sort()).toEqual(["/access", "/connection", "/events", "/members", "/overview", "/privacy", "/products", "/reports"]);
+	it("open on Overview, then the day-to-day pages, then the store connection and resources", () => {
+		expect(PAGES.map((p) => p.label)).toEqual(["Overview", "Customers", "Products", "Access", "Reports", "Events", "Privacy", "Connection", "Resources"]);
+		expect(PAGES.map((p) => p.path).sort()).toEqual(["/access", "/connection", "/customers", "/events", "/overview", "/privacy", "/products", "/reports", "/resources"]);
 	});
 
 	it("give each Connection and Events tab its own address", () => {
 		expect(TAB_PATHS).toEqual([
 			"/connection/status",
 			"/connection/store",
-			"/connection/sign-in",
-			"/connection/app",
+			"/connection/environment",
 			"/connection/webhooks",
-			"/connection/level",
-			"/connection/try",
-			"/connection/storefront",
 			"/events/webhook",
 			"/events/app",
 			"/events/health",

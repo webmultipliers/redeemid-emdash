@@ -10,6 +10,11 @@
  * - `redeemid_modal`: a button that opens a dialog holding blocks (a form).
  *   The dialog closes when its action comes back without an error.
  * - `redeemid_cards`: a grid of linked cards (title, a value, a line of text).
+ * - `redeemid_run`: a long job staff start by hand (runs.ts), with a progress
+ *   bar, Start, Stop and Continue. It asks the server for one batch at a
+ *   time, waiting between them, and only redraws itself until the job ends.
+ * - A `table` whose action cells hold a `redeemid_modal` (such as the code
+ *   button on a level) is drawn here too; a cell may hold several elements.
  *
  * `fields`, `stats`, `columns`, `tab` and `accordion` blocks are rendered here
  * too, so values wrap instead of being cut off, stat cards and columns wrap
@@ -18,9 +23,9 @@
  * Written without JSX so the site's bundler needs no JSX settings for it.
  */
 
-import { ClipboardText, Collapsible, Button, Input, LayerDialog, Loader, Tabs } from "@cloudflare/kumo";
+import { Badge, ClipboardText, Collapsible, Button, Input, LayerDialog, Loader, Tabs } from "@cloudflare/kumo";
 import { API_BASE, apiFetch, useNavigate } from "@emdash-cms/admin";
-import { BlockRenderer } from "@emdash-cms/blocks";
+import { BlockRenderer, formatRelativeTime, renderElement } from "@emdash-cms/blocks";
 import { createElement as h, Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { OVERVIEW, PAGES, TAB_PATHS } from "./descriptor.js";
@@ -57,10 +62,18 @@ export function linkHref(target: LinkTarget): string | null {
 	return null;
 }
 
-const CUSTOM = new Set(["redeemid_map", "redeemid_copy", "redeemid_modal", "redeemid_cards", "fields", "stats", "columns", "tab", "accordion"]);
+const CUSTOM = new Set(["redeemid_map", "redeemid_copy", "redeemid_modal", "redeemid_cards", "redeemid_run", "fields", "stats", "columns", "tab", "accordion"]);
+
+/** A table with one of our elements in a cell is drawn here; others go to EmDash. */
+const ownTable = (b: Block) =>
+	b.type === "table" &&
+	((b.rows as Array<Record<string, unknown>> | undefined) ?? []).some((r) => Object.values(r).some((v) => (Array.isArray(v) ? v : [v]).some((x) => typeof (x as Block | null)?.type === "string" && CUSTOM.has((x as Block).type))));
 
 interface Ctx {
+	/** Send an interaction; the page redraws from the answer. */
 	send: Send;
+	/** Send one without redrawing the page (a run's next batch). */
+	call: Send;
 }
 
 /** A list of blocks: ours here, the rest through EmDash's own renderer. */
@@ -70,7 +83,7 @@ function Blocks({ blocks, ctx }: { blocks: Block[]; ctx: Ctx }): ReactNode {
 		"div",
 		{ className: "flex flex-col gap-4" },
 		blocks.map((b, i) =>
-			h("div", { key: b.block_id ?? `${b.type}:${i}`, className: "min-w-0" }, CUSTOM.has(b.type) ? h(One, { block: b, ctx }) : h(BlockRenderer as never, { blocks: [b], onAction, resolveLinkTarget: linkHref })),
+			h("div", { key: b.block_id ?? `${b.type}:${i}`, className: "min-w-0" }, CUSTOM.has(b.type) || ownTable(b) ? h(One, { block: b, ctx }) : h(BlockRenderer as never, { blocks: [b], onAction, resolveLinkTarget: linkHref })),
 		),
 	);
 }
@@ -89,6 +102,10 @@ function One({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 			return h(Modal, { block, ctx });
 		case "redeemid_map":
 			return h(AccessMap, { block, ctx });
+		case "redeemid_run":
+			return h(RunBox, { block, ctx });
+		case "table":
+			return h(Table, { block, ctx });
 		case "columns": {
 			const cols = block.columns as Block[][];
 			return h(
@@ -485,7 +502,7 @@ function Accordion({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 
 /** A button that opens a dialog with blocks in it; an action that succeeds closes it. */
 function Modal({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
-	const trigger = block.trigger as { label: string; style?: "primary" | "secondary" } | undefined;
+	const trigger = block.trigger as { label: string; style?: "primary" | "secondary"; icon?: "code" } | undefined;
 	const [open, setOpen] = useState(Boolean(block.open));
 	// Each opening starts a fresh form; an error keeps the dialog and what was typed.
 	const [round, setRound] = useState(0);
@@ -501,6 +518,7 @@ function Modal({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 		if (block.open) setOpen(true);
 	}, [block.open]);
 	const inner: Ctx = {
+		call: ctx.call,
 		send: async (i) => {
 			setProblem(null);
 			const out = await ctx.send(i);
@@ -516,7 +534,11 @@ function Modal({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 	return h(
 		Fragment,
 		null,
-		trigger ? h(Button as never, { variant: trigger.style === "primary" ? "primary" : "secondary", onClick: () => show(true) }, trigger.label) : null,
+		trigger?.icon
+			? h(Button as never, { variant: "secondary", shape: "square", icon: CODE_ICON, "aria-label": trigger.label, title: trigger.label, onClick: () => show(true) })
+			: trigger
+				? h(Button as never, { variant: trigger.style === "primary" ? "primary" : "secondary", onClick: () => show(true) }, trigger.label)
+				: null,
 		h(
 			D.Root,
 			{ open, onOpenChange: show } as never,
@@ -533,6 +555,160 @@ function Modal({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 				),
 			),
 		),
+	);
+}
+
+/** Phosphor's "code" icon, drawn inline so the site needs no icon package. */
+const CODE_ICON = h(
+	"svg",
+	{ xmlns: "http://www.w3.org/2000/svg", width: 18, height: 18, viewBox: "0 0 256 256", fill: "currentColor", "aria-hidden": true },
+	h("path", { d: "M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z" }),
+);
+
+type Column = { key: string; label: string; format?: string };
+
+function cell(value: unknown, format?: string): ReactNode {
+	const str = value == null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
+	switch (format) {
+		case "badge":
+			return str ? h(Badge as never, null, str) : "";
+		case "relative_time":
+			return str ? formatRelativeTime(str) : "";
+		case "number": {
+			const n = Number(value);
+			return Number.isNaN(n) ? str : n.toLocaleString();
+		}
+		case "code":
+			return str ? h("code", { className: "rounded bg-kumo-tint px-1.5 py-0.5 font-mono text-sm" }, str) : "";
+	}
+	return str;
+}
+
+/** EmDash's table, drawn here so an action cell can hold our dialogs too. */
+function Table({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
+	const columns = block.columns as Column[];
+	const rows = (block.rows as Array<Record<string, unknown>>) ?? [];
+	const onAction = (i: Interaction) => void ctx.send(i);
+	if (!rows.length && block.empty_text) return h("p", { className: "py-4 text-center text-sm text-kumo-subtle" }, String(block.empty_text));
+	const element = (el: Block, i: number): ReactNode =>
+		el.type === "redeemid_modal" ? h(Modal, { key: i, block: el, ctx }) : h(Fragment, { key: i }, renderElement(el as never, onAction as never, undefined, linkHref as never));
+	return h(
+		"div",
+		{ className: "overflow-x-auto" },
+		h(
+			"table",
+			{ className: "w-full text-start text-sm" },
+			h("thead", null, h("tr", { className: "border-b border-kumo-line" }, columns.map((c) => h("th", { key: c.key, className: `px-3 py-2 text-start text-sm font-medium text-kumo-subtle${c.format === "element" ? " text-end" : ""}` }, c.label)))),
+			h(
+				"tbody",
+				null,
+				rows.map((r, n) =>
+					h(
+						"tr",
+						{ key: n, className: "border-b border-kumo-line last:border-0" },
+						columns.map((c) =>
+							h(
+								"td",
+								{ key: c.key, className: `px-3 py-2 text-kumo-default${c.format === "element" ? " text-end" : ""}` },
+								c.format === "element"
+									? r[c.key] == null
+										? null
+										: h("div", { className: "inline-flex items-center justify-end gap-2" }, (Array.isArray(r[c.key]) ? (r[c.key] as Block[]) : [r[c.key] as Block]).map(element))
+									: cell(r[c.key], c.format),
+							),
+						),
+					),
+				),
+			),
+		),
+	);
+}
+
+type RunInfo = {
+	block_id?: string;
+	title: string;
+	text: string;
+	state: "idle" | "running" | "paused" | "finished";
+	done: number;
+	total: number | null;
+	start_label: string;
+	confirm?: string;
+	pace_ms: number;
+	actions: { start: string; next: string; stop: string; done: string };
+};
+
+/**
+ * A long job staff start by hand (runs.ts). While it runs this asks for the
+ * next batch, waits pace_ms, and asks again; leaving the page pauses it.
+ * When it ends, the page reloads once to show the result.
+ */
+function RunBox({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
+	const [run, setRun] = useState(block as unknown as RunInfo);
+	const [asking, setAsking] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const now = useRef(run);
+	now.current = run;
+	useEffect(() => setRun(block as unknown as RunInfo), [block]);
+	// Leaving the page pauses a running job (Continue picks it up).
+	useEffect(
+		() => () => {
+			if (now.current.state === "running") void ctx.call({ type: "block_action", action_id: now.current.actions.stop, block_id: now.current.block_id });
+		},
+		[],
+	);
+	useEffect(() => {
+		if (run.state !== "running") return;
+		let gone = false;
+		const t = setTimeout(async () => {
+			const out = await ctx.call({ type: "block_action", action_id: run.actions.next, block_id: run.block_id });
+			if (gone) return;
+			const next = out?.blocks?.[0] as unknown as RunInfo | undefined;
+			if (!next || next.state === undefined) {
+				setRun({ ...run, state: "paused", text: "RedeemID didn't answer. Continue tries again." });
+				return;
+			}
+			setRun(next);
+			if (next.state === "finished") void ctx.send({ type: "block_action", action_id: run.actions.done, block_id: run.block_id });
+		}, run.pace_ms);
+		return () => {
+			gone = true;
+			clearTimeout(t);
+		};
+	}, [run]);
+	const act = async (action: string, value?: string) => {
+		setAsking(false);
+		setBusy(true);
+		const out = await ctx.call({ type: "block_action", action_id: action, block_id: run.block_id, value });
+		setBusy(false);
+		const next = out?.blocks?.[0] as unknown as RunInfo | undefined;
+		if (next?.state) {
+			setRun(next);
+			if (action === run.actions.stop) void ctx.send({ type: "block_action", action_id: run.actions.done, block_id: run.block_id });
+		}
+	};
+	const pct = run.total ? Math.min(100, Math.round((run.done / Math.max(1, run.total)) * 100)) : null;
+	const button = (label: string, onClick: () => void, variant: "primary" | "secondary" = "secondary") => h(Button as never, { key: label, variant, disabled: busy, onClick }, label);
+	const buttons =
+		run.state === "running"
+			? [button("Stop", () => void act(run.actions.stop))]
+			: run.state === "paused"
+				? [button("Continue", () => void act(run.actions.start, "resume"), "primary"), button("Start over", () => void act(run.actions.start, "new"))]
+				: asking
+					? [button("Start", () => void act(run.actions.start, "new"), "primary"), button("Cancel", () => setAsking(false))]
+					: [button(run.start_label, () => (run.confirm ? setAsking(true) : void act(run.actions.start, "new")), run.state === "finished" ? "secondary" : "primary")];
+	return h(
+		"section",
+		{ className: "flex flex-col gap-3 rounded-lg border border-kumo-line p-4", "aria-label": run.title },
+		h("div", { className: "font-semibold text-kumo-default" }, run.title),
+		run.state === "running" || run.state === "paused"
+			? h(
+					"div",
+					{ role: "progressbar", "aria-label": run.title, "aria-valuemin": 0, ...(run.total !== null ? { "aria-valuemax": run.total, "aria-valuenow": run.done } : { "aria-valuetext": `${run.done} so far` }), className: "h-2 w-full overflow-hidden rounded-full bg-kumo-tint" },
+					h("div", { className: "h-full bg-kumo-brand transition-all", style: { width: pct !== null ? `${pct}%` : "100%", opacity: pct !== null ? 1 : 0.35, background: "var(--color-kumo-brand, #2563eb)" } }),
+				)
+			: null,
+		h("p", { className: "text-sm text-kumo-subtle", "aria-live": "polite" }, asking && run.confirm ? run.confirm : run.text),
+		h("div", { className: "flex flex-wrap gap-2" }, buttons),
 	);
 }
 
@@ -588,6 +764,23 @@ function Page({ page }: { page: string }): ReactNode {
 		[page],
 	);
 
+	// For a run's batches: no spinner, no redraw, just the answer.
+	const call: Send = useCallback(
+		async (interaction) => {
+			try {
+				const res = await apiFetch(`${API_BASE}/plugins/${PLUGIN}/admin`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ ...interaction, page }),
+				});
+				return res.ok ? ((await res.json()) as { data: Response }).data : null;
+			} catch {
+				return null;
+			}
+		},
+		[page],
+	);
+
 	useEffect(() => {
 		void send({ type: "page_load", page });
 		return () => {
@@ -621,7 +814,7 @@ function Page({ page }: { page: string }): ReactNode {
 					toast.message,
 				)
 			: null,
-		h("div", { "aria-busy": pending || undefined, className: pending ? "opacity-60 transition-opacity" : "transition-opacity" }, h(Blocks, { blocks, ctx: { send } })),
+		h("div", { "aria-busy": pending || undefined, className: pending ? "opacity-60 transition-opacity" : "transition-opacity" }, h(Blocks, { blocks, ctx: { send, call } })),
 		h("span", { role: "status", className: "sr-only" }, pending ? "Updating" : ""),
 	);
 }

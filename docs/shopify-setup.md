@@ -2,7 +2,7 @@
 
 What to set up in Shopify, and on the site, to run RedeemID on an EmDash site. One store can serve several sites: each site gets its own Headless storefront for sign-in, and each receives webhooks.
 
-Once the package is installed, **Plugins → RedeemID → Connection** in the EmDash admin walks through these same steps, one tab each, with your site's own addresses filled in, checks each one, and registers the webhooks for you.
+Once the package is installed, **Plugins → RedeemID → Connection** in the EmDash admin walks through these same steps: Status checks each one, Store has your site's own addresses filled in and the scopes the app holds, and Webhooks registers the webhooks for you.
 
 ## 1. Sign-in: a Headless storefront
 
@@ -25,13 +25,13 @@ The store must use the new customer accounts (Settings → Customer accounts). C
 
 ## 2. The Admin API app and webhooks
 
-RedeemID uses an Admin API app on the store (for example a Dev Dashboard app) for the staff tools, resyncs, tag edits and member lookups, and to register the webhooks that keep tags and status current. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret. On Connection these are two tabs: **Admin app**, then **Webhooks**.
+RedeemID uses an Admin API app on the store (for example a Dev Dashboard app) for the staff tools, resyncs, tag edits and customer lookups, and to register the webhooks that keep tags and status current. Shopify signs every webhook with that app's **client secret**, which is the site's webhook secret. On Connection the app is set up on **Store**, which lists each scope and whether the app holds it, and the webhooks on **Webhooks**.
 
-Give the app the `read_customers` and `write_customers` Admin API scopes (`write_customers` alone is enough, since a write scope includes its read scope), plus `read_customer_merge` for `customers/merge`, and set its **client ID** on the site as well. Then Connection → Webhooks registers these topics at `https://<site>/_emdash/api/auth/redeemid/webhook` with one button:
+Give the app the `read_customers` and `write_customers` Admin API scopes (`write_customers` alone is enough, since a write scope includes its read scope), plus `read_customer_merge` for `customers/merge`, and set its **client ID** on the site as well. Then Connection → Webhooks registers these topics with one button, pointed at the site by RedeemID itself:
 
 `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added`, `customer.tags_removed`
 
-Without the client ID, subscribe them to that URL yourself. If the app already sends webhooks to another site, add this URL as extra subscriptions. Subscriptions set in the app's own configuration (its Dev Dashboard version or `shopify.app.toml`) don't show in the Admin API, so Connection → Webhooks counts each of those topics as sent once a delivery of it arrives.
+If the app already sends webhooks to another site, these are added as extra subscriptions for this one. Subscriptions set in the app's own configuration (its Dev Dashboard version or `shopify.app.toml`) don't show in the Admin API, so Connection → Webhooks counts each of those topics as sent once a delivery of it arrives.
 
 The client ID and those scopes also run the staff tools (member resync and tag edits written to Shopify), member preferences, and the reads that keep tags in order (see [staff tools](staff.md#staff-tools)). RedeemID uses the client credentials grant, which works when the app and the store are in the same Shopify organization. For the **Also request erasure in Shopify** button on a member's page, add the optional `write_customer_data_erasure` scope.
 

@@ -3,8 +3,8 @@
  *
  * - Webhooks: what Shopify sent and what became of it (Events → Webhook),
  *   whether deliveries are flowing (Events → Health: the daily check, rejected
- *   and failed deliveries, and when to warn staff by email), and where Shopify
- *   sends them (Connection → Webhooks: endpoint, signatures, subscriptions).
+ *   and failed deliveries, and when to warn staff by email), and the app's
+ *   subscriptions (Connection → Webhooks).
  * - App events (Events → App): the log in log.ts, newest first, by event or
  *   problems only.
  * - Reports: members by level, who joined and left, sign-ins and metered reads.
@@ -172,7 +172,7 @@ async function alert(env_: MonitorEnv, settings: MonitorSettings, result: Health
 				"",
 				...result.problems.map((p) => `- ${p.text}`),
 				"",
-				"Members gain and lose access only when Shopify sends tag changes, so these are worth a look: Plugins → RedeemID → Webhooks.",
+				"Customers gain and lose access only when Shopify sends tag changes, so these are worth a look: Plugins → RedeemID → Events.",
 			].join("\n"),
 		});
 		await env_.kv.set(KEY_ALERTED, { sig, at: now });
@@ -212,7 +212,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
  * The webhook parts of the admin: deliveries and their health (Events →
  * Webhook and Health) and the app's subscriptions (Connection → Webhooks).
  */
-export async function webhookPanels(env_: MonitorEnv, cursor?: string): Promise<{ received: unknown[]; health: unknown[]; subscriptions: unknown[]; attention: boolean }> {
+export async function webhookPanels(env_: MonitorEnv, cursor?: string, back: string[] = []): Promise<{ received: unknown[]; health: unknown[]; subscriptions: unknown[]; attention: boolean }> {
 	const { s, kv } = env_;
 	const now = env_.now?.() ?? Date.now();
 	const month = since(now, LOG_DAYS);
@@ -238,7 +238,6 @@ export async function webhookPanels(env_: MonitorEnv, cursor?: string): Promise<
 				{ label: "Failed", value: String(failed), ...(failed ? { trend: "down" } : {}) },
 			],
 		},
-		...(cursor ? [{ type: "actions", elements: [{ type: "button", action_id: "deliveries_page", value: "", label: "Back to the newest", style: "secondary" }] }] : []),
 		{
 			type: "table",
 			page_action_id: "deliveries_page",
@@ -255,14 +254,14 @@ export async function webhookPanels(env_: MonitorEnv, cursor?: string): Promise<
 				customer: d.customerId ?? "",
 				at: d.receivedAt,
 			})),
-			...(page.cursor ? { next_cursor: page.cursor } : {}),
 		},
+		...pager("deliveries_page", { cursor, back, next: page.cursor }),
 	];
 
 	const healthTab = [
 		{
 			type: "context",
-			text: "Members gain and lose access only when Shopify sends tag changes. Once a day RedeemID checks that the subscriptions are still in place (registering again any Shopify dropped), that deliveries are coming in, and that none were turned away or failed.",
+			text: "Customers gain and lose access only when Shopify sends tag changes. Once a day RedeemID checks that the subscriptions are still in place (registering again any Shopify dropped), that deliveries are coming in, and that none were turned away or failed.",
 		},
 		check === null
 			? { type: "banner", variant: "default", title: "Not checked yet", description: "Check now, or wait for the daily check." }
@@ -306,16 +305,13 @@ export async function webhookPanels(env_: MonitorEnv, cursor?: string): Promise<
 	];
 
 	const subscriptions = [
-		{ type: "context", text: "Where Shopify sends deliveries, how they're checked, and the app's webhook subscriptions." },
-		{ type: "section", text: `Endpoint: ${env_.uri}` },
 		{
-			type: "section",
+			type: "context",
 			text: env(ENV.webhookSecret)
-				? "Signatures: checked with the Admin API app's client secret."
-				: `Signatures: the Admin API app's client secret (${ENV.webhookSecret}) is missing, so every delivery is turned away.`,
+				? "The app's webhook subscriptions for this site. Each delivery's signature is checked with the Admin API app's client secret."
+				: `The app's webhook subscriptions for this site. The Admin API app's client secret (${ENV.webhookSecret}) is missing, so every delivery is turned away.`,
 		},
 		...(await webhooksSection(env_.config, env_.uri)),
-		{ type: "context", text: "customers/redact, customers/data_request and shop/redact are set in the app's compliance webhooks, not here." },
 	];
 
 	return { received: receivedTab, health: healthTab, subscriptions, attention };
@@ -354,7 +350,7 @@ export interface EventFilter {
 	problems?: boolean;
 }
 
-/** A filter carried in the table's block id, so Load more keeps it. */
+/** A filter carried in the table's block id and the pager's buttons, so paging keeps it. */
 export function filterId(f: EventFilter): string {
 	return `events:${f.event ?? ""}:${f.problems ? 1 : 0}`;
 }
@@ -364,12 +360,41 @@ export function parseFilter(raw: unknown): EventFilter {
 	return { ...(event ? { event } : {}), problems: problems === "1" };
 }
 
-export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: string, toast?: Toast): Promise<Blocks> {
+/** App events per page. */
+export const EVENTS_PAGE = 25;
+
+/** Where a pager button goes: that page's cursor, the cursors of the pages before it, and the filter. */
+export interface PagerValue {
+	cursor?: string;
+	back?: string[];
+	filter?: string;
+}
+
+/**
+ * Previous, "Page N" and Next under a table. `back` holds the cursor of each
+ * earlier page ("" for the first), so Previous needs nothing stored. Pure.
+ */
+export function pager(action: string, at: { cursor?: string; back?: string[]; next?: string; filter?: string; size?: number }): unknown[] {
+	const back = at.back ?? [];
+	if (!at.cursor && !at.next) return [];
+	return [
+		{
+			type: "actions",
+			elements: [
+				...(at.cursor ? [{ type: "button", action_id: action, label: "Previous", style: "secondary", value: { cursor: back.at(-1) ?? "", back: back.slice(0, -1), filter: at.filter } satisfies PagerValue }] : []),
+				...(at.next ? [{ type: "button", action_id: action, label: "Next", style: "secondary", value: { cursor: at.next, back: [...back, at.cursor ?? ""], filter: at.filter } satisfies PagerValue }] : []),
+			],
+		},
+		{ type: "context", text: `Page ${back.length + 1}, ${at.size ?? EVENTS_PAGE} per page, newest first.` },
+	];
+}
+
+export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: string, toast?: Toast, back: string[] = []): Promise<Blocks> {
 	if (!cursor) await tidy(s);
 	const where: Record<string, unknown> = {};
 	if (filter.event && filter.event in LOG_EVENTS) where.event = filter.event;
 	if (filter.problems) where.level = { in: ["warn", "error"] };
-	const page = await s.log.query({ where: where as never, orderBy: { at: "desc" }, limit: 50, ...(cursor ? { cursor } : {}) });
+	const page = await s.log.query({ where: where as never, orderBy: { at: "desc" }, limit: EVENTS_PAGE, ...(cursor ? { cursor } : {}) });
 	const failed = cursor ? null : await s.failedEvents.query({ orderBy: { at: "desc" }, limit: 50 }).catch(() => null);
 	return {
 		blocks: [
@@ -393,7 +418,6 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 				],
 				submit: { label: "Show", action_id: "events_filter" },
 			},
-			...(cursor ? [{ type: "actions", elements: [{ type: "button", action_id: "events_show", value: filter.event ?? "", label: "Back to the newest", style: "secondary" }] }] : []),
 			{
 				type: "table",
 				block_id: filterId(filter),
@@ -409,8 +433,8 @@ export async function eventsPage(s: Stores, filter: EventFilter = {}, cursor?: s
 					{ key: "note", label: "Note" },
 				],
 				rows: page.items.map(({ data }) => eventRow(data)),
-				...(page.cursor ? { next_cursor: page.cursor } : {}),
 			},
+			...pager("events_page", { cursor, back, next: page.cursor, filter: filterId(filter) }),
 		],
 		...(toast ? { toast } : {}),
 	};
@@ -546,7 +570,7 @@ export async function reportsPage(config: RedeemIDConfig, s: Stores, now = Date.
 			{ type: "header", text: "Reports" },
 			{
 				type: "context",
-				text: "A level is joined or left when Shopify adds or removes its tag. Counts come from each member's tag dates; sign-ins and metered reads from Events → App (kept 30 days).",
+				text: "A level is joined or left when Shopify adds or removes its tag. Counts come from each customer's tag dates; sign-ins and metered reads from Events → App (kept 30 days).",
 			},
 			{
 				type: "stats",
@@ -590,7 +614,7 @@ export async function reportsPage(config: RedeemIDConfig, s: Stores, now = Date.
 						page_action_id: "reports_levels",
 						columns: [
 							{ key: "level", label: "Level" },
-							{ key: "members", label: "Members", format: "number" },
+							{ key: "members", label: "Customers", format: "number" },
 							{ key: "joined", label: "Joined (30 days)", format: "number" },
 							{ key: "left", label: "Left (30 days)", format: "number" },
 						],

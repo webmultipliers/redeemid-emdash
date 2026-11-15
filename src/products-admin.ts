@@ -7,6 +7,7 @@
 import { adminConfigured, PRODUCT_TOPICS, registerWebhooks, topicName, webhookSubscriptions } from "./admin-api.js";
 import type { RedeemIDConfig } from "./config.js";
 import { record } from "./log.js";
+import { loadRun, runActions, runBlock, runText, startRun, stepRun, stopRun, type RunLabels } from "./runs.js";
 import {
 	addAllPage,
 	addProducts,
@@ -37,16 +38,28 @@ export interface ProductsEnv {
 	fetcher?: typeof fetch;
 }
 
-/** Where "Add all" stands: Shopify's cursor and what it has done so far. */
-interface ImportState {
-	after: string | null;
-	done: number;
-	finished: boolean;
-	at: string;
-}
-
-const IMPORT_KEY = "products:import";
-const ACTIONS = new Set(["products_find", "products_add", "products_add_one", "products_all", "products_all_restart", "products_refresh", "products_webhooks"]);
+/** "Add all" and "Refresh all": long jobs run a batch at a time (runs.ts). */
+const IMPORT: RunLabels = {
+	title: "Add every product from Shopify",
+	about: `Adds every product Shopify sells on this site's channel as a published entry, ${PRODUCTS_BATCH} at a time with a pause between. Products already here are updated. Leave this page open while it runs; if you leave, it pauses and Continue picks up where it stopped.`,
+	noun: "products",
+	start: "Add all from Shopify",
+	verb: "read",
+	prefix: "products_all",
+	confirm: "Each product Shopify sells on this site's channel becomes a published entry here. Start?",
+};
+const REFRESH: RunLabels = {
+	title: "Refresh every product from Shopify",
+	about: `Reads every product entry from Shopify again, ${PRODUCTS_BATCH} at a time with a pause between. Nothing refreshes on a schedule: webhooks keep entries current, and this catches up after missed ones.`,
+	noun: "products",
+	start: "Refresh all from Shopify",
+	verb: "read",
+	missing: "off the store",
+	prefix: "products_refresh",
+};
+const IMPORT_JOB = "products-import";
+const REFRESH_JOB = "products-refresh";
+const ACTIONS = new Set(["products_find", "products_add", "products_add_one", "products_webhooks", ...runActions(IMPORT.prefix), ...runActions(REFRESH.prefix)]);
 
 export const isProductsAction = (id: unknown): boolean => typeof id === "string" && ACTIONS.has(id);
 
@@ -82,7 +95,7 @@ export async function productsPage(env: ProductsEnv, toast?: Toast, found?: { qu
 		};
 	}
 	const store = contentEntries(env.db, collection);
-	const [counts, entries, state, hooks] = await Promise.all([store.counts(), store.list(50), env.kv.get<ImportState>(IMPORT_KEY), productHooks(env)]);
+	const [counts, entries, imported, refreshed, hooks] = await Promise.all([store.counts(), store.list(50), loadRun(env.kv, IMPORT_JOB), loadRun(env.kv, REFRESH_JOB), productHooks(env)]);
 	const blocks: unknown[] = [...head];
 	if (schema.revisions) {
 		blocks.push({ type: "banner", variant: "default", title: "This collection keeps revisions", description: "Shopify's fields are written to the live entry. Publishing an older draft can bring back old prices until the next refresh, so keep the products collection without revisions." });
@@ -107,33 +120,7 @@ export async function productsPage(env: ProductsEnv, toast?: Toast, found?: { qu
 		},
 	);
 	if (found) blocks.push(...results(found, entries));
-	const importText = state?.finished
-		? `Every product Shopify sells here has been added (${state.done}). Run it again to pick up new ones.`
-		: state?.after
-			? `Added ${state.done} so far. Each click reads the next ${PRODUCTS_BATCH}.`
-			: `Adds every product Shopify sells on this site's channel, ${PRODUCTS_BATCH} per click. You can stop and carry on later.`;
-	blocks.push(
-		{ type: "context", text: importText },
-		{
-			type: "actions",
-			elements: [
-				{
-					type: "button",
-					action_id: state?.finished ? "products_all_restart" : "products_all",
-					label: state?.after && !state.finished ? `Add the next ${PRODUCTS_BATCH}` : "Add all from Shopify",
-					style: "secondary",
-					confirm: { title: "Add products from Shopify?", text: `Reads the next ${PRODUCTS_BATCH} products from Shopify and adds each one as a published entry. Products already here are updated.`, confirm: "Add", deny: "Cancel" },
-				},
-				{
-					type: "button",
-					action_id: "products_refresh",
-					label: `Refresh ${PRODUCTS_BATCH} from Shopify`,
-					style: "secondary",
-				},
-			],
-		},
-		{ type: "context", text: `Refresh reads the ${PRODUCTS_BATCH} products read longest ago again. Nothing refreshes on a schedule: webhooks keep entries current, and this catches up after a missed one.` },
-	);
+	blocks.push(runBlock(imported, IMPORT), runBlock(refreshed, REFRESH));
 	blocks.push({ type: "header", text: "In the catalog" });
 	if (!entries.length) blocks.push({ type: "context", text: "No products yet. Search above, or add them all." });
 	else
@@ -233,19 +220,46 @@ export async function productsAction(env: ProductsEnv, i: { action_id?: string; 
 				const handles = String(i.value ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 				return added(env, i.action_id === "products_add_one" ? "Done" : "Added", await addProducts(env.config, store, handles, opts));
 			}
-			case "products_all_restart":
-			case "products_all": {
-				const before = i.action_id === "products_all_restart" ? null : await env.kv.get<ImportState>(IMPORT_KEY);
-				const r = await addAllPage(env.config, store, before?.after ?? null, opts);
-				const done = (before?.done ?? 0) + Object.entries(r.counts).reduce((n, [k, v]) => (k === "failed" ? n : n + (v ?? 0)), 0);
-				await env.kv.set(IMPORT_KEY, { after: r.next, done, finished: !r.next, at: new Date().toISOString() } satisfies ImportState);
-				await record({ event: "staff.products", label: "add all", status: describeBatch(r), level: r.counts.failed ? "warn" : "ok", origin: "staff" });
-				return productsPage(env, batchToast(r.next ? "Added the next batch" : "Added the last batch", r));
-			}
-			case "products_refresh": {
-				const r = await refreshOldest(env.config, store, opts);
-				await record({ event: "staff.products", label: "refresh", status: describeBatch(r), level: r.counts.failed ? "warn" : "ok", origin: "staff" });
-				return productsPage(env, batchToast("Refreshed", r));
+			case "products_all_start":
+				return { blocks: [runBlock(await startRun(env.kv, IMPORT_JOB, i.value === "resume" ? "resume" : "new", async () => null), IMPORT)] };
+			case "products_all_next":
+				return {
+					blocks: [
+						runBlock(
+							await stepRun(env.kv, IMPORT_JOB, async (run) => {
+								const r = await addAllPage(env.config, store, (run.cursor as string | null | undefined) ?? null, opts);
+								const n = Object.values(r.counts).reduce((a, b) => a + (b ?? 0), 0);
+								return { read: n, changed: (r.counts.added ?? 0) + (r.counts.updated ?? 0), failed: r.counts.failed ?? 0, cursor: r.next, finished: !r.next };
+							}),
+							IMPORT,
+						),
+					],
+				};
+			case "products_refresh_start":
+				return { blocks: [runBlock(await startRun(env.kv, REFRESH_JOB, i.value === "resume" ? "resume" : "new", async () => (await store.counts()).total), REFRESH)] };
+			case "products_refresh_next":
+				return {
+					blocks: [
+						runBlock(
+							await stepRun(env.kv, REFRESH_JOB, async (run) => {
+								const r = await refreshOldest(env.config, store, opts, run.startedAt);
+								const n = Object.values(r.counts).reduce((a, b) => a + (b ?? 0), 0);
+								return { read: n, changed: (r.counts.updated ?? 0) + (r.counts.relisted ?? 0), missing: r.counts.delisted ?? 0, failed: r.counts.failed ?? 0 };
+							}),
+							REFRESH,
+						),
+					],
+				};
+			case "products_all_stop":
+				return { blocks: [runBlock(await stopRun(env.kv, IMPORT_JOB), IMPORT)] };
+			case "products_refresh_stop":
+				return { blocks: [runBlock(await stopRun(env.kv, REFRESH_JOB), REFRESH)] };
+			case "products_all_done":
+			case "products_refresh_done": {
+				const all = i.action_id === "products_all_done";
+				const run = await loadRun(env.kv, all ? IMPORT_JOB : REFRESH_JOB);
+				if (run?.state === "finished") await record({ event: "staff.products", label: all ? "add all" : "refresh all", status: runText(run, all ? IMPORT : REFRESH), level: run.failed ? "warn" : "ok", origin: "staff" });
+				return productsPage(env, run ? { type: run.state === "finished" ? "success" : "info", message: runText(run, all ? IMPORT : REFRESH) } : undefined);
 			}
 			case "products_webhooks": {
 				const { added: on, failed } = await registerWebhooks(env.config, env.webhookUri, env.fetcher, PRODUCT_TOPICS);

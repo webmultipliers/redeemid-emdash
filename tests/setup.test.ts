@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENV } from "../src/config.js";
 import { grantedScopes, resetAdminToken, WEBHOOK_TOPICS } from "../src/admin-api.js";
-import { nextStep, requiredSteps, setupFacts, setupPanels, setupSteps, WEBHOOK, type SetupFacts } from "../src/setup.js";
+import { nextStep, requiredSteps, scopesTable, setupFacts, setupSteps, statusCards, storeTab, WEBHOOK, webhooksStep, type SetupFacts } from "../src/setup.js";
 import { memoryStores } from "./memory-store.js";
 
 const blank: SetupFacts = {
@@ -32,7 +32,7 @@ const ready: SetupFacts = {
 	levels: [{ name: "Members", tags: ["member"] }],
 };
 const state = (f: SetupFacts) => Object.fromEntries(setupSteps(f).map((s) => [s.key, s.state]));
-const text = (f: SetupFacts) => JSON.stringify(setupPanels(f));
+const text = (f: SetupFacts) => JSON.stringify([statusCards(f), storeTab(f), webhooksStep(f)]);
 
 describe("setup steps", () => {
 	it("a fresh site starts at the store, with the rest waiting", () => {
@@ -83,7 +83,7 @@ describe("setup steps", () => {
 		const t = text(ready);
 		expect(state(ready).try).toBe("todo");
 		expect(t).toContain("/_emdash/api/auth/redeemid/login?return=%2F");
-		expect(t).toContain('tag \\"member\\"');
+		expect(t).toContain('test customer \\"member\\"');
 	});
 
 	it("a signed-in member finishes setup; Storefront stays optional", () => {
@@ -91,7 +91,24 @@ describe("setup steps", () => {
 		expect(state(f).try).toBe("done");
 		expect(nextStep(f)).toBeNull();
 		expect(text(f)).toContain("Optional");
-		expect(setupPanels(f).map((p) => p.label)).toEqual(["Store ✓", "Sign-in ✓", "Admin app ✓", "Webhooks ✓", "First level ✓", "Try it ✓", "Storefront"]);
+		const cards = (statusCards(f) as { items: Array<{ value: string }> }).items.map((c) => c.value);
+		expect(cards).toEqual(["Done", "Done", "Done", "Done", "Done", "Done", "Optional"]);
+	});
+
+	it("lists each scope with whether the app holds it; read_products only with product entries", () => {
+		const rows = (f: SetupFacts) => (scopesTable(f) as { rows: Array<{ scope: string; granted: string }> }).rows;
+		expect(rows({ ...ready, scopes: ["read_customers"] }).map((r) => [r.scope, r.granted])).toEqual([
+			["read_customers", "Granted"],
+			["write_customers", "Missing"],
+			["read_customer_merge", "Missing"],
+		]);
+		expect(rows({ ...ready, products: true }).map((r) => r.scope)).toContain("read_products");
+		expect(rows({ ...blank }).every((r) => r.granted === "Not checked")).toBe(true);
+	});
+
+	it("never asks staff to type the webhook endpoint", () => {
+		const t = JSON.stringify([storeTab(ready), webhooksStep({ ...ready, webhooksMissing: ["CUSTOMERS_MERGE"] })]);
+		expect(t).not.toContain(WEBHOOK);
 	});
 
 	it("counts the required steps only", () => {
