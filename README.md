@@ -8,7 +8,7 @@ Shopify commerce for [EmDash](https://github.com/emdash-cms/emdash) sites: a sto
 
 Shopify keeps the store, checkout, orders, subscriptions and customer accounts. EmDash keeps the content. RedeemID joins them: shoppers browse products and fill a cart on your EmDash site, check out with Shopify, and sign in with the store's own customer account. What a reader can read comes from their Shopify customer tags, so there is one source of truth for who paid for what.
 
-![The RedeemID Access page in the EmDash admin: three levels, Member, Pro and Gold, each mapped to Shopify customer tags, with Gold including Pro](.github/images/access-levels.png)
+![The RedeemID Access page in the EmDash admin, on its Map tab: readers on the left (Everyone, Signed in, and the Member, Pro and Gold levels with how many hold each), what they get on the right, and lines from the picked Member level to the terms it opens](.github/images/access-map.png)
 
 > **Status: early (0.0.x).** Runs on Node and Cloudflare Workers. Unit tests and an end-to-end test that boots a real EmDash site against a fake Shopify store cover every feature. Expect changes before 1.0.
 
@@ -27,13 +27,13 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 - **For shoppers:** product pages with options, subscriptions and Product structured data, a product sitemap, collections with Shopify's filters and sorting, product search, recommendations, a cart page and cart drawer, discount codes, local prices by market, and a checkout that opens signed in for members. It all works without JavaScript.
 - **For members:** sign in, Account and Sign out without ever seeing the word "Shopify"; a member card with levels, renewal and end dates; preferences saved on their customer record; download or delete what the site keeps about them.
 - **For editors:** Paywall break, Members only, Sold on its own, Plan, Product, Collection, Product search, Contribution and Preferences blocks; an Access panel on every entry; teasers, a monthly or weekly meter, drip, badges and protected file downloads.
-- **For staff:** an Overview, then Members, Access (with Map and Test tabs), Reports, Events (Webhook, App and Health tabs), Privacy and Connection (Status, then a tab per setup step) in the EmDash admin, and a dashboard card. New content types and taxonomies appear on their own, so access never needs a code change.
+- **For staff:** an Overview, then Members, Access (Map, Levels, Features, Rules, Terms, Files and Test), Reports, Events (Webhook, App and Health tabs), Privacy and Connection (Status, then a tab per setup step) in the EmDash admin, and a dashboard card. New content types and taxonomies appear on their own, so access never needs a code change.
 - **For developers:** Astro components for every piece, `canRead()` and friends for your own code, a storefront from the Storefront API with a cart and a signed-in checkout, a browser client with analytics events, signed outbound events, MCP tools for AI agents and a `redeemid-emdash` command.
 
 ## Requirements
 
-- EmDash 1.1 or later with Astro 6 or later, on Node or Cloudflare Workers (the Workers free plan is enough).
-- A Shopify store with the new customer accounts, the Headless sales channel, and a Shopify app on the store to send webhooks.
+- EmDash 1.4 or later with Astro 6 or later, on Node or Cloudflare Workers (the Workers free plan is enough).
+- A Shopify store with the new customer accounts, the Headless sales channel, and an Admin API app on the store (staff tools, resyncs, tag edits, and registering and signing webhooks).
 - HTTPS. Shopify only accepts `https` callback URIs, so a local site needs a tunnel to sign in for real.
 
 ## Quick start

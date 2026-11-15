@@ -35,8 +35,8 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 | --- | --- | --- |
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID` | Sign-in | Client ID of the Headless storefront's Customer Account API client |
 | `REDEEMID_SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET` | Sign-in, confidential clients | Its client secret. Leave unset for a public client. |
-| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET` | Webhooks | Client secret of the app that sends the webhooks. Shopify signs each webhook with it. |
-| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` | Webhook registration, staff tools, preferences, membership dates, Shopify erasure requests | Client ID of that same app. Optional, but most of the admin needs it. |
+| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_SECRET` | Webhooks | Client secret of the Admin API app. Shopify signs each webhook with it. |
+| `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` | Webhook registration, staff tools, preferences, membership dates, Shopify erasure requests | Client ID of the same Admin API app. Optional, but most of the admin needs it, and Connection's Admin app step isn't done without it. |
 | `REDEEMID_SHOPIFY_STOREFRONT_PRIVATE_TOKEN` | Plans, shop, checkout | Storefront API private access token, used server-side. Optional if the site sells nothing. |
 | `REDEEMID_SHOPIFY_STOREFRONT_PUBLIC_TOKEN` | Plans, shop, checkout | Public access token, only used without the private one |
 | `REDEEMID_SHOPIFY_STORE_DOMAIN` | Discovery | The store's domain, only when `shop` isn't in the config |
@@ -101,6 +101,7 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | `@redeemid/emdash/catalog` | `searchProducts()`, `collectionPage()`, `suggest()`, `recommendations()`, `productSitemap()` |
 | `@redeemid/emdash/events` | `signBody(body, secret)`, the signature a receiver checks against `X-RedeemID-Signature` |
 | `@redeemid/emdash/text` | `STRINGS`, the list of every replaceable string |
+| `@redeemid/emdash/cache` | `cacheEntry()`, `cachePage()`, `noRouteCache()` and `CACHE_TAG`, for Astro's route cache (see [caching](production.md#caching)) |
 | `@redeemid/emdash/search` | `readableResults()`, for a search page that calls EmDash's `search()` |
 | `@redeemid/emdash/contract` | The stable API as a list, and `API_VERSION` |
 
