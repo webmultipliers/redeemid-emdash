@@ -24,6 +24,7 @@ export const OVERVIEW = "/overview";
 export const PAGES = [
 	{ path: OVERVIEW, label: "Overview", icon: "identification-card", group: GROUP },
 	{ path: "/members", label: "Members", icon: "users", group: GROUP },
+	{ path: "/products", label: "Products", icon: "storefront", group: GROUP },
 	{ path: "/access", label: "Access", icon: "lock", group: GROUP },
 	{ path: "/reports", label: "Reports", icon: "chart", group: GROUP },
 	{ path: "/events", label: "Events", icon: "pulse", group: GROUP },

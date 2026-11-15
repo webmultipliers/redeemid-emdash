@@ -2,7 +2,7 @@
 
 ## Shop
 
-Products, collections, search and the cart come from the Storefront API. Shopify works out prices, discounts, taxes and stock, and runs checkout. EmDash has no Shopify plugin underneath, so these components are the storefront.
+Products, collections, search and the cart come from the Storefront API. To also keep picked products as EmDash entries (for EmDash search, menus, links from posts and stories), see [product entries](products.md). Shopify works out prices, discounts, taxes and stock, and runs checkout. EmDash has no Shopify plugin underneath, so these components are the storefront.
 
 ```astro
 <!-- layout, once -->
@@ -53,7 +53,7 @@ const description = p?.seo?.description || p?.description.slice(0, 160);
 ---
 ```
 
-EmDash's sitemap lists content entries only, so add one for products. `productSitemap()` lists every product the Headless channel sells (up to 5,000), newest change first, linked with the same pattern as the cards:
+EmDash's sitemap lists content entries only, so add one for products. `productSitemap()` lists every product the Headless channel sells (up to 5,000), newest change first, linked with the same pattern as the cards. With [product entries](products.md), EmDash's sitemap already lists the products you keep, so pass `exclude: await catalogHandles(locals)` and this one lists only the rest:
 
 ```ts
 // src/pages/sitemap-products.xml.ts

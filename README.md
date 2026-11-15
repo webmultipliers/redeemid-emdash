@@ -24,10 +24,10 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 ## Features
 
-- **For shoppers:** product pages with options, subscriptions and Product structured data, a product sitemap, collections with Shopify's filters and sorting, product search, recommendations, a cart page and cart drawer, discount codes, local prices by market, and a checkout that opens signed in for members. It all works without JavaScript.
+- **For shoppers:** product pages with options, subscriptions and Product structured data, product entries (the Shopify products you pick, kept as EmDash content for search, menus and stories), a product sitemap, collections with Shopify's filters and sorting, product search, recommendations, a cart page and cart drawer, discount codes, local prices by market, and a checkout that opens signed in for members. It all works without JavaScript.
 - **For members:** sign in, Account and Sign out without ever seeing the word "Shopify"; a member card with levels, renewal and end dates; preferences saved on their customer record; download or delete what the site keeps about them.
 - **For editors:** Paywall break, Members only, Sold on its own, Plan, Product, Collection, Product search, Contribution and Preferences blocks; an Access panel on every entry; teasers, a monthly or weekly meter, drip, badges and protected file downloads.
-- **For staff:** an Overview, then Members, Access (Map, Levels, Features, Rules, Terms, Files and Test), Reports, Events (Webhook, App and Health tabs), Privacy and Connection (Status, then a tab per setup step) in the EmDash admin, and a dashboard card. New content types and taxonomies appear on their own, so access never needs a code change.
+- **For staff:** an Overview, then Members, Products, Access (Map, Levels, Features, Rules, Terms, Files and Test), Reports, Events (Webhook, App and Health tabs), Privacy and Connection (Status, then a tab per setup step) in the EmDash admin, and a dashboard card. New content types and taxonomies appear on their own, so access never needs a code change.
 - **For developers:** Astro components for every piece, `canRead()` and friends for your own code, a storefront from the Storefront API with a cart and a signed-in checkout, a browser client with analytics events, signed outbound events, MCP tools for AI agents and a `redeemid-emdash` command.
 
 ## Requirements
@@ -86,6 +86,7 @@ Set the secrets, open **Plugins → RedeemID → Connection** in the admin, and 
 | [Shopify Flow recipes](docs/shopify-flow.md) | Tag on a paid order, remove on refund or cancellation, passes that end |
 | [Content and templates](docs/content.md) | `<Content>`, the Paywall break, Members only, the wall, `<Gate>`, badges, plan cards, site search and replacement text |
 | [Access](docs/access.md) | Rules, levels, the Access page and the entry panel, meter and drip, selling one entry, features and protected files |
+| [Product entries](docs/products.md) | Keep picked Shopify products as EmDash entries: the collection, Add all, refresh and product webhooks |
 | [Shop and preferences](docs/shop.md) | Products, collections, search, the cart drawer, signed-in checkout, local prices and member preferences |
 | [Staff tools, webhooks and privacy](docs/staff.md) | Member tools, membership dates, webhook health, app events, reports, AI agents, the command line and privacy requests |
 | [Running in production](docs/production.md) | Caching, rate limits and troubleshooting |

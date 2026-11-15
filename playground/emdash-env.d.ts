@@ -35,9 +35,39 @@ export interface Post {
   terms?: Record<string, TaxonomyTerm[]>;
 }
 
+export interface Product {
+  id: string;
+  slug: string | null;
+  status: string;
+  title: string;
+  handle: string;
+  content?: PortableTextBlock[];
+  shopify_id?: string;
+  summary?: string;
+  image_url?: string;
+  image_alt?: string;
+  price?: string;
+  price_max?: string;
+  compare_at?: string;
+  currency?: string;
+  available?: boolean;
+  quick_add?: string;
+  vendor?: string;
+  product_type?: string;
+  listed?: boolean;
+  synced_at?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  publishedAt: Date | null;
+  byline?: BylineSummary | null;
+  bylines?: ContentBylineCredit[];
+  terms?: Record<string, TaxonomyTerm[]>;
+}
+
 declare module "emdash" {
   interface EmDashCollections {
     pages: Page;
     posts: Post;
+    products: Product;
   }
 }

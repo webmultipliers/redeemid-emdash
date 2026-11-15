@@ -1,0 +1,14 @@
+---
+import ProductGrid from "@redeemid/emdash/components/ProductGrid.astro";
+import { entryCard } from "@redeemid/emdash/products";
+import { getEmDashCollection } from "emdash";
+import Base from "../../layouts/Base.astro";
+
+// The products the site keeps as entries, read from EmDash (no Shopify call).
+const { entries } = await getEmDashCollection("products", { orderBy: { title: "asc" } }).catch(() => ({ entries: [] }));
+---
+
+<Base title="Catalog">
+	<h1>Catalog</h1>
+	{entries.length ? <ProductGrid products={entries.map(entryCard)} productHref="/shop/{handle}/" quickAdd /> : <p>CATALOG-EMPTY</p>}
+</Base>

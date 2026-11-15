@@ -239,6 +239,15 @@ export interface RedeemIDConfig {
 	 */
 	entries?: Record<string, EntryRule>;
 	/**
+	 * Product entries: a local, synced copy of the Shopify products staff pick
+	 * (Plugins → RedeemID → Products), kept in an EmDash collection the site
+	 * defines (see docs/products.md). `collection` is its slug ("products" by
+	 * default). `follow: "all"` also adds products Shopify creates later;
+	 * "picked" (the default) only keeps the ones already added. `false` turns
+	 * product entries off.
+	 */
+	products?: false | { collection?: string; follow?: "picked" | "all" };
+	/**
 	 * Set by RedeemID, never in astro.config.mjs: the settings saved in the
 	 * admin couldn't be read and none were read before, so every entry is
 	 * locked until they can be (see lockdown in settings.ts).

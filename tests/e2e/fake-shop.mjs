@@ -312,6 +312,21 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				if (query.includes("productRecommendations(")) {
 					return json(200, { data: { productRecommendations: listed().filter((p) => p.id !== variables.id).slice(0, 2).map(card) } });
 				}
+				// Product entries (products.ts): reads by id, handle, ids, pages and search words.
+				const mirror = (p) => (p ? { ...card(p), id: p.id, description: p.description ?? "", vendor: p.vendor ?? "", productType: p.productType ?? "", priceRange: { minVariantPrice: p.variants.nodes[0].price, maxVariantPrice: p.variants.nodes.at(-1).price } } : null);
+				if (query.includes("RedeemIDProductById")) return json(200, { data: { product: mirror(listed().find((p) => p.id === variables.id)) } });
+				if (query.includes("RedeemIDProductByHandle")) return json(200, { data: { product: mirror(listed().find((p) => p.handle === variables.handle)) } });
+				if (query.includes("RedeemIDProducts(")) return json(200, { data: { nodes: variables.ids.map((id) => mirror(listed().find((p) => p.id === id))) } });
+				if (query.includes("RedeemIDProductFind")) {
+					const q = String(variables.query).toLowerCase();
+					return json(200, { data: { products: { nodes: listed().filter((p) => p.title.toLowerCase().includes(q)).map(mirror) } } });
+				}
+				if (query.includes("RedeemIDProductPage")) {
+					const all = listed();
+					const start = variables.after ? Number(variables.after) : 0;
+					const more = start + variables.first < all.length;
+					return json(200, { data: { products: { pageInfo: { hasNextPage: more, endCursor: more ? String(start + variables.first) : null }, nodes: all.slice(start, start + variables.first).map(mirror) } } });
+				}
 				if (query.includes("SitemapProducts")) {
 					const nodes = listed().map((p) => ({ handle: p.handle, updatedAt: "2026-11-01T00:00:00Z" }));
 					return json(200, { data: { products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } });

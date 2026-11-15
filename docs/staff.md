@@ -9,6 +9,7 @@ With `REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID` set, RedeemID gets an Admin API toke
 - **Bulk resync** (on Members). Reads the 25 members synced longest ago, few enough for the Workers free limit of 50 database queries a request. Press it again for the next 25. It never runs on its own.
 - **Webhook subscriptions.** Connection → Webhooks lists the store's subscriptions to this site and registers any that are missing. A topic Shopify refuses, such as `customers/merge` without `read_customer_merge`, is named with the reason and doesn't stop the others. `customers/redact` stays in the app's own settings.
 - **Access → Test.** A collection, an entry, terms and a reader's tags in; the verdict out.
+- **Products.** Pick the Shopify products the site keeps as entries, add them all 10 at a time, refresh them, and turn on the `products/*` webhooks (the app needs `read_products` for those). See [product entries](products.md).
 
 Resync updates email, name, tags, email marketing consent and the membership dates. Enabled or disabled status comes only from the enable and disable webhooks. With the app set up, two more things read the customer from the Admin API as it is now: every sign-in (and Refresh membership), and every `customer.tags_added` or `customer.tags_removed` webhook. Those topics carry only the change and can arrive out of order, so reading the current tags keeps the mirror right. Without the app, or when the read fails, the webhook's change is applied as sent.
 

@@ -28,6 +28,13 @@ export const WEBHOOK_TOPICS = [
 	"CUSTOMER_TAGS_REMOVED",
 ] as const;
 
+/**
+ * Product topics, for product entries (products.ts). Registered from the
+ * Products page, not by setup: a site without product entries doesn't need
+ * them, and they need the app's read_products scope.
+ */
+export const PRODUCT_TOPICS = ["PRODUCTS_CREATE", "PRODUCTS_UPDATE", "PRODUCTS_DELETE"] as const;
+
 /** WEBHOOK_TOPICS name → the topic Shopify shows: CUSTOMER_TAGS_ADDED → customer.tags_added. */
 export function topicName(t: string): string {
 	return t.toLowerCase().replace("_", "/").replace("customer/tags", "customer.tags");
@@ -222,7 +229,12 @@ export async function webhookSubscriptions(config: RedeemIDConfig, fetcher: type
 }
 
 /** Scopes a topic needs beyond read_customers, to explain a refusal. */
-const TOPIC_SCOPES: Partial<Record<(typeof WEBHOOK_TOPICS)[number], string>> = { CUSTOMERS_MERGE: "read_customer_merge" };
+const TOPIC_SCOPES: Record<string, string> = {
+	CUSTOMERS_MERGE: "read_customer_merge",
+	PRODUCTS_CREATE: "read_products",
+	PRODUCTS_UPDATE: "read_products",
+	PRODUCTS_DELETE: "read_products",
+};
 
 /**
  * Register the topics RedeemID needs that no subscription sends to `uri` yet.
@@ -232,9 +244,10 @@ export async function registerWebhooks(
 	config: RedeemIDConfig,
 	uri: string,
 	fetcher: typeof fetch = fetch,
+	topics: readonly string[] = WEBHOOK_TOPICS,
 ): Promise<{ added: string[]; failed: Array<{ topic: string; message: string }> }> {
 	const have = await webhookSubscriptions(config, fetcher);
-	const missing = WEBHOOK_TOPICS.filter((t) => !have.some((h) => h.topic === t && h.uri === uri));
+	const missing = topics.filter((t) => !have.some((h) => h.topic === t && h.uri === uri));
 	const added: string[] = [];
 	const failed: Array<{ topic: string; message: string }> = [];
 	for (const topic of missing) {

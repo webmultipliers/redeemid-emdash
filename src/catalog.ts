@@ -333,14 +333,17 @@ export async function sitemapProducts(config: RedeemIDConfig, opts: { fetcher?: 
  *   export const GET: APIRoute = async ({ locals, url }) =>
  *     productSitemap(await siteConfig(locals), url, { productHref: "/shop/{handle}/" });
  *
- * `productHref` is the same pattern the product cards link with. Answers an
+ * `productHref` is the same pattern the product cards link with. With
+ * product entries (products.ts), EmDash's sitemap already lists the products
+ * the site keeps: pass their handles as `exclude` (catalogHandles()) so this
+ * one lists only the rest. Answers an
  * empty sitemap (not an error) when the store can't be read, so a crawler
  * never caches a broken page.
  */
 export async function productSitemap(
 	config: RedeemIDConfig | null,
 	url: URL,
-	opts: { productHref: string; fetcher?: typeof fetch },
+	opts: { productHref: string; fetcher?: typeof fetch; exclude?: Iterable<string> },
 ): Promise<Response> {
 	let products: SitemapProduct[] = [];
 	if (config) {
@@ -350,6 +353,8 @@ export async function productSitemap(
 			products = [];
 		}
 	}
+	const skip = new Set(opts.exclude ?? []);
+	if (skip.size) products = products.filter((p) => !skip.has(p.handle));
 	const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'];
 	for (const p of products) {
 		const loc = new URL(opts.productHref.replace("{handle}", encodeURIComponent(p.handle)), url).href;

@@ -3,10 +3,11 @@
 import Product from "../components/Product.astro";
 
 interface Props {
-	node: { handle?: string };
+	/** `pick` is a product from the site's catalog; `handle` one typed in. */
+	node: { pick?: string; handle?: string };
 }
 
-const handle = (Astro.props.node.handle ?? "").trim();
+const handle = (Astro.props.node.pick || Astro.props.node.handle || "").trim();
 ---
 
 {handle && <Product handle={handle} heading="h3" />}
