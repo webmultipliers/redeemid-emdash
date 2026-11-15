@@ -15,8 +15,9 @@
  * A product Shopify no longer sells on the site's channel (deleted, archived,
  * or taken off the Headless channel) is set to draft with `listed` false, and
  * comes back when Shopify sells it again. Shopify sends no webhook when a
- * product leaves the Headless channel, so that is caught by the next webhook
- * for the product, a refresh, or the buy box's own live read.
+ * product leaves the Headless channel, so the entry follows at the next
+ * webhook for the product or a refresh. Until then its page still can't sell
+ * it: the buy box reads Shopify live and shows it as not for sale.
  *
  * The copy is for cards, lists, search and links. Anything a buyer acts on
  * (variants, the price in their market, selling plans, stock) is read from
