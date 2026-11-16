@@ -829,3 +829,160 @@ export const pages: Record<string, () => ReactNode> = Object.fromEntries(
 );
 // The plugin's root (EmDash's Plugins list links there) opens Overview.
 pages["/"] = pages[OVERVIEW]!;
+
+// ---------------------------------------------------------------- the Access column in content lists
+
+type ListItem = { id: string };
+type Labels = Record<string, { label: string; locked: boolean }>;
+
+/** One ask per page of rows: every cell on the page shares it. */
+const labelAsks = new Map<string, Promise<Labels>>();
+
+function askLabels(collection: string, ids: string[]): Promise<Labels> {
+	const key = `${collection}\n${ids.join(",")}`;
+	let ask = labelAsks.get(key);
+	if (!ask) {
+		ask = apiFetch(`${API_BASE}/plugins/${PLUGIN}/access-list`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ collection, ids }),
+		})
+			.then(async (res) => (res.ok ? (((await res.json()) as { data?: { labels?: Labels } }).data?.labels ?? {}) : {}))
+			.catch(() => ({}));
+		labelAsks.set(key, ask);
+		// Rules change when staff save: ask again after a while.
+		setTimeout(() => labelAsks.delete(key), 30_000);
+	}
+	return ask;
+}
+
+/** Who can read this entry: "Free" in plain text, anything else as a badge. */
+export function AccessCell({ item, visibleItems, collection }: { item: ListItem; visibleItems: readonly ListItem[]; collection: string }): ReactNode {
+	const [labels, setLabels] = useState<Labels | null>(null);
+	const ids = visibleItems.map((i) => i.id);
+	const key = ids.join(",");
+	useEffect(() => {
+		let live = true;
+		void askLabels(collection, ids).then((l) => live && setLabels(l));
+		return () => {
+			live = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [collection, key]);
+	const own = labels?.[item.id];
+	if (!labels) return h("span", { className: "text-kumo-subtle", "aria-label": "Loading" }, "…");
+	if (!own) return h("span", { className: "text-kumo-subtle" }, "—");
+	return own.locked ? h(Badge as never, { variant: "secondary" }, own.label) : h("span", { className: "text-kumo-subtle" }, own.label);
+}
+
+/** EmDash shows these in every content list (not in Trash). */
+export const contentListColumns = [{ id: "access", label: "Access", cell: AccessCell, order: 50 }];
+
+// ---------------------------------------------------------------- the Shopify product field widget
+
+type Pick = { handle: string; title: string; image: string | null; price: string | null; currency: string | null; available: boolean };
+type FieldWidgetProps = { value: unknown; onChange: (value: unknown) => void; label: string; id: string; required?: boolean; minimal?: boolean };
+
+/**
+ * A text field that holds a Shopify product handle, with a search of the
+ * store's products to pick it from. A schema field opts in with
+ * `"widget": "redeemid:product"`; the value stays a plain handle, so
+ * `<Product handle={entry.data.product} />` renders it.
+ */
+export function ProductField({ value, onChange, label, id, required, minimal }: FieldWidgetProps): ReactNode {
+	const handle = typeof value === "string" ? value : "";
+	const [query, setQuery] = useState("");
+	const [items, setItems] = useState<Pick[] | null>(null);
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [chosen, setChosen] = useState<Pick | null>(null);
+	const search = async () => {
+		setBusy(true);
+		setError(null);
+		try {
+			const res = await apiFetch(`${API_BASE}/plugins/${PLUGIN}/product-picker`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ query }),
+			});
+			const data = res.ok ? ((await res.json()) as { data?: { items?: Pick[]; error?: string } }).data : null;
+			setItems(data?.items ?? []);
+			if (!res.ok || data?.error) setError("RedeemID couldn't search the store. Check Plugins → RedeemID → Connection.");
+		} catch {
+			setItems([]);
+			setError("RedeemID couldn't search the store.");
+		} finally {
+			setBusy(false);
+		}
+	};
+	const shown = chosen && chosen.handle === handle ? chosen : null;
+	return h(
+		"div",
+		{ role: "group", "aria-labelledby": `${id}-label`, className: "grid gap-2" },
+		minimal ? null : h("span", { id: `${id}-label`, className: "text-sm font-medium text-kumo-default" }, label, required ? " *" : ""),
+		h(
+			"div",
+			{ className: "flex flex-wrap items-center gap-2" },
+			h(Input as never, {
+				id,
+				value: handle,
+				placeholder: "product-handle",
+				"aria-label": minimal ? label : `${label}: handle`,
+				className: "min-w-0 flex-1",
+				onChange: (e: { target: { value: string } }) => onChange(e.target.value.trim() || null),
+			}),
+			handle ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => onChange(null) }, "Clear") : null,
+		),
+		shown ? h("p", { className: "text-sm text-kumo-subtle" }, `${shown.title}${shown.available ? "" : " (sold out)"}`) : null,
+		h(
+			"div",
+			{ className: "flex flex-wrap items-center gap-2" },
+			h(Input as never, {
+				value: query,
+				placeholder: "Search the store's products",
+				"aria-label": `Search products for ${label}`,
+				className: "min-w-0 flex-1",
+				onChange: (e: { target: { value: string } }) => setQuery(e.target.value),
+				onKeyDown: (e: { key: string; preventDefault(): void }) => {
+					if (e.key === "Enter") {
+						e.preventDefault();
+						void search();
+					}
+				},
+			}),
+			h(Button as never, { variant: "secondary", size: "sm", disabled: busy, onClick: () => void search() }, busy ? "Searching…" : "Search"),
+		),
+		error ? h("p", { role: "alert", className: "text-sm text-kumo-danger" }, error) : null,
+		items && items.length === 0 && !error ? h("p", { role: "status", className: "text-sm text-kumo-subtle" }, "No products match.") : null,
+		items && items.length > 0
+			? h(
+					"ul",
+					{ className: "grid gap-1", "aria-label": "Products found" },
+					items.map((p) =>
+						h(
+							"li",
+							{ key: p.handle },
+							h(
+								"button",
+								{
+									type: "button",
+									"aria-pressed": p.handle === handle,
+									className: `flex w-full items-center gap-3 rounded-md border px-2 py-1.5 text-start text-sm ${p.handle === handle ? "border-kumo-brand" : "border-kumo-line"} hover:bg-kumo-tint`,
+									onClick: () => {
+										setChosen(p);
+										onChange(p.handle);
+									},
+								},
+								p.image ? h("img", { src: p.image, alt: "", width: 32, height: 32, className: "size-8 shrink-0 rounded object-cover" }) : h("span", { className: "size-8 shrink-0 rounded bg-kumo-fill" }),
+								h("span", { className: "min-w-0 flex-1" }, h("span", { className: "block truncate text-kumo-default" }, p.title), h("span", { className: "block truncate text-kumo-subtle" }, p.handle)),
+								p.price ? h("span", { className: "shrink-0 text-kumo-subtle" }, `${p.price}${p.currency ? ` ${p.currency}` : ""}`) : null,
+							),
+						),
+					),
+				)
+			: null,
+	);
+}
+
+/** Field widgets: `"widget": "redeemid:product"` on a string field. */
+export const fields = { product: ProductField };

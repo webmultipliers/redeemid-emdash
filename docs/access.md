@@ -71,6 +71,8 @@ Each saved entry also gets an **Access** panel in the editor. It shows who can r
 
 The panel can also hold the entry back for some days of membership, keep the meter off it, lock it until a date and then open it, or keep it free until a date and then lock it. Pass the entry's `id` (or slug) to `<Content>`, `<AccessBadge>` and `<Gate>` so its own rule applies there.
 
+Every content list in the admin (Posts, Pages and any other content type) also gets an **Access** column. It shows who can read each entry, from the same rules the site enforces: **Free** in plain text, or a badge such as **Members**, **Gold** or **Silver or Gold**. It counts the content type, the entry's terms and parent terms, and its own Access panel rule with today's dates. A Paywall break or Members only part in the body doesn't change the label, since the label covers the entry's rule. The column asks once for each page of the list, and it's there for anyone who can edit content.
+
 Moving an entry to the trash keeps its rule for a restore but frees its slug, so a new entry that takes the slug doesn't inherit the rule.
 
 ## Meter and drip

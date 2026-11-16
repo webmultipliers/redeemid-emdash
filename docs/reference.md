@@ -90,6 +90,16 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | Contribution | `redeemid-contribution` | Pay what you want |
 | Preferences | `redeemid-preferences` | The member's preference form |
 
+## Admin extensions
+
+| Extension | Where | Does |
+| --- | --- | --- |
+| Access panel | Every saved entry's editor sidebar | Shows and sets the entry's own rule ([access](access.md#access-settings-in-the-admin)) |
+| Access column | Every content list | Who can read each entry: Free, or a badge with the levels |
+| Product field widget, `redeemid:product` | Any string field that sets it | Search the store and pick a product; the field holds its handle ([products](products.md#a-product-field-for-any-content-type)) |
+| Product structured data | `page:metadata`, on product entries' own pages | Product JSON-LD from Shopify's fields ([products](products.md#product-structured-data)) |
+| RedeemID dashboard card | EmDash's dashboard | Alerts, counts and links |
+
 ## Modules
 
 | Import | Gives |
@@ -111,7 +121,7 @@ The full developer API (stable exports, JSON routes, the browser client and its 
 
 ## Routes
 
-Under `/_emdash/api/auth/redeemid/`: `login`, `callback`, `logout`, `webhook`, `buy`, `cart`, `cart-edit`, `account`, `preferences` and `privacy`, and the JSON routes `api/state`, `api/cart` and `api/search`. Staff-only routes for the admin, agents and the command line are under `/_emdash/api/plugins/redeemid/`.
+Under `/_emdash/api/auth/redeemid/`: `login`, `callback`, `logout`, `webhook`, `buy`, `cart`, `cart-edit`, `account`, `preferences` and `privacy`, and the JSON routes `api/state`, `api/cart` and `api/search`. Staff-only routes for the admin, agents and the command line are under `/_emdash/api/plugins/redeemid/`, including `access-list` (the content lists' Access column) and `product-picker` (the product field widget), which need EmDash's `content:edit_own` permission.
 
 In the Customer Account API client, set the callback URI to `https://<site>/_emdash/api/auth/redeemid/callback`, the logout URI to `https://<site>/`, and (public clients) the JavaScript origin to `https://<site>`. Point webhooks at `https://<site>/_emdash/api/auth/redeemid/webhook`: `customers/create`, `customers/update`, `customers/delete`, `customers/disable`, `customers/enable`, `customers/merge`, `customer.tags_added` and `customer.tags_removed` (Connection → Webhooks registers these for you). The compliance topics `customers/data_request`, `customers/redact` and `shop/redact` go to the same URL, set in the app's own configuration.
 

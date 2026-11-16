@@ -6,7 +6,9 @@ name: Release
 # GitHub release v<version> with the same tarball attached. A maintainer
 # approves the npm stage on npmjs.com (2FA) before it goes live. NPM_TOKEN is
 # a granular "Read and write (stage only)" token for the @redeemid scope, so
-# this workflow can never publish to npm on its own.
+# this workflow can never publish to npm on its own. The stage carries npm
+# provenance (--provenance, signed through GitHub's OIDC token), so npm shows
+# which workflow run built each version.
 on:
   push:
     branches: [ main ]
@@ -44,6 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -79,7 +82,7 @@ jobs:
           echo "file=$file" >> "$GITHUB_OUTPUT"
       - name: Stage on npm
         if: steps.decide.outputs.release == 'true' && steps.decide.outputs.stage == 'true'
-        run: npx --yes npm@11.17.0 stage publish "${{ steps.pack.outputs.file }}" --access public
+        run: npx --yes npm@11.17.0 stage publish "${{ steps.pack.outputs.file }}" --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Cut the GitHub release

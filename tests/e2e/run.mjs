@@ -267,6 +267,15 @@ try {
 	check("the editor's level pickers offer the new level", manifestAfter.text.includes("Patrons of the Arts"));
 	const welcomeApi = await admin.go("/_emdash/api/content/posts/welcome");
 	const welcomeId = (welcomeApi.text.match(/"id":"([0-9A-Z]{20,})"/) ?? [])[1];
+	// The Access column in content lists: one ask for the page's rows.
+	const proApi = await admin.go("/_emdash/api/content/posts/pro-only");
+	const proId = (proApi.text.match(/"id":"([0-9A-Z]{20,})"/) ?? [])[1];
+	const column = async (who) => who.go("/_emdash/api/plugins/redeemid/access-list", { method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE }, body: JSON.stringify({ collection: "posts", ids: [welcomeId, proId] }) });
+	const columnAsk = await column(admin);
+	const columnLabels = (() => { try { return JSON.parse(columnAsk.text).data?.labels ?? {}; } catch { return {}; } })();
+	check("the Access column labels each post: Free, or its level as a lock", columnLabels[welcomeId]?.label === "Free" && columnLabels[welcomeId]?.locked === false && columnLabels[proId]?.locked === true && columnLabels[proId]?.label === "Pro", columnAsk.text.slice(0, 300));
+	const columnMember = await column(member);
+	check("members can't ask for the Access column", columnMember.res.status === 401 || columnMember.res.status === 403, String(columnMember.res.status));
 	const panel = async (body) =>
 		admin.go(`/_emdash/api/content/posts/${welcomeId}/plugin-extensions/redeemid/panel/access`, {
 			method: "POST",
@@ -867,6 +876,11 @@ try {
 		check("an editor's save keeps their story and puts Shopify's title and price back", editTote.res.status < 300 && edited?.data?.title === "Harbor tote" && edited?.data?.price === "20.0" && JSON.stringify(edited?.data?.content ?? "").includes("STORY-OF-THE-TOTE"), `${editTote.res.status} ${editTote.text.slice(0, 200)} ${JSON.stringify(edited?.data ?? {}).slice(0, 300)}`);
 		const storyPage = await visitor.go("/shop/harbor-tote/");
 		check("the product page sells it live with the entry's story under it", storyPage.text.includes("data-redeemid-product") && storyPage.text.includes("STORY-OF-THE-TOTE"), storyPage.text.slice(0, 200));
+		const productLd = [...storyPage.text.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([^<]*)<\/script>/g)].map((m) => { try { return JSON.parse(m[1]); } catch { return null; } }).filter((d) => d?.["@type"] === "Product");
+		check("a product entry's page gets one Product in the head, from Shopify's fields", productLd.length === 1 && productLd[0].productID === "harbor-tote" && productLd[0].offers?.priceCurrency && !JSON.stringify(productLd[0]).includes("STORY-OF-THE-TOTE"), JSON.stringify(productLd).slice(0, 300));
+		const staffRoute = (route, body, who = admin) => who.go(`/_emdash/api/plugins/redeemid/${route}`, { method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE }, body: JSON.stringify(body) });
+		const picker = await staffRoute("product-picker", { query: "tote" });
+		check("the product field widget searches the store", picker.res.status === 200 && picker.text.includes('"handle":"harbor-tote"'), picker.text.slice(0, 200));
 		const hooksOn = await adminAct({ type: "block_action", action_id: "products_webhooks", page: "/products" });
 		check("Turn on automatic updates registers products/create, update and delete", shop.subscriptions.filter((x) => x.topic.startsWith("PRODUCTS_")).length === 3 && hooksOn.text.includes("Automatic updates are on") && hooksOn.text.includes("stay current on their own"), hooksOn.text.slice(0, 300));
 		shop.products["harbor-tote"].title = "Harbor tote, waxed";

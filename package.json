@@ -1,6 +1,6 @@
 {
 	"name": "@redeemid/emdash",
-	"version": "0.0.37",
+	"version": "0.0.38",
 	"description": "Shopify commerce for EmDash sites: storefront, cart, checkout, customer accounts, memberships and paywalls. Shopify runs commerce; EmDash runs content.",
 	"type": "module",
 	"license": "MIT",
@@ -36,6 +36,8 @@
 		"src",
 		"README.md",
 		"LICENSE",
+		"CHANGELOG.md",
+		"SECURITY.md",
 		"docs",
 		"bin"
 	],

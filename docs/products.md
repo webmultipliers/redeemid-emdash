@@ -118,3 +118,34 @@ export const GET: APIRoute = async ({ locals, url }) =>
 ```
 
 The editor's **Product** block gets a **Product from the catalog** picker that lists the entries. You can still type any handle in the second field.
+
+### Product structured data
+
+On a product entry's own page, RedeemID adds Product structured data to `<EmDashHead>` through EmDash's `page:metadata` hook, with no template code. It's built only from Shopify's fields on the entry: the title, handle, summary, image, vendor, product type, price or price range, currency and stock. Nothing an editor wrote goes in. It runs when the page builds its page context with `kind: "content"` and the entry, as EmDash's SEO guide shows:
+
+```astro
+---
+import Product from "@redeemid/emdash/components/Product.astro";
+import { getEmDashEntry } from "emdash";
+import { createPublicPageContext } from "emdash/page";
+import { EmDashHead } from "emdash/ui";
+
+const { entry } = await getEmDashEntry("products", Astro.params.handle ?? "");
+const page = createPublicPageContext({ Astro, kind: "content", title: entry?.data.title ?? "Shop", content: entry ? { collection: "products", id: entry.data.id, slug: entry.data.slug } : undefined });
+---
+<head><EmDashHead page={page} /></head>
+<Product handle={entry?.data.handle} heading="h1" schema={false} />
+```
+
+`<Product heading="h1">` prints its own Product data from a live read, so pass `schema={false}` on such a page to give search engines one product. Config `schema: false` turns both off.
+
+## A product field for any content type
+
+Any content type can hold a Shopify product in a plain text field, such as a post's featured product. Give the field the `redeemid:product` widget, and editors search the store's products and pick one, in place of typing a handle:
+
+```json
+{ "slug": "featured_product", "label": "Featured product", "type": "string", "widget": "redeemid:product" }
+```
+
+The field holds the product's handle, so a template renders it with `<Product handle={post.data.featured_product} />`. The search reads the Storefront API live, so it lists every product on the Headless channel, whether it's synced or not. Set the widget in a seed or through EmDash's schema API.
+

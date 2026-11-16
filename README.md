@@ -36,6 +36,10 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 - A Shopify store with the new customer accounts, the Headless sales channel, and an Admin API app on the store (staff tools, resyncs, tag edits, and registering and signing webhooks).
 - HTTPS. Shopify only accepts `https` callback URIs, so a local site needs a tunnel to sign in for real.
 
+## Permissions and trust
+
+RedeemID is a native EmDash plugin: it runs inside your site with the same access as your own code, because sign-in, editor blocks, Astro components and its admin screens all need that. It declares `content:read` (the editor's Access panel), `content:write` (product entries) and `email:send` (webhook health warnings). The server calls only your Shopify store, the customer account hosts Shopify names, and the `events.url` you set, if any. It keeps a mirror of each customer's ID, email, name and tags, and nothing on the site ever grants access. [Permissions and trust](docs/trust.md) lists every host, what's stored and for how long, what it can change in Shopify, and how to take it out.
+
 ## Quick start
 
 ```sh
@@ -91,6 +95,8 @@ Set the secrets, open **Plugins → RedeemID → Connection** in the admin, and 
 | [Staff tools, webhooks and privacy](docs/staff.md) | Member tools, membership dates, webhook health, app events, reports, AI agents, the command line and privacy requests |
 | [Running in production](docs/production.md) | Caching, rate limits and troubleshooting |
 | [Developer API](docs/developer-api.md) | Stable exports, JSON routes, the browser client, server events and MCP tools |
+| [Permissions and trust](docs/trust.md) | Why it's native, its capabilities, the hosts it calls, the data it keeps, and removal |
+| [Changelog](CHANGELOG.md) | Every version, with **Upgrade** and **Security** notes |
 | [Reference](docs/reference.md) | Every config option, secret, component, editor block, module, route and notice |
 
 ## Guarantees
@@ -117,11 +123,11 @@ pnpm e2e         # boots the playground site against a fake Shopify store
 
 Every change keeps the guarantees above: Shopify stays the only source of access, missing or unreadable data gives readers less access rather than more, and no secret, token or personal data is logged or returned.
 
-**Releases.** Bump `version` in package.json and merge to main. The Release workflow runs the tests, stages that version on npm and cuts a matching GitHub release, `v<version>`, with the exact tarball and a `.sha256`. A maintainer approves the npm stage before it's public.
+**Releases.** Add the release's notes to [CHANGELOG.md](CHANGELOG.md), bump `version` in package.json and merge to main. The Release workflow runs the tests, stages that version on npm and cuts a matching GitHub release, `v<version>`, with the exact tarball and a `.sha256`. A maintainer approves the npm stage before it's public.
 
 ## Security
 
-Please report security problems privately through the repository's **Security** tab rather than in a public issue.
+Please report security problems privately through the repository's **Security** tab rather than in a public issue. [SECURITY.md](SECURITY.md) says how, what counts, and which versions get fixes.
 
 ## License
 
