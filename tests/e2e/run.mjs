@@ -841,12 +841,19 @@ try {
 	check("an agent's explain_access answers like the CLI", callText.includes('"canRead": true'), JSON.stringify(called).slice(0, 400));
 	{
 		// Product entries: staff pick Shopify products to keep as entries; Shopify's fields follow Shopify.
-		const productsEmpty = await adminPage("/products");
-		check("Products page counts no products and offers product webhooks", productsEmpty.text.includes('"label":"Products","value":"0"') && productsEmpty.text.includes("products_webhooks") && productsEmpty.text.includes("Add all from Shopify"), productsEmpty.text.slice(0, 400));
-		const found = await adminAct({ type: "form_submit", action_id: "products_find", block_id: "products_find", values: { query: "tote" }, page: "/products" });
-		check("staff search the store for products to add", found.text.includes("Harbor tote") && found.text.includes('"action_id":"products_add_one"'), found.text.slice(0, 400));
-		const addedTote = await adminAct({ type: "block_action", action_id: "products_add_one", value: "harbor-tote", page: "/products" });
-		check("adding one makes a published entry from Shopify's fields", addedTote.text.includes("1 added") && addedTote.text.includes('"label":"Products","value":"1"') && addedTote.text.includes("20.0 USD"), addedTote.text.slice(0, 400));
+		const unset = await adminPage("/products");
+		check("Products offers to set up products, with no seed to edit", unset.text.includes('"action_id":"products_setup"') && unset.text.includes("Set up products") && !/seed/i.test(unset.text), unset.text.slice(0, 400));
+		const setUp = await adminAct({ type: "block_action", action_id: "products_setup", page: "/products" });
+		const schemaApi = JSON.parse((await admin.go("/_emdash/api/schema/collections/products/fields")).text);
+		const fieldSlugs = (schemaApi.data?.items ?? schemaApi.data ?? []).map((f) => f.slug);
+		check("Set up products creates the content type with every Shopify field and a story", setUp.text.includes("Products are set up") && ["title", "handle", "shopify_id", "price", "listed", "synced_at", "content"].every((f) => fieldSlugs.includes(f)) && setUp.text.includes('"label":"Synced","value":"0"') && setUp.text.includes("Turn on automatic updates"), `${setUp.text.slice(0, 300)} ${fieldSlugs.join(",")}`);
+		const pickKey = (t) => (t.match(/"action_id":"(pick_[a-z0-9]+)"/) ?? [])[1];
+		check("the picker lists the store's products as checkboxes", setUp.text.includes('"type":"checkbox"') && setUp.text.includes("Harbor tote") && pickKey(setUp.text), setUp.text.slice(0, 400));
+		const found = await adminAct({ type: "form_submit", action_id: "products_browse", values: { query: "tote" }, page: "/products" });
+		check("staff search the store by name", found.text.includes("Harbor tote") && !found.text.includes("Pro plan") && found.text.includes('"label":"Show all"'), found.text.slice(0, 400));
+		const toteId = shop.products["harbor-tote"].id;
+		const addedTote = await adminAct({ type: "form_submit", action_id: "products_pick", values: { [pickKey(found.text)]: [toteId] }, page: "/products" });
+		check("ticking a product and saving syncs it as a published entry from Shopify's fields", addedTote.text.includes("1 synced") && addedTote.text.includes('"label":"Synced","value":"1"') && addedTote.text.includes("20.0 USD") && addedTote.text.includes(`"initial_value":["${toteId}"]`), addedTote.text.slice(0, 400));
 		const toteApi = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
 		const tote = toteApi.data?.item ?? toteApi.item ?? toteApi.data;
 		check("the entry is in EmDash's content, published, with the handle as its slug", tote?.status === "published" && tote?.slug === "harbor-tote" && tote?.data?.shopify_id === shop.products["harbor-tote"].id, JSON.stringify(toteApi).slice(0, 300));
@@ -861,7 +868,7 @@ try {
 		const storyPage = await visitor.go("/shop/harbor-tote/");
 		check("the product page sells it live with the entry's story under it", storyPage.text.includes("data-redeemid-product") && storyPage.text.includes("STORY-OF-THE-TOTE"), storyPage.text.slice(0, 200));
 		const hooksOn = await adminAct({ type: "block_action", action_id: "products_webhooks", page: "/products" });
-		check("Turn on product updates registers products/create, update and delete", shop.subscriptions.filter((x) => x.topic.startsWith("PRODUCTS_")).length === 3 && hooksOn.text.includes("Shopify now sends products/create"), hooksOn.text.slice(0, 300));
+		check("Turn on automatic updates registers products/create, update and delete", shop.subscriptions.filter((x) => x.topic.startsWith("PRODUCTS_")).length === 3 && hooksOn.text.includes("Automatic updates are on") && hooksOn.text.includes("stay current on their own"), hooksOn.text.slice(0, 300));
 		shop.products["harbor-tote"].title = "Harbor tote, waxed";
 		const hookUpdate = await webhook("products/update", { id: 1, admin_graphql_api_id: shop.products["harbor-tote"].id, handle: "harbor-tote" });
 		const toteAfterHook = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
@@ -878,7 +885,7 @@ try {
 		};
 		const all1 = await runAll("products_all");
 		const catalog = await visitor.go("/shop/catalog");
-		check("Add all adds every product the channel sells, and the catalog page lists them from EmDash", all1.finished && all1.text.includes("products read") && catalog.text.includes("Harbor tote, waxed") && !catalog.text.includes("CATALOG-EMPTY") && !catalog.text.includes("Pro plan"), `${all1.text.slice(0, 300)} ${catalog.text.slice(0, 200)}`);
+		check("Sync every product syncs everything the channel sells, and the catalog page lists them from EmDash", all1.finished && all1.text.includes("products read") && catalog.text.includes("Harbor tote, waxed") && !catalog.text.includes("CATALOG-EMPTY") && !catalog.text.includes("Pro plan"), `${all1.text.slice(0, 300)} ${catalog.text.slice(0, 200)}`);
 		const pickManifest = await admin.go("/_emdash/api/manifest");
 		check("the Product block's catalog picker lists the entries", pickManifest.text.includes('"action_id":"pick"') && pickManifest.text.includes("harbor-tote"), (pickManifest.text.match(/"action_id":"pick".{0,300}/) ?? [""])[0]);
 		const productMap = await visitor.go("/sitemap-products.xml");
@@ -892,7 +899,19 @@ try {
 		shop.products["harbor-tote"] = { ...savedTote, title: "Harbor tote" };
 		const refreshed = await runAll("products_refresh");
 		const toteBack = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
-		check("Refresh brings back a product Shopify sells again", refreshed.finished && refreshed.text.includes("changed") && (toteBack.data?.item ?? toteBack.item ?? toteBack.data)?.status === "published", refreshed.text.slice(0, 300));
+		check("Update synced products brings back a product Shopify sells again", refreshed.finished && refreshed.text.includes("changed") && (toteBack.data?.item ?? toteBack.item ?? toteBack.data)?.status === "published", refreshed.text.slice(0, 300));
+		const backTote = toteBack.data?.item ?? toteBack.item ?? toteBack.data;
+		const stopped = await adminAct({ type: "block_action", action_id: "products_stop", value: backTote?.id, page: "/products" });
+		const stoppedApi = await admin.go("/_emdash/api/content/products/harbor-tote");
+		const stoppedHook = await webhook("products/update", { id: 1, admin_graphql_api_id: toteId, handle: "harbor-tote" });
+		check("Stop syncing moves the entry to the trash, and webhooks leave it alone", stopped.text.includes("No longer synced") && stoppedApi.res.status === 404 && stoppedHook.text === "absent", `${stopped.text.slice(0, 200)} ${stoppedApi.res.status} ${stoppedHook.text}`);
+		const again = await adminAct({ type: "form_submit", action_id: "products_browse", values: { query: "tote" }, page: "/products" });
+		await adminAct({ type: "form_submit", action_id: "products_pick", values: { [pickKey(again.text)]: [toteId] }, page: "/products" });
+		const restored = JSON.parse((await admin.go("/_emdash/api/content/products/harbor-tote")).text);
+		const r2 = restored.data?.item ?? restored.item ?? restored.data;
+		check("ticking it again brings the entry back with its story", r2?.id === backTote?.id && r2?.status === "published" && JSON.stringify(r2?.data?.content ?? "").includes("STORY-OF-THE-TOTE"), JSON.stringify(r2 ?? {}).slice(0, 300));
+		const unpick = await adminAct({ type: "form_submit", action_id: "products_pick", values: { [pickKey((await adminAct({ type: "form_submit", action_id: "products_browse", values: { query: "tote" }, page: "/products" })).text)]: [] }, page: "/products" });
+		check("unticking a synced product and saving stops syncing it", unpick.text.includes("1 no longer synced"), unpick.text.slice(0, 300));
 	}
 } catch (e) {
 	failures++;

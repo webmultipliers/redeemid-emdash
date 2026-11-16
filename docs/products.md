@@ -1,6 +1,6 @@
-# Product entries
+# Product sync
 
-Keep the Shopify products your site uses as EmDash entries. You can keep all of them or only the ones you pick. Each product you add becomes an entry in a `products` collection. That puts it in EmDash's own search, sitemap, menus and taxonomies, lets posts link to it, and lets editors write a story around it.
+Choose which Shopify products your site keeps in sync: all of them, or only the ones you tick. Each synced product becomes an entry in a `products` collection. That puts it in EmDash's own search, sitemap, menus and taxonomies, lets posts link to it, and lets editors write a story around it.
 
 Shopify stays the source of truth:
 
@@ -8,11 +8,14 @@ Shopify stays the source of truth:
 - **Everything else is yours.** The story, extra images, categories and links stay as editors leave them.
 - **Buyers always get Shopify live.** `<Product>`, the Product block, cart and checkout read variants, the price in the buyer's market, selling plans and stock from Shopify on every request. The entry's copy feeds cards, lists, search and links.
 - **A product Shopify stops selling goes to draft.** This covers a product that is deleted, archived or taken off the Headless channel. RedeemID marks the entry "Off the store" (`listed: false`) and sets it to draft, and the story stays. When Shopify sells the product again, the entry comes back. An entry that staff unpublished themselves stays unpublished.
-- **Nothing syncs on a schedule.** Webhooks keep entries up to date, and staff refresh by hand, a batch at a time.
+- **Nothing syncs on a schedule.** Shopify's webhooks keep entries up to date, and staff can update them all by hand, a batch at a time.
+- **Stopping a sync keeps the story.** The entry moves to the trash. Tick the product again and it comes back, story and all.
 
-## Add the collection
+## Set up products
 
-Product entries live in a collection your site defines, named `products` by default. Add it to your seed (`seed/seed.json`) or create it under Content types. It needs every field below, with these slugs. You can add your own fields and taxonomies on top.
+Open **Plugins → RedeemID → Products** and press **Set up products**. RedeemID creates a `products` content type with every field below, and nothing else to do. If the content type already exists but lacks some of the fields, the button adds just those.
+
+You can also define the collection yourself, in your seed (`seed/seed.json`) or under Content types. It needs every field below, with these slugs. You can add your own fields and taxonomies on top.
 
 ```json
 {
@@ -58,14 +61,15 @@ const redeemidConfig = {
 
 `follow: "picked"` is the default. With it, a webhook only updates products you already added, and a product created in Shopify isn't added until you add it. `products: false` turns product entries off.
 
-## Pick products
+## Choose products
 
 Open **Plugins → RedeemID → Products**.
 
-- **Search** the store by title, or paste handles or product links separated by commas. Each result has **Add**, or **Refresh** if it's already in the catalog.
-- **Add all from Shopify** adds every product Shopify sells on the site's channel, 10 per click. It remembers where it stopped, so you can carry on later.
-- **Refresh** reads again the 10 products that were read from Shopify longest ago. Use it after a webhook was missed, or after you take products off the Headless channel. Shopify sends no webhook for that.
-- **Turn on product updates** registers Shopify's `products/create`, `products/update` and `products/delete` webhooks with the Admin API app. The app needs the `read_products` scope. Each webhook only tells RedeemID to read the product again from the Storefront API. The entry follows what that read returns.
+- **Choose products to sync** lists the store's products by name, 10 at a time, with a box for each. Ticked ones are synced. Tick the ones you want, untick any you don't, and press **Save**. **Find products by name** narrows the list, and **Next** and **Previous** page through it.
+- **Synced products** lists what's synced, with **Edit** and **Stop syncing**.
+- **Automatic updates** shows whether Shopify sends product changes. **Turn on automatic updates** registers Shopify's `products/create`, `products/update` and `products/delete` webhooks with the Admin API app, which needs the `read_products` scope. Each webhook only tells RedeemID to read the product again from the Storefront API. The entry follows what that read returns.
+- **Sync every product** syncs every product Shopify sells on the site's channel, 10 at a time. It remembers where it stopped, so you can carry on later.
+- **Update synced products** reads every synced product from Shopify again. Use it after a webhook was missed, or after you take products off the Headless channel. Shopify sends no webhook for that.
 
 An editor can also make a product entry under Content. Give it a handle, or paste a product link, and RedeemID fills in Shopify's fields when the entry is saved.
 

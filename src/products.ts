@@ -97,6 +97,61 @@ export function followsAll(config: RedeemIDConfig | null | undefined): boolean {
 	return Boolean(config?.products && config.products.follow === "all");
 }
 
+/** The products collection RedeemID sets up when staff press "Set up products". Sites can add fields on top. */
+export const PRODUCTS_COLLECTION = {
+	label: "Products",
+	labelSingular: "Product",
+	description: "Shopify products this site keeps in sync. Fields marked (Shopify) are copied from Shopify and put back on save; the story and terms are yours.",
+	icon: "storefront",
+	urlPattern: "/shop/{slug}/",
+	supports: ["drafts", "search", "seo"],
+	admin: { listColumns: ["price", "listed", "synced_at"] },
+} as const;
+
+/** Every field of the products collection: the Shopify ones RedeemID writes, plus the story. */
+export const PRODUCTS_FIELDS: ReadonlyArray<{ slug: string; label: string; type: string; required?: boolean; unique?: boolean; indexed?: boolean; searchable?: boolean }> = [
+	{ slug: "title", label: "Title (Shopify)", type: "string", required: true, searchable: true },
+	{ slug: "handle", label: "Handle (Shopify)", type: "string", required: true, indexed: true, unique: true },
+	{ slug: "content", label: "Story", type: "portableText", searchable: true },
+	{ slug: "shopify_id", label: "Product id (Shopify)", type: "string", indexed: true },
+	{ slug: "summary", label: "Description (Shopify)", type: "text", searchable: true },
+	{ slug: "image_url", label: "Image (Shopify)", type: "string" },
+	{ slug: "image_alt", label: "Image alt text (Shopify)", type: "string" },
+	{ slug: "price", label: "Price, lowest (Shopify)", type: "string" },
+	{ slug: "price_max", label: "Price, highest (Shopify)", type: "string" },
+	{ slug: "compare_at", label: "Compare-at price (Shopify)", type: "string" },
+	{ slug: "currency", label: "Currency (Shopify)", type: "string" },
+	{ slug: "available", label: "In stock (Shopify)", type: "boolean" },
+	{ slug: "quick_add", label: "Quick-add variant (Shopify)", type: "string" },
+	{ slug: "vendor", label: "Vendor (Shopify)", type: "string" },
+	{ slug: "product_type", label: "Product type (Shopify)", type: "string" },
+	{ slug: "listed", label: "On sale here (Shopify)", type: "boolean", indexed: true },
+	{ slug: "synced_at", label: "Read from Shopify", type: "datetime", indexed: true },
+];
+
+/**
+ * Create the products collection, or add the Shopify fields it lacks. Fields
+ * and settings the site already has are left as they are. Returns what it made.
+ */
+export async function setupProductsCollection(db: unknown, collection: string): Promise<{ created: boolean; fields: string[] }> {
+	const { SchemaRegistry } = await import("emdash");
+	const registry = new SchemaRegistry(db as never);
+	let found = (await registry.getCollectionWithFields(collection)) as { fields?: Array<{ slug: string }> } | null;
+	const created = !found;
+	if (!found) {
+		await registry.createCollection({ slug: collection, ...PRODUCTS_COLLECTION, supports: [...PRODUCTS_COLLECTION.supports], admin: { listColumns: [...PRODUCTS_COLLECTION.admin.listColumns] } } as never);
+		found = { fields: [] };
+	}
+	const have = new Set((found.fields ?? []).map((f) => f.slug));
+	const fields: string[] = [];
+	for (const [i, f] of PRODUCTS_FIELDS.entries()) {
+		if (have.has(f.slug)) continue;
+		await registry.createField(collection, { ...f, sortOrder: i } as never);
+		fields.push(f.slug);
+	}
+	return { created, fields };
+}
+
 // ---------------------------------------------------------------- Shopify
 
 const MIRROR_FIELDS = `id handle title description vendor productType availableForSale requiresSellingPlan
@@ -182,11 +237,14 @@ export async function productPage(config: RedeemIDConfig, after: string | null, 
 	return { items: products.nodes.map((n) => mirrorOf(n)), next: products.pageInfo.hasNextPage ? products.pageInfo.endCursor : null };
 }
 
-/** Products matching staff's search words, for the picker. */
-export async function findShopProducts(config: RedeemIDConfig, query: string, first = 20, opts: Fetch = {}): Promise<ProductMirror[]> {
-	const q = `query RedeemIDProductFind($first: Int!, $query: String!) { products(first: $first, query: $query) { nodes { ${MIRROR_FIELDS} } } }`;
-	const { products } = await storefront<{ products: { nodes: RawMirror[] } }>(config, q, { first, query }, opts);
-	return products.nodes.map((n) => mirrorOf(n));
+/** A page of the channel's products by title, optionally filtered by search words, for the picker. */
+export async function browseProducts(config: RedeemIDConfig, page: { after?: string | null; query?: string | null }, first = PRODUCTS_BATCH, opts: Fetch = {}): Promise<{ items: ProductMirror[]; next: string | null }> {
+	const q = `query RedeemIDProductBrowse($first: Int!, $after: String, $query: String) {
+  products(first: $first, after: $after, query: $query, sortKey: TITLE) { pageInfo { hasNextPage endCursor } nodes { ${MIRROR_FIELDS} } }
+}`;
+	type Data = { products: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: RawMirror[] } };
+	const { products } = await storefront<Data>(config, q, { first, after: page.after || null, query: page.query?.trim() || null }, opts);
+	return { items: products.nodes.map((n) => mirrorOf(n)), next: products.pageInfo.hasNextPage ? products.pageInfo.endCursor : null };
 }
 
 /** "harbor-tote", "/products/harbor-tote" or a full product link → "harbor-tote". Null when it isn't one. */
@@ -220,6 +278,12 @@ export interface EntryStore {
 	/** Every entry's Shopify-owned fields, newest first, up to `limit`. */
 	list(limit: number): Promise<ProductEntry[]>;
 	counts(): Promise<{ total: number; listed: number }>;
+	/** Stop syncing: move the entry to the trash. */
+	remove(id: string): Promise<void>;
+	/** An entry staff stopped syncing (in the trash), by Shopify id. */
+	trashedByShopifyId(id: string): Promise<ProductEntry | null>;
+	/** Take an entry back out of the trash. */
+	restore(id: string): Promise<void>;
 }
 
 type Db = ConstructorParameters<typeof ContentRepository>[0];
@@ -231,14 +295,18 @@ export function contentEntries(db: unknown, collection: string): EntryStore {
 	const table = `ec_${collection}`;
 	const map = (item: { id: string; slug: string | null; status: string; data: Record<string, unknown> } | null): ProductEntry | null =>
 		item ? { id: item.id, slug: item.slug, status: item.status, data: item.data ?? {} } : null;
-	const byColumn = async (column: "shopify_id" | "handle", value: string) => {
+	const byColumn = async (column: "shopify_id" | "handle", value: string, trashed = false) => {
 		const row = await (k as unknown as { selectFrom(t: string): any })
 			.selectFrom(table)
 			.select(["id"])
 			.where(column, "=", value)
-			.where("deleted_at", "is", null)
+			.where("deleted_at", trashed ? "is not" : "is", null)
+			.orderBy("deleted_at", "desc")
 			.executeTakeFirst();
-		return row ? map((await repo.findById(collection, row.id)) as never) : null;
+		if (!row) return null;
+		if (!trashed) return map((await repo.findById(collection, row.id)) as never);
+		const r = (await (k as unknown as { selectFrom(t: string): any }).selectFrom(table).selectAll().where("id", "=", row.id).executeTakeFirst()) as Record<string, unknown>;
+		return { id: String(r.id), slug: (r.slug as string | null) ?? null, status: String(r.status), data: Object.fromEntries(MIRROR_KEYS.map((key) => [key, r[key]])) };
 	};
 	const rows = async (order: "asc" | "desc", column: string, limit: number) => {
 		const list = (await (k as unknown as { selectFrom(t: string): any })
@@ -280,6 +348,13 @@ export function contentEntries(db: unknown, collection: string): EntryStore {
 			const listed = await q.where("listed", "=", 1).select((eb: any) => eb.fn.countAll().as("n")).executeTakeFirst();
 			return { total: Number(total?.n ?? 0), listed: Number(listed?.n ?? 0) };
 		},
+		remove: async (id) => {
+			await repo.delete(collection, id);
+		},
+		trashedByShopifyId: (id) => byColumn("shopify_id", id, true),
+		restore: async (id) => {
+			await repo.restore(collection, id);
+		},
 	};
 }
 
@@ -306,6 +381,7 @@ export async function hasProductsCollection(db: unknown, collection: string | nu
 // ---------------------------------------------------------------- sync
 
 export type SyncOutcome = "added" | "updated" | "unchanged" | "delisted" | "relisted" | "absent";
+type BatchOutcome = SyncOutcome | "removed" | "failed";
 
 const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null) || (typeof a === "number" && typeof b === "boolean" && Boolean(a) === b);
 
@@ -339,6 +415,14 @@ export async function applyProduct(store: EntryStore, mirror: ProductMirror | nu
 	}
 	if (!existing) {
 		if (!add) return "absent";
+		// Picked again after staff stopped syncing it: bring the old entry, story and all, back.
+		const trashed = await store.trashedByShopifyId(mirror.shopify_id);
+		if (trashed) {
+			await store.restore(trashed.id);
+			await store.update(trashed.id, mirror, trashed.slug === trashed.data.handle ? mirror.handle : undefined);
+			await store.publish(trashed.id); // EmDash restores to draft
+			return "added";
+		}
 		await store.create(mirror.handle, mirror);
 		return "added";
 	}
@@ -354,13 +438,13 @@ export async function applyProduct(store: EntryStore, mirror: ProductMirror | nu
 }
 
 export interface BatchResult {
-	counts: Partial<Record<SyncOutcome | "failed", number>>;
+	counts: Partial<Record<BatchOutcome, number>>;
 	/** The cursor to continue from, or null when done. */
 	next: string | null;
 	errors: string[];
 }
 
-function tally(r: BatchResult, o: SyncOutcome | "failed") {
+function tally(r: BatchResult, o: BatchOutcome) {
 	r.counts[o] = (r.counts[o] ?? 0) + 1;
 }
 
@@ -388,6 +472,37 @@ export async function addProducts(config: RedeemIDConfig, store: EntryStore, han
 		}
 	}
 	return r;
+}
+
+/**
+ * The picker's Save: sync the products staff ticked and stop syncing the ones
+ * they unticked, out of the products the page showed. Stopped entries go to the
+ * trash, so a story isn't lost; ticking the product again brings it back.
+ */
+export async function syncPicked(store: EntryStore, shown: ProductMirror[], picked: Set<string>): Promise<BatchResult> {
+	const r: BatchResult = { counts: {}, next: null, errors: [] };
+	for (const mirror of shown.slice(0, PRODUCTS_BATCH)) {
+		try {
+			const existing = await store.byShopifyId(mirror.shopify_id);
+			if (picked.has(mirror.shopify_id)) tally(r, await applyProduct(store, mirror, {}, true));
+			else if (existing) {
+				await store.remove(existing.id);
+				tally(r, "removed");
+			}
+		} catch (e) {
+			tally(r, "failed");
+			r.errors.push(`${mirror.handle}: ${(e as Error).message}`);
+		}
+	}
+	return r;
+}
+
+/** Stop syncing one entry: it goes to the trash, and webhooks leave it alone. */
+export async function stopSyncing(store: EntryStore, id: string): Promise<boolean> {
+	const e = await store.byId(id);
+	if (!e) return false;
+	await store.remove(e.id);
+	return true;
 }
 
 /** "Add all": the next page of Shopify's products, from `after`. Run again with `next` until it is null. */
@@ -446,7 +561,7 @@ export async function productWebhook(config: RedeemIDConfig, store: EntryStore, 
 
 /** Short words for a batch's counts: "3 added, 1 updated". */
 export function describeBatch(r: BatchResult): string {
-	const words: Record<string, string> = { added: "added", updated: "updated", relisted: "back on sale", delisted: "taken off sale", unchanged: "unchanged", absent: "not in the catalog", failed: "failed" };
+	const words: Record<string, string> = { added: "synced", updated: "updated", removed: "no longer synced", relisted: "back on sale", delisted: "taken off sale", unchanged: "unchanged", absent: "not in the catalog", failed: "failed" };
 	const parts = Object.entries(r.counts).filter(([, n]) => n).map(([k, n]) => `${n} ${words[k] ?? k}`);
 	return parts.length ? parts.join(", ") : "Nothing to do";
 }

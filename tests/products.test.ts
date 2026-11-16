@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { productSitemap } from "../src/catalog.js";
+import { productsAction, productsPage } from "../src/products-admin.js";
 import {
 	addAllPage,
 	addProducts,
@@ -12,8 +13,11 @@ import {
 	MIRROR_KEYS,
 	mirrorOf,
 	productsCollection,
+	PRODUCTS_FIELDS,
 	productWebhook,
 	refreshOldest,
+	stopSyncing,
+	syncPicked,
 	type EntryStore,
 	type ProductEntry,
 	type ProductMirror,
@@ -56,6 +60,13 @@ function shop(products: Array<ReturnType<typeof raw>>) {
 			const page = products.slice(start, start + n);
 			const more = start + n < products.length;
 			data = { products: { pageInfo: { hasNextPage: more, endCursor: more ? String(start + n) : null }, nodes: page } };
+		} else if (body.query.includes("RedeemIDProductBrowse")) {
+			const words = typeof v.query === "string" ? v.query.toLowerCase() : "";
+			const list = products.filter((p) => !words || p.title.toLowerCase().includes(words)).sort((a, b) => a.title.localeCompare(b.title));
+			const start = v.after ? Number(v.after) : 0;
+			const n = Number(v.first);
+			const more = start + n < list.length;
+			data = { products: { pageInfo: { hasNextPage: more, endCursor: more ? String(start + n) : null }, nodes: list.slice(start, start + n) } };
 		} else data = {};
 		return new Response(JSON.stringify({ data }), { status: 200 });
 	}) as unknown as typeof fetch;
@@ -65,6 +76,7 @@ function shop(products: Array<ReturnType<typeof raw>>) {
 /** Entries in memory, the way contentEntries() behaves. */
 function memory(): EntryStore & { rows: Map<string, ProductEntry> } {
 	const rows = new Map<string, ProductEntry>();
+	const trash = new Map<string, ProductEntry>();
 	let n = 0;
 	const find = (f: (e: ProductEntry) => boolean) => [...rows.values()].find(f) ?? null;
 	return {
@@ -73,7 +85,7 @@ function memory(): EntryStore & { rows: Map<string, ProductEntry> } {
 		byShopifyId: async (id) => find((e) => e.data.shopify_id === id),
 		byHandle: async (h) => find((e) => e.data.handle === h) ?? find((e) => e.slug === h),
 		create: async (slug, data) => {
-			if (find((e) => e.slug === slug)) throw new Error("Slug taken");
+			if (find((e) => e.slug === slug) || [...trash.values()].some((e) => e.slug === slug)) throw new Error("Slug taken");
 			const e = { id: `e${++n}`, slug, status: "published", data: { ...data } };
 			rows.set(e.id, e);
 			return e;
@@ -93,6 +105,18 @@ function memory(): EntryStore & { rows: Map<string, ProductEntry> } {
 		oldest: async (limit) => [...rows.values()].sort((a, b) => String(a.data.synced_at).localeCompare(String(b.data.synced_at))).slice(0, limit),
 		list: async (limit) => [...rows.values()].slice(0, limit),
 		counts: async () => ({ total: rows.size, listed: [...rows.values()].filter((e) => e.data.listed !== false).length }),
+		remove: async (id) => {
+			const e = rows.get(id)!;
+			rows.delete(id);
+			trash.set(id, e);
+		},
+		trashedByShopifyId: async (id) => [...trash.values()].find((e) => e.data.shopify_id === id) ?? null,
+		restore: async (id) => {
+			const e = trash.get(id)!;
+			trash.delete(id);
+			e.status = "draft";
+			rows.set(id, e);
+		},
 	};
 }
 
@@ -180,7 +204,7 @@ describe("batches", () => {
 		const r = await addProducts(config, store, ["tote", "/products/mug", "gone", "bad handle!"], { fetcher });
 		expect(r.counts).toEqual({ added: 2, failed: 2 });
 		expect(r.errors.join(" ")).toContain("gone");
-		expect(describeBatch(r)).toBe("2 added, 2 failed");
+		expect(describeBatch(r)).toBe("2 synced, 2 failed");
 	});
 
 	it("adds every product page by page, resuming from Shopify's cursor", async () => {
@@ -259,6 +283,54 @@ describe("site", () => {
 		expect(xml).toContain("/shop/mug/");
 		expect(xml).not.toContain("/shop/tote/");
 	});
+});
+
+describe("picking products to sync", () => {
+	it("syncs the ticked products and stops syncing the unticked ones it showed", async () => {
+		const store = memory();
+		const shown = ["tote", "mug", "cap"].map((h) => mirrorOf(raw(h)));
+		await applyProduct(store, shown[2]!, {}, true);
+		const r = await syncPicked(store, shown, new Set([shown[0]!.shopify_id, shown[1]!.shopify_id]));
+		expect(r.counts).toEqual({ added: 2, removed: 1 });
+		expect(describeBatch(r)).toBe("2 synced, 1 no longer synced");
+		expect((await store.counts()).total).toBe(2);
+		expect(await store.byShopifyId(shown[2]!.shopify_id)).toBeNull();
+	});
+
+	it("brings a product back with its story when it is picked again, and webhooks leave a stopped one alone", async () => {
+		const store = memory();
+		const m = mirrorOf(raw("tote"));
+		await applyProduct(store, m, {}, true);
+		const e = (await store.byShopifyId(m.shopify_id))!;
+		await store.update(e.id, { content: ["story"] } as never);
+		expect(await stopSyncing(store, e.id)).toBe(true);
+		expect(await applyProduct(store, m, { id: m.shopify_id })).toBe("absent");
+		expect(await applyProduct(store, { ...m, title: "Tote 2" }, {}, true)).toBe("added");
+		const back = (await store.byShopifyId(m.shopify_id))!;
+		expect(back).toMatchObject({ id: e.id, status: "published", data: { title: "Tote 2", content: ["story"] } });
+	});
+
+	it("defines every field RedeemID writes, plus the story", () => {
+		const slugs = PRODUCTS_FIELDS.map((f) => f.slug);
+		for (const k of MIRROR_KEYS) expect(slugs).toContain(k);
+		expect(slugs).toContain("content");
+	});
+});
+
+describe("Products page", () => {
+	const kv = () => {
+		const m = new Map<string, unknown>();
+		return { m, get: async <T>(k: string) => (m.get(k) as T) ?? null, set: async (k: string, v: unknown) => void m.set(k, v), delete: async (k: string) => m.delete(k) };
+	};
+
+	it("offers to set up products instead of asking for a seed", async () => {
+		const page = await productsPage({ config, db: {}, kv: kv(), webhookUri: "https://site/hook" });
+		const text = JSON.stringify(page.blocks);
+		expect(text).toContain('"action_id":"products_setup"');
+		expect(text).toContain("Set up products");
+		expect(text).not.toMatch(/seed/i);
+	});
+
 });
 
 // Keeps the test's mirror shape honest.
