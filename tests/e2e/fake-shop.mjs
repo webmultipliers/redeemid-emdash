@@ -317,9 +317,12 @@ export async function startFakeShop({ port, clientId, clientSecret, logoutUris =
 				if (query.includes("RedeemIDProductById")) return json(200, { data: { product: mirror(listed().find((p) => p.id === variables.id)) } });
 				if (query.includes("RedeemIDProductByHandle")) return json(200, { data: { product: mirror(listed().find((p) => p.handle === variables.handle)) } });
 				if (query.includes("RedeemIDProducts(")) return json(200, { data: { nodes: variables.ids.map((id) => mirror(listed().find((p) => p.id === id))) } });
-				if (query.includes("RedeemIDProductFind")) {
-					const q = String(variables.query).toLowerCase();
-					return json(200, { data: { products: { nodes: listed().filter((p) => p.title.toLowerCase().includes(q)).map(mirror) } } });
+				if (query.includes("RedeemIDProductBrowse")) {
+					const q = String(variables.query ?? "").toLowerCase();
+					const all = listed().filter((p) => !q || p.title.toLowerCase().includes(q)).sort((a, b) => a.title.localeCompare(b.title));
+					const start = variables.after ? Number(variables.after) : 0;
+					const more = start + variables.first < all.length;
+					return json(200, { data: { products: { pageInfo: { hasNextPage: more, endCursor: more ? String(start + variables.first) : null }, nodes: all.slice(start, start + variables.first).map(mirror) } } });
 				}
 				if (query.includes("RedeemIDProductPage")) {
 					const all = listed();

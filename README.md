@@ -86,7 +86,7 @@ Set the secrets, open **Plugins → RedeemID → Connection** in the admin, and 
 | [Shopify Flow recipes](docs/shopify-flow.md) | Tag on a paid order, remove on refund or cancellation, passes that end |
 | [Content and templates](docs/content.md) | `<Content>`, the Paywall break, Members only, the wall, `<Gate>`, badges, plan cards, site search and replacement text |
 | [Access](docs/access.md) | Rules, levels, the Access page and the entry panel, meter and drip, selling one entry, features and protected files |
-| [Product entries](docs/products.md) | Keep picked Shopify products as EmDash entries: the collection, Add all, refresh and product webhooks |
+| [Product sync](docs/products.md) | Choose Shopify products to keep in sync as EmDash entries: set up, tick to sync, sync all, automatic updates |
 | [Shop and preferences](docs/shop.md) | Products, collections, search, the cart drawer, signed-in checkout, local prices and member preferences |
 | [Staff tools, webhooks and privacy](docs/staff.md) | Member tools, membership dates, webhook health, app events, reports, AI agents, the command line and privacy requests |
 | [Running in production](docs/production.md) | Caching, rate limits and troubleshooting |
