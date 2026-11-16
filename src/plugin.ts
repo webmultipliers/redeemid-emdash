@@ -46,6 +46,7 @@ import { textProblems } from "./text.js";
 import { cacheFindings, gatedFindings, templateFindings } from "./template-scan.js";
 import { nextStep, requiredSteps, setupFacts, setupSteps, statusCards, storeTab, webhooksStep, WEBHOOK } from "./setup.js";
 import { record } from "./log.js";
+import { adminLocale, localize } from "./i18n.js";
 import { resend } from "./events.js";
 import { eventRow, eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, webhookPanels, type MonitorEnv } from "./monitor.js";
 import { z } from "astro/zod";
@@ -285,7 +286,7 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 			"access-panel": {
 				permission: "content:edit_own",
 				request: { body: "json" as const },
-				handler: async (ctx: RouteContext) => {
+				handler: inLocale(async (ctx: RouteContext) => {
 					const i = (ctx.input ?? {}) as { type?: string; action_id?: string; values?: Record<string, unknown> };
 					const entry = ctx.ui && "entry" in ctx.ui ? ctx.ui.entry : undefined;
 					if (!entry) return { blocks: [{ type: "context", text: "Save the entry first." }] };
@@ -301,7 +302,7 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 					} catch (e) {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load access", description: (e as Error).message }] };
 					}
-				},
+				}),
 			},
 			// The Shopify product field widget (admin.ts `fields.product`): search the store's products.
 			"product-picker": {
@@ -335,7 +336,7 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 				},
 			},
 			admin: {
-				handler: async (ctx: RouteContext) => {
+				handler: inLocale(async (ctx: RouteContext) => {
 					const i = (ctx.input ?? {}) as { type?: string; page?: string; action_id?: string; value?: unknown; values?: Record<string, unknown>; block_id?: string };
 					try {
 						const config = await live();
@@ -369,7 +370,7 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load this page", description: (e as Error).message }] };
 					}
 					return { blocks: [] };
-				},
+				}),
 			},
 		},
 	});
@@ -398,6 +399,14 @@ async function scheduleHealth(ctx: PluginContext): Promise<void> {
 }
 
 /** The code's config with what the admin saved. */
+/** A Block Kit route whose answer is shown in the staff member's language (i18n.ts). */
+function inLocale<T>(handler: (ctx: RouteContext) => Promise<T>): (ctx: RouteContext) => Promise<T> {
+	return async (ctx) => {
+		const ui = ctx.ui as { locale?: string } | undefined;
+		return localize(await handler(ctx), adminLocale(ctx.request, ui?.locale ?? null));
+	};
+}
+
 async function liveConfig(code: RedeemIDConfig): Promise<RedeemIDConfig> {
 	const { getDb } = await import("emdash/runtime");
 	return (await withSaved(code, await getDb())) ?? code;

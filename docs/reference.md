@@ -100,6 +100,8 @@ Import each from `@redeemid/emdash/components/<Name>.astro`.
 | Product structured data | `page:metadata`, on product entries' own pages | Product JSON-LD from Shopify's fields ([products](products.md#product-structured-data)) |
 | RedeemID dashboard card | EmDash's dashboard | Alerts, counts and links |
 
+The admin pages, the Access panel and column, and the product field show in the staff member's language when RedeemID has it: German, Spanish, French, Japanese or Brazilian Portuguese. The language is the one picked in EmDash, then the browser's. Anything without a translation, and every other language, stays in English. Member-facing text on the site isn't covered here; put that in your own words with `text` (see [content](content.md)).
+
 ## Modules
 
 | Import | Gives |

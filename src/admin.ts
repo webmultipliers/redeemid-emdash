@@ -29,6 +29,10 @@ import { BlockRenderer, formatRelativeTime, renderElement } from "@emdash-cms/bl
 import { createElement as h, Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { OVERVIEW, PAGES, TAB_PATHS } from "./descriptor.js";
+import { browserLocale, translate } from "./i18n.js";
+
+/** Text drawn in the browser, in the staff member's language (i18n.ts). */
+const T = (text: string): string => translate(browserLocale(), text);
 
 const PLUGIN = "redeemid";
 const ADMIN = "/_emdash/admin";
@@ -127,7 +131,7 @@ function Facts({ fields }: { fields: Array<{ label: string; value: string }> }):
 	return h(
 		"dl",
 		{ className: "grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3" },
-		fields.map((f, i) => h("div", { key: i, className: "min-w-0" }, h("dt", { className: "text-sm text-kumo-subtle" }, f.label), f.value ? h("dd", { className: "text-kumo-default break-words" }, f.value) : h("dd", { className: "text-kumo-subtle" }, "Not set"))),
+		fields.map((f, i) => h("div", { key: i, className: "min-w-0" }, h("dt", { className: "text-sm text-kumo-subtle" }, f.label), f.value ? h("dd", { className: "text-kumo-default break-words" }, f.value) : h("dd", { className: "text-kumo-subtle" }, T("Not set")))),
 	);
 }
 
@@ -169,7 +173,7 @@ function CopyFields({ fields }: { fields: CopyField[] }): ReactNode {
 				h("div", { className: "text-sm font-medium text-kumo-default" }, f.label),
 				f.copy === false
 					? h(Input as never, { value: f.value, disabled: true, readOnly: true, "aria-label": f.label, className: "w-full" })
-					: h(ClipboardText as never, { text: f.value, size: "base", className: "w-full", labels: { copyAction: `Copy ${f.label}` } }),
+					: h(ClipboardText as never, { text: f.value, size: "base", className: "w-full", labels: { copyAction: T(`Copy ${f.label}`) } }),
 				f.hint ? h("div", { className: "text-xs text-kumo-subtle font-mono break-all" }, f.hint) : null,
 			),
 		),
@@ -221,7 +225,7 @@ const KINDS: Array<{ kind: MapItem["kind"]; label: string }> = [
 	{ kind: "feature", label: "Features" },
 	{ kind: "content", label: "Content types" },
 	{ kind: "term", label: "Terms" },
-	{ kind: "entry", label: "Entries" },
+	{ kind: "entry", label: T("Entries") },
 	{ kind: "folder", label: "Folders" },
 ];
 
@@ -371,15 +375,15 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 				h("span", { className: "text-sm font-semibold text-kumo-default", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, title),
 				note ? h("span", { className: "text-xs text-kumo-subtle", style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, note) : null,
 			),
-			badge !== undefined ? h("span", { className: "text-xs font-semibold text-kumo-default", style: { flexShrink: 0, padding: "0.1rem 0.5rem", borderRadius: "999px", background: "var(--color-kumo-tint)" }, "aria-label": `${badge} hold it now` }, badge) : null,
+			badge !== undefined ? h("span", { className: "text-xs font-semibold text-kumo-default", style: { flexShrink: 0, padding: "0.1rem 0.5rem", borderRadius: "999px", background: "var(--color-kumo-tint)" }, "aria-label": T(`${badge} hold it now`) }, badge) : null,
 		);
 	const head = (x: number, text: string, top = 0) => h("div", { key: `${text}-${top}`, className: "text-xs font-semibold text-kumo-subtle", style: { position: "absolute", left: x, top, height: 20, textTransform: "uppercase", letterSpacing: "0.04em" } }, text);
 
 	const holders = pickedThing ? rows.filter((r) => r.items.some((i) => itemKey(i) === itemKey(pickedThing))).map((r) => ({ row: r, item: r.items.find((i) => itemKey(i) === itemKey(pickedThing))! })) : [];
 	const change = (i: MapItem) =>
 		"entry" in i.go
-			? h("a", { href: linkHref({ kind: "content", collection: i.go.entry.collection, id: i.go.entry.id }) ?? "#", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline" }, "Open →")
-			: h("button", { type: "button", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline", onClick: () => go(i.go) }, "Change →");
+			? h("a", { href: linkHref({ kind: "content", collection: i.go.entry.collection, id: i.go.entry.id }) ?? "#", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline" }, T("Open →"))
+			: h("button", { type: "button", className: "shrink-0 text-sm font-medium text-kumo-link hover:underline", onClick: () => go(i.go) }, T("Change →"));
 	const line = { borderBottom: "1px solid var(--color-kumo-hairline)" };
 
 	return h(
@@ -390,10 +394,10 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 			{ ref: box, style: { overflowX: "auto" } },
 			h(
 				"div",
-				{ role: "group", "aria-label": "Access map", onClick: () => setPicked(null), style: { position: "relative", width, height } },
+				{ role: "group", "aria-label": T("Access map"), onClick: () => setPicked(null), style: { position: "relative", width, height } },
 				h("svg", { width, height, "aria-hidden": true, style: { position: "absolute", inset: 0, pointerEvents: "none" } }, lines.map((l, n) => h("path", { key: n, d: l.d, ...stroke(l.lit) }))),
-				head(leftX, "Readers"),
-				head(rightX, "What they get"),
+				head(leftX, T("Readers")),
+				head(rightX, T("What they get")),
 				...groupY.map((g) => head(rightX, g.label, g.y + 4)),
 				...rows.map((r) => node(`r-${r.id}`, leftX, readerY.get(r.id)!, pickedRow?.id === r.id, litReaders.has(r.id), r.name, r.who, () => setPicked({ reader: r.id }), r.count === undefined ? undefined : String(r.count))),
 				...[...things.values()].map((i) => node(`t-${itemKey(i)}`, rightX, thingY.get(itemKey(i))!, pickedThing ? itemKey(pickedThing) === itemKey(i) : false, litThings.has(itemKey(i)), i.label, i.note ?? "", () => setPicked({ item: itemKey(i) }))),
@@ -409,10 +413,10 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 						h(
 							"div",
 							{ className: "min-w-0" },
-							h("h3", { className: "text-lg font-semibold text-kumo-default" }, `What ${pickedRow.name} gets`),
-							h("p", { className: "text-sm text-kumo-subtle" }, [pickedRow.who, pickedRow.count === undefined ? "" : `${pickedRow.count} hold it now`, pickedRow.includes.length ? `includes ${pickedRow.includes.join(", ")}` : ""].filter(Boolean).join(" · ")),
+							h("h3", { className: "text-lg font-semibold text-kumo-default" }, T(`What ${pickedRow.name} gets`)),
+							h("p", { className: "text-sm text-kumo-subtle" }, [pickedRow.who, pickedRow.count === undefined ? "" : T(`${pickedRow.count} hold it now`), pickedRow.includes.length ? T(`includes ${pickedRow.includes.join(", ")}`) : ""].filter(Boolean).join(" · ")),
 						),
-						pickedRow.id !== "everyone" && pickedRow.id !== "signed-in" ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => go({ level: pickedRow.id }) }, "Edit level") : null,
+						pickedRow.id !== "everyone" && pickedRow.id !== "signed-in" ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => go({ level: pickedRow.id }) }, T("Edit level")) : null,
 					),
 					pickedRow.items.length
 						? h(
@@ -435,7 +439,7 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 													h(
 														"div",
 														{ className: "min-w-0" },
-														h("div", { className: "text-sm text-kumo-default break-words" }, i.label, i.via ? h("span", { className: "text-xs text-kumo-subtle", style: { marginLeft: "0.5rem", whiteSpace: "nowrap" } }, `via ${i.via}`) : null),
+														h("div", { className: "text-sm text-kumo-default break-words" }, i.label, i.via ? h("span", { className: "text-xs text-kumo-subtle", style: { marginLeft: "0.5rem", whiteSpace: "nowrap" } }, T(`via ${i.via}`)) : null),
 														i.note ? h("div", { className: "text-xs text-kumo-subtle break-words" }, i.note) : null,
 													),
 													change(i),
@@ -445,7 +449,7 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 									);
 								}),
 							)
-						: h("p", { className: "text-sm text-kumo-subtle" }, "Nothing on this site names it yet."),
+						: h("p", { className: "text-sm text-kumo-subtle" }, T("Nothing on this site names it yet.")),
 				)
 			: pickedThing
 				? h(
@@ -457,7 +461,7 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 							h(
 								"div",
 								{ className: "min-w-0" },
-								h("h3", { className: "text-lg font-semibold text-kumo-default" }, `Who gets ${pickedThing.label}`),
+								h("h3", { className: "text-lg font-semibold text-kumo-default" }, T(`Who gets ${pickedThing.label}`)),
 								h("p", { className: "text-sm text-kumo-subtle" }, [KINDS.find((k) => k.kind === pickedThing.kind)?.label.replace(/s$/, ""), pickedThing.note].filter(Boolean).join(" · ")),
 							),
 							change(pickedThing),
@@ -470,12 +474,12 @@ function AccessMap({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 									"li",
 									{ key: r.id, className: "flex items-start justify-between gap-3 py-1.5", style: line },
 									h("button", { type: "button", className: "text-sm font-medium text-kumo-default hover:underline text-left", onClick: () => setPicked({ reader: r.id }) }, r.name),
-									h("span", { className: "text-xs text-kumo-subtle", style: { whiteSpace: "nowrap" } }, item.via ? `via ${item.via}` : "set for it directly"),
+									h("span", { className: "text-xs text-kumo-subtle", style: { whiteSpace: "nowrap" } }, item.via ? T(`via ${item.via}`) : T("set for it directly")),
 								),
 							),
 						),
 					)
-				: h("p", { className: "text-sm text-kumo-subtle" }, "Pick a reader to see everything it gets, or a thing on the right to see who gets it."),
+				: h("p", { className: "text-sm text-kumo-subtle" }, T("Pick a reader to see everything it gets, or a thing on the right to see who gets it.")),
 	);
 }
 
@@ -522,7 +526,7 @@ function Modal({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 		send: async (i) => {
 			setProblem(null);
 			const out = await ctx.send(i);
-			if (!out) setProblem("RedeemID didn't answer. Try again.");
+			if (!out) setProblem(T("RedeemID didn't answer. Try again."));
 			else if (out.toast?.type === "error") setProblem(out.toast.message);
 			else setOpen(false);
 			return out;
@@ -664,7 +668,7 @@ function RunBox({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 			if (gone) return;
 			const next = out?.blocks?.[0] as unknown as RunInfo | undefined;
 			if (!next || next.state === undefined) {
-				setRun({ ...run, state: "paused", text: "RedeemID didn't answer. Continue tries again." });
+				setRun({ ...run, state: "paused", text: T("RedeemID didn't answer. Continue tries again.") });
 				return;
 			}
 			setRun(next);
@@ -690,11 +694,11 @@ function RunBox({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 	const button = (label: string, onClick: () => void, variant: "primary" | "secondary" = "secondary") => h(Button as never, { key: label, variant, disabled: busy, onClick }, label);
 	const buttons =
 		run.state === "running"
-			? [button("Stop", () => void act(run.actions.stop))]
+			? [button(T("Stop"), () => void act(run.actions.stop))]
 			: run.state === "paused"
-				? [button("Continue", () => void act(run.actions.start, "resume"), "primary"), button("Start over", () => void act(run.actions.start, "new"))]
+				? [button(T("Continue"), () => void act(run.actions.start, "resume"), "primary"), button(T("Start over"), () => void act(run.actions.start, "new"))]
 				: asking
-					? [button("Start", () => void act(run.actions.start, "new"), "primary"), button("Cancel", () => setAsking(false))]
+					? [button(T("Start"), () => void act(run.actions.start, "new"), "primary"), button(T("Cancel"), () => setAsking(false))]
 					: [button(run.start_label, () => (run.confirm ? setAsking(true) : void act(run.actions.start, "new")), run.state === "finished" ? "secondary" : "primary")];
 	return h(
 		"section",
@@ -703,7 +707,7 @@ function RunBox({ block, ctx }: { block: Block; ctx: Ctx }): ReactNode {
 		run.state === "running" || run.state === "paused"
 			? h(
 					"div",
-					{ role: "progressbar", "aria-label": run.title, "aria-valuemin": 0, ...(run.total !== null ? { "aria-valuemax": run.total, "aria-valuenow": run.done } : { "aria-valuetext": `${run.done} so far` }), className: "h-2 w-full overflow-hidden rounded-full bg-kumo-tint" },
+					{ role: "progressbar", "aria-label": run.title, "aria-valuemin": 0, ...(run.total !== null ? { "aria-valuemax": run.total, "aria-valuenow": run.done } : { "aria-valuetext": T(`${run.done} so far`) }), className: "h-2 w-full overflow-hidden rounded-full bg-kumo-tint" },
 					h("div", { className: "h-full bg-kumo-brand transition-all", style: { width: pct !== null ? `${pct}%` : "100%", opacity: pct !== null ? 1 : 0.35, background: "var(--color-kumo-brand, #2563eb)" } }),
 				)
 			: null,
@@ -739,7 +743,7 @@ function Page({ page }: { page: string }): ReactNode {
 				});
 				if (g !== generation.current) return null;
 				if (!res.ok) {
-					setError(`RedeemID answered ${res.status}: ${await res.text()}`);
+					setError(T(`RedeemID answered ${res.status}: ${await res.text()}`));
 					return null;
 				}
 				const data = ((await res.json()) as { data: Response }).data;
@@ -752,7 +756,7 @@ function Page({ page }: { page: string }): ReactNode {
 				}
 				return data;
 			} catch (e) {
-				if (g === generation.current) setError(e instanceof Error ? e.message : "RedeemID didn't answer.");
+				if (g === generation.current) setError(e instanceof Error ? e.message : T("RedeemID didn't answer."));
 				return null;
 			} finally {
 				if (g === generation.current) {
@@ -799,8 +803,8 @@ function Page({ page }: { page: string }): ReactNode {
 		void (navigate as unknown as (o: { to: string }) => Promise<void>)({ to: url.pathname.slice(ADMIN.length) + url.search });
 	};
 
-	if (loading) return h("div", { className: "flex items-center justify-center py-16" }, h(Loader as never, { "aria-label": "Loading" }));
-	if (error) return h("div", { role: "alert", className: "rounded-lg border border-kumo-line p-6 text-kumo-default" }, h("div", { className: "font-semibold" }, "RedeemID couldn't load this page"), h("p", { className: "mt-1 text-sm text-kumo-subtle" }, error));
+	if (loading) return h("div", { className: "flex items-center justify-center py-16" }, h(Loader as never, { "aria-label": T("Loading") }));
+	if (error) return h("div", { role: "alert", className: "rounded-lg border border-kumo-line p-6 text-kumo-default" }, h("div", { className: "font-semibold" }, T("RedeemID couldn't load this page")), h("p", { className: "mt-1 text-sm text-kumo-subtle" }, error));
 	return h(
 		"div",
 		{ className: "relative", onClickCapture },
@@ -815,7 +819,7 @@ function Page({ page }: { page: string }): ReactNode {
 				)
 			: null,
 		h("div", { "aria-busy": pending || undefined, className: pending ? "opacity-60 transition-opacity" : "transition-opacity" }, h(Blocks, { blocks, ctx: { send, call } })),
-		h("span", { role: "status", className: "sr-only" }, pending ? "Updating" : ""),
+		h("span", { role: "status", className: "sr-only" }, pending ? T("Updating") : ""),
 	);
 }
 
@@ -870,13 +874,13 @@ export function AccessCell({ item, visibleItems, collection }: { item: ListItem;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [collection, key]);
 	const own = labels?.[item.id];
-	if (!labels) return h("span", { className: "text-kumo-subtle", "aria-label": "Loading" }, "…");
+	if (!labels) return h("span", { className: "text-kumo-subtle", "aria-label": T("Loading") }, "…");
 	if (!own) return h("span", { className: "text-kumo-subtle" }, "—");
-	return own.locked ? h(Badge as never, { variant: "secondary" }, own.label) : h("span", { className: "text-kumo-subtle" }, own.label);
+	return own.locked ? h(Badge as never, { variant: "secondary" }, T(own.label)) : h("span", { className: "text-kumo-subtle" }, T(own.label));
 }
 
 /** EmDash shows these in every content list (not in Trash). */
-export const contentListColumns = [{ id: "access", label: "Access", cell: AccessCell, order: 50 }];
+export const contentListColumns = [{ id: "access", label: T("Access"), cell: AccessCell, order: 50 }];
 
 // ---------------------------------------------------------------- the Shopify product field widget
 
@@ -907,10 +911,10 @@ export function ProductField({ value, onChange, label, id, required, minimal }: 
 			});
 			const data = res.ok ? ((await res.json()) as { data?: { items?: Pick[]; error?: string } }).data : null;
 			setItems(data?.items ?? []);
-			if (!res.ok || data?.error) setError("RedeemID couldn't search the store. Check Plugins → RedeemID → Connection.");
+			if (!res.ok || data?.error) setError(T("RedeemID couldn't search the store. Check Plugins → RedeemID → Connection."));
 		} catch {
 			setItems([]);
-			setError("RedeemID couldn't search the store.");
+			setError(T("RedeemID couldn't search the store."));
 		} finally {
 			setBusy(false);
 		}
@@ -931,16 +935,16 @@ export function ProductField({ value, onChange, label, id, required, minimal }: 
 				className: "min-w-0 flex-1",
 				onChange: (e: { target: { value: string } }) => onChange(e.target.value.trim() || null),
 			}),
-			handle ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => onChange(null) }, "Clear") : null,
+			handle ? h(Button as never, { variant: "secondary", size: "sm", onClick: () => onChange(null) }, T("Clear")) : null,
 		),
-		shown ? h("p", { className: "text-sm text-kumo-subtle" }, `${shown.title}${shown.available ? "" : " (sold out)"}`) : null,
+		shown ? h("p", { className: "text-sm text-kumo-subtle" }, `${shown.title}${shown.available ? "" : T(" (sold out)")}`) : null,
 		h(
 			"div",
 			{ className: "flex flex-wrap items-center gap-2" },
 			h(Input as never, {
 				value: query,
-				placeholder: "Search the store's products",
-				"aria-label": `Search products for ${label}`,
+				placeholder: T("Search the store's products"),
+				"aria-label": T(`Search products for ${label}`),
 				className: "min-w-0 flex-1",
 				onChange: (e: { target: { value: string } }) => setQuery(e.target.value),
 				onKeyDown: (e: { key: string; preventDefault(): void }) => {
@@ -950,14 +954,14 @@ export function ProductField({ value, onChange, label, id, required, minimal }: 
 					}
 				},
 			}),
-			h(Button as never, { variant: "secondary", size: "sm", disabled: busy, onClick: () => void search() }, busy ? "Searching…" : "Search"),
+			h(Button as never, { variant: "secondary", size: "sm", disabled: busy, onClick: () => void search() }, busy ? T("Searching…") : T("Search")),
 		),
 		error ? h("p", { role: "alert", className: "text-sm text-kumo-danger" }, error) : null,
-		items && items.length === 0 && !error ? h("p", { role: "status", className: "text-sm text-kumo-subtle" }, "No products match.") : null,
+		items && items.length === 0 && !error ? h("p", { role: "status", className: "text-sm text-kumo-subtle" }, T("No products match.")) : null,
 		items && items.length > 0
 			? h(
 					"ul",
-					{ className: "grid gap-1", "aria-label": "Products found" },
+					{ className: "grid gap-1", "aria-label": T("Products found") },
 					items.map((p) =>
 						h(
 							"li",

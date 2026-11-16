@@ -6,6 +6,10 @@ RedeemID is pre-1.0, so any 0.0.x release can change things. Lines marked **Upgr
 
 ## Unreleased
 
+## 0.0.39 (2026-11-16)
+
+- The admin speaks German, Spanish, French, Japanese and Brazilian Portuguese: RedeemID's pages, the Access panel and column, and the product field follow the language picked in EmDash (then the browser's). Anything not yet translated stays in English.
+
 ## 0.0.38 (2026-11-16)
 
 - Content lists in the admin get an **Access** column: who can read each entry, as **Free** or a badge with its levels, from the same rules the site enforces.
