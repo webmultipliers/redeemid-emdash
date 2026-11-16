@@ -158,7 +158,7 @@ describe("saved settings over code", () => {
 	it("adds and edits levels and features in dialogs, and tests access on its own tab", async () => {
 		const page = (await accessPage(await env())) as { blocks: Array<{ type: string; panels?: Array<{ label: string; blocks: Array<Record<string, unknown>> }> }> };
 		const tabs = page.blocks.find((b) => b.type === "tab")!.panels!;
-		expect(tabs.map((t) => t.label)).toEqual(["Map", "Levels", "Features", "Rules", "Terms", "Files", "Test"]);
+		expect(tabs.map((t) => t.label)).toEqual(["Map", "Levels", "Features", "Sitewide", "Content types", "Terms", "Meter", "Files", "Test", "Code settings"]);
 		const add = tabs[1]!.blocks.find((b) => b.type === "redeemid_modal")!;
 		expect(add).toMatchObject({ title: "Add a level", trigger: { label: "Add a level" } });
 		expect(JSON.stringify(add)).toContain('"condition":{"field":"more","eq":true}');
@@ -167,7 +167,7 @@ describe("saved settings over code", () => {
 		expect(edit).toContain('"block_id":"modal:level:member"');
 		expect(edit).toContain('"open":true');
 		const tested = JSON.stringify(await accessAction(await env(), { action_id: "access_test", values: { collection: "posts", terms: "category:members", tags: "member", signed_in: true } }));
-		expect(tested).toContain('"default_tab":6');
+		expect(tested).toContain('"default_tab":8');
 		expect(tested).toContain("This reader can read it");
 	});
 
@@ -198,12 +198,13 @@ describe("saved settings over code", () => {
 		const toLevel = JSON.stringify(await accessAction(await env(), { action_id: "map_go", value: JSON.stringify({ level: "pro" }) }));
 		expect(toLevel).toContain('"block_id":"modal:level:pro"');
 		const toTerms = JSON.stringify(await accessAction(await env(), { action_id: "map_go", value: JSON.stringify({ tab: "taxonomies" }) }));
-		expect(toTerms).toContain('"default_tab":4');
+		expect(toTerms).toContain('"default_tab":5');
 	});
 
-	it("shows site code for a level or feature, with its slug and the Shopify note", async () => {
+	it("shows site code for a level or feature in a dialog from its code button, with its slug and the Shopify note", async () => {
 		const levels = JSON.stringify(await accessPage(await env()));
-		expect(levels).toContain("Use it in your site");
+		expect(levels).toContain('"title":"Use Member in your site"');
+		expect(levels).toContain('"trigger":{"label":"Code for Member","style":"secondary","icon":"code"}');
 		expect(levels).toContain('<Gate levels={[\\"member\\"]}>');
 		expect(levels).toContain("decided in Shopify");
 		await accessAction(await env(), { action_id: "feature_save", block_id: "feature:new", values: { name: "Ad-free", levels: ["member"] } });
@@ -213,9 +214,26 @@ describe("saved settings over code", () => {
 		expect(editing).toContain("developer-api.md");
 	});
 
+	it("keeps going back to the code's setting on its own tab, behind a warning", async () => {
+		const before = JSON.stringify(await accessPage(await env()));
+		expect(before).not.toContain('"action_id":"reset"');
+		await accessAction(await env(), { action_id: "site_save", block_id: "site:meter", values: { meter_limit: 9, meter_period: "month" } });
+		const page = (await accessPage(await env(), "code")) as { blocks: Array<{ type: string; default_tab?: number; panels?: Array<{ label: string; blocks: unknown[] }> }> };
+		const tab = page.blocks.find((b) => b.type === "tab")!;
+		expect(tab.default_tab).toBe(9);
+		const others = JSON.stringify(tab.panels!.slice(0, 9));
+		expect(others).not.toContain('"action_id":"reset"');
+		const code = JSON.stringify(tab.panels![9]);
+		expect(code).toContain('"action_id":"reset","value":"meter"');
+		expect(code).toContain('"style":"danger"');
+		expect(code).toContain("There's no undo");
+		const back = JSON.stringify(await accessAction(await env(), { action_id: "reset", value: "meter" }));
+		expect(back).toContain("Using the code's meter again.");
+	});
+
 	it("renders every tab, with new content types and taxonomies listed", async () => {
 		const page = JSON.stringify(await accessPage(await env()));
-		for (const text of ["Levels", "Rules", "Terms", "Files", "Features", "Content types", "Recipes: follows the site default", "Categories: 1 rule"]) {
+		for (const text of ["Levels", "Sitewide", "Meter", "Code settings", "Terms", "Files", "Features", "Content types", "Recipes: follows the site default", "Categories: 1 rule"]) {
 			expect(page).toContain(text);
 		}
 	});

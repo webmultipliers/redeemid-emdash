@@ -12,7 +12,7 @@ From an empty EmDash site to a locked post that opens for a tagged customer.
 
 ## 1. Set up Shopify
 
-Follow [Connect a store](shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and an Admin API app (staff tools, resyncs and webhooks). Once the package is installed, **Plugins → RedeemID → Connection** walks through the same steps for your site, one tab each, with its own callback URI filled in, and marks the ones that are done.
+Follow [Connect a store](shopify-setup.md). It gives you a Customer Account API client, Storefront API tokens and an Admin API app (staff tools, resyncs and webhooks). Once the package is installed, **Plugins → RedeemID → Connection** walks through the same steps for your site: Status shows each one as done or not, and Store has the site's own callback URI filled in.
 
 ## 2. Install
 
@@ -84,11 +84,11 @@ import Notices from "@redeemid/emdash/components/Notices.astro";
 <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title} />
 ```
 
-Use `<Content>` in place of `<PortableText>` for every body that may be locked, because plain `<PortableText>` shows everything. You don't have to find them by hand: `redeemidGuard()` scans the site's `.astro` files at build time, and Connection → Status names each template, with its line, that renders a gated collection's body with `<PortableText>`. While any rule is on, it also lists templates whose collection it can't tell (such as a component given the body as a prop), so you can check them.
+Use `<Content>` in place of `<PortableText>` for every body that may be locked, because plain `<PortableText>` shows everything. You don't have to find them by hand: `redeemidGuard()` scans the site's `.astro` files at build time, and Connection → Environment names each template, with its line, that renders a gated collection's body with `<PortableText>`. While any rule is on, it also lists templates whose collection it can't tell (such as a component given the body as a prop), so you can check them.
 
 ## 6. Check it
 
 1. Finish EmDash setup as staff first. Store customers can't create the first account.
-2. Open **Plugins → RedeemID → Connection**. Work through the step tabs until each has a check mark (the Webhooks tab registers the webhooks for you). **Status** lists every setting as Set or Missing.
+2. Open **Plugins → RedeemID → Connection**. **Status** shows each step as a card; work through **Store** and **Webhooks** (which registers the webhooks for you) until every card says Done. **Environment** lists every setting as Set or Missing.
 3. Tag a test customer `member` in Shopify, open a locked post, and sign in as that customer. The post opens.
 4. Remove the tag in Shopify. The post locks again once the webhook arrives.

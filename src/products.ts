@@ -406,10 +406,14 @@ export async function addAllPage(config: RedeemIDConfig, store: EntryStore, afte
 	return r;
 }
 
-/** Refresh: read the entries synced longest ago from Shopify, in one Storefront read. */
-export async function refreshOldest(config: RedeemIDConfig, store: EntryStore, opts: Fetch = {}): Promise<BatchResult> {
+/**
+ * Refresh: read the entries synced longest ago from Shopify, in one
+ * Storefront read. With `before`, only entries last synced before it (a
+ * "Refresh all" run reads each one once).
+ */
+export async function refreshOldest(config: RedeemIDConfig, store: EntryStore, opts: Fetch = {}, before?: string): Promise<BatchResult> {
 	const r: BatchResult = { counts: {}, next: null, errors: [] };
-	const entries = await store.oldest(PRODUCTS_BATCH);
+	const entries = (await store.oldest(PRODUCTS_BATCH)).filter((e) => !before || String(e.data.synced_at ?? "") < before);
 	const ids = entries.map((e) => String(e.data.shopify_id ?? "")).filter(Boolean);
 	const fresh = await readProducts(config, ids, opts);
 	for (const e of entries) {

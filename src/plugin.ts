@@ -38,10 +38,12 @@ import { CONNECTION_TABS, EDITOR_PANELS, EVENTS_TABS, OVERVIEW, PAGES, WIDGETS }
 import { VERSION } from "./version.js";
 import { AdminError, adminConfigured } from "./admin-api.js";
 import { cancelShopifyErasure, closeRequest, eraseMember, exportMember, exportRequest, recentRequests, requestShopifyErasure } from "./privacy.js";
-import { bulkResync, BULK_BATCH, memberDetail, privacyPage, registerWebhooks, resyncOne, staffLink, staffUnlink, tagEdit } from "./staff.js";
+import { loadRun, runBlock, runText, startRun, stepRun, stopRun, type RunKv, type RunLabels } from "./runs.js";
+import { resourcesPage } from "./resources.js";
+import { bulkResync, BULK_BATCH, memberDetail, resyncBatch, resyncTotal, privacyPage, registerWebhooks, resyncOne, staffLink, staffUnlink, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
 import { cacheFindings, gatedFindings, templateFindings } from "./template-scan.js";
-import { nextStep, requiredSteps, setupFacts, setupPanels, setupSteps, STEP_TABS, WEBHOOK } from "./setup.js";
+import { nextStep, requiredSteps, setupFacts, setupSteps, statusCards, storeTab, webhooksStep, WEBHOOK } from "./setup.js";
 import { record } from "./log.js";
 import { resend } from "./events.js";
 import { eventRow, eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, webhookPanels, type MonitorEnv } from "./monitor.js";
@@ -75,7 +77,7 @@ const planLevelOptions: Array<{ label: string; value: string }> = [];
 
 export function setLevelOptions(levels: LevelConfig[] = []): void {
 	const mine = levels.map((l) => ({ label: l.name, value: l.slug }));
-	levelOptions.splice(0, levelOptions.length, { label: "Signed in (any member)", value: SIGNED_IN }, ...mine);
+	levelOptions.splice(0, levelOptions.length, { label: "Signed in (any customer)", value: SIGNED_IN }, ...mine);
 	planLevelOptions.splice(0, planLevelOptions.length, ...mine);
 }
 
@@ -98,7 +100,7 @@ function blocks(config: RedeemIDConfig) {
 				{
 					type: "checkbox" as const,
 					action_id: "levels",
-					label: "Who can read it (none = the entry's rule, or any signed-in member)",
+					label: "Who can read it (none = the entry's rule, or any signed-in customer)",
 					options: levelOptions,
 				},
 			],
@@ -303,11 +305,12 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 						if (i.type === "block_action" || i.type === "form_submit") return await action(config, ctx, i);
 						if (i.type !== "page_load") return { blocks: [] };
 						if (i.page === OVERVIEW) return await overviewPage(config, ctx);
-						if (i.page === "/members") return await membersPage(config);
+						if (i.page === "/customers") return await customersPage(config, ctx.kv);
+						if (i.page === "/resources") return resourcesPage(config);
 						if (i.page === "/products") return await productsPage(await productsEnv(config, ctx));
 						if (i.page === "/access") return await accessPage(await accessEnv(config));
 						if (i.page === "/reports") return await reportsPage(config, await memberStores());
-						// Connection and Events, or one of their tabs by address (/connection/sign-in, /events/app).
+						// Connection and Events, or one of their tabs by address (/connection/store, /events/app).
 						if (i.page === "/connection" || i.page?.startsWith("/connection/")) {
 							await scheduleHealth(ctx);
 							return await connectionPage(config, ctx, tabOf(CONNECTION_TABS, i.page.split("/")[2]));
@@ -498,7 +501,7 @@ function agentTools(config: RedeemIDConfig) {
 
 // ---------------------------------------------------------------- setup
 
-const SETUP_ACTIONS = new Set(["setup_check", "setup_register", "setup_level"]);
+const SETUP_ACTIONS = new Set(["setup_check", "setup_register"]);
 const isSetupAction = (id: unknown) => typeof id === "string" && SETUP_ACTIONS.has(id);
 
 /** The site's own origin, as visitors reach it. */
@@ -506,7 +509,7 @@ function siteOrigin(ctx: PluginContext): string {
 	return new URL(ctx.url("/")).origin;
 }
 
-/** Setup's buttons: Check again, Register, Add level. Each answers the page as it is after the step. */
+/** Connection's buttons: Check again and Register. Each answers the page as it is after the step. */
 async function setupAction(
 	config: RedeemIDConfig,
 	live: () => Promise<RedeemIDConfig>,
@@ -514,7 +517,7 @@ async function setupAction(
 	i: { action_id?: string; value?: unknown; values?: Record<string, unknown> },
 ) {
 	const origin = siteOrigin(ctx);
-	const tab: ConnectionTab = i.action_id === "setup_register" ? "webhooks" : i.action_id === "setup_level" ? "level" : (tabOf(CONNECTION_TABS, i.value) ?? "status");
+	const tab: ConnectionTab = i.action_id === "setup_register" ? "webhooks" : (tabOf(CONNECTION_TABS, i.value) ?? "status");
 	const page = async (toast?: { type: "success" | "error" | "info"; message: string }) => connectionPage(await live(), ctx, tab, toast);
 	if (i.action_id === "setup_register") {
 		try {
@@ -525,11 +528,6 @@ async function setupAction(
 		} catch (e) {
 			return page({ type: "error", message: (e as Error).message });
 		}
-	}
-	if (i.action_id === "setup_level") {
-		const out = await accessAction(await accessEnv(config), { action_id: "level_save", block_id: "level:new", values: { name: i.values?.name, tags: i.values?.tags } });
-		if (out.toast?.type === "success") await record({ event: "settings.saved", label: "access: level save (setup)", status: "ok", origin: "staff" });
-		return page(out.toast?.type === "success" ? { type: "success", message: "Level added. Change it any time under Access." } : out.toast);
 	}
 	return page({ type: "info", message: "Checked." });
 }
@@ -547,24 +545,28 @@ async function action(
 		const c = (v as { cursor?: unknown } | null)?.cursor;
 		return typeof c === "string" && c ? c : undefined;
 	};
+	const backOf = (v: unknown) => {
+		const b = (v as { back?: unknown } | null)?.back;
+		return Array.isArray(b) ? b.filter((x): x is string => typeof x === "string").slice(0, 200) : [];
+	};
 	const fail = (e: unknown) => ({ type: "error" as const, message: (e as Error).message });
 	switch (i.action_id) {
 		case "members_back":
-			return membersPage(config);
+			return customersPage(config, ctx.kv);
 		case "member_open": {
 			const m = await s.members.get(String(i.value ?? ""));
-			return m ? memberDetail(config, m) : { ...(await membersPage(config)), toast: { type: "error", message: "That member is gone." } };
+			return m ? memberDetail(config, m) : { ...(await customersPage(config, ctx.kv)), toast: { type: "error", message: "That customer is gone." } };
 		}
 		case "member_resync": {
 			const id = String(i.value ?? "");
 			try {
 				const m = await resyncOne(config, s, id, "staff resync");
 				const now = m ?? (await s.members.get(id));
-				if (!now) return membersPage(config);
+				if (!now) return customersPage(config, ctx.kv);
 				return memberDetail(config, now, m ? { type: "success", message: "Read again from Shopify." } : { type: "error", message: "Shopify no longer has this customer." });
 			} catch (e) {
 				const m = await s.members.get(id);
-				return m ? memberDetail(config, m, fail(e)) : membersPage(config);
+				return m ? memberDetail(config, m, fail(e)) : customersPage(config, ctx.kv);
 			}
 		}
 		case "member_link":
@@ -578,7 +580,7 @@ async function action(
 				return memberDetail(config, m, { type: "success", message: m.userId ? "Linked. Their next sign-in uses that site user." : "Unlinked." }, "account");
 			} catch (e) {
 				const m = await s.members.get(id);
-				return m ? memberDetail(config, m, fail(e), "account") : membersPage(config);
+				return m ? memberDetail(config, m, fail(e), "account") : customersPage(config, ctx.kv);
 			}
 		}
 		case "member_tag_add":
@@ -589,22 +591,22 @@ async function action(
 			try {
 				const m = await tagEdit(config, s, id, add ? "add" : "remove", add ? i.values?.tags : [v.tag]);
 				const now = m ?? (await s.members.get(id));
-				return now ? memberDetail(config, now, { type: "success", message: add ? "Tags added in Shopify." : "Tag removed in Shopify." }, "tags") : membersPage(config);
+				return now ? memberDetail(config, now, { type: "success", message: add ? "Tags added in Shopify." : "Tag removed in Shopify." }, "tags") : customersPage(config, ctx.kv);
 			} catch (e) {
 				const m = await s.members.get(id);
-				return m ? memberDetail(config, m, fail(e), "tags") : membersPage(config);
+				return m ? memberDetail(config, m, fail(e), "tags") : customersPage(config, ctx.kv);
 			}
 		}
-		case "members_resync": {
-			try {
-				const r = await bulkResync(config, s);
-				return {
-					...(await membersPage(config)),
-					toast: { type: "success", message: `Read ${r.done} members again (${r.changed} changed${r.missing ? `, ${r.missing} no longer in Shopify` : ""}).` },
-				};
-			} catch (e) {
-				return { ...(await membersPage(config)), toast: fail(e) };
-			}
+		case "customers_resync_start":
+			return { blocks: [runBlock(await startRun(ctx.kv as RunKv, RESYNC_JOB, i.value === "resume" ? "resume" : "new", () => resyncTotal(s)), RESYNC)] };
+		case "customers_resync_next":
+			return { blocks: [runBlock(await stepRun(ctx.kv as RunKv, RESYNC_JOB, (run) => resyncBatch(config, s, run)), RESYNC)] };
+		case "customers_resync_stop":
+			return { blocks: [runBlock(await stopRun(ctx.kv as RunKv, RESYNC_JOB), RESYNC)] };
+		case "customers_resync_done": {
+			const run = await loadRun(ctx.kv as RunKv, RESYNC_JOB);
+			if (run?.state === "finished") await record({ event: "staff.resync", label: "all", status: `${run.done} read, ${run.changed} changed${run.missing ? `, ${run.missing} missing` : ""}`, origin: "staff" });
+			return { ...(await customersPage(config, ctx.kv)), ...(run ? { toast: { type: run.state === "finished" ? ("success" as const) : ("info" as const), message: runText(run, RESYNC) } } : {}) };
 		}
 		case "webhooks_register": {
 			try {
@@ -618,7 +620,7 @@ async function action(
 			}
 		}
 		case "deliveries_page":
-			return eventsAdminPage(config, ctx, "webhook", { cursor: cursorOf(i.value) });
+			return eventsAdminPage(config, ctx, "webhook", { cursor: cursorOf(i.value), back: backOf(i.value) });
 		case "health_check": {
 			const r = await healthCheck({ ...monitor(), by: "staff" });
 			const message = r.problems.length ? `Checked: ${r.problems.length === 1 ? "1 problem" : `${r.problems.length} problems`}.` : "Checked: subscriptions are in place and deliveries look healthy.";
@@ -631,7 +633,7 @@ async function action(
 		case "events_show":
 			return eventsAdminPage(config, ctx, "app", { events: await eventsPage(s, { event: String(i.value ?? "") || undefined }) });
 		case "events_page":
-			return eventsAdminPage(config, ctx, "app", { events: await eventsPage(s, parseFilter(i.block_id), cursorOf(i.value)) });
+			return eventsAdminPage(config, ctx, "app", { events: await eventsPage(s, parseFilter((i.value as { filter?: unknown } | null)?.filter ?? i.block_id), cursorOf(i.value), undefined, backOf(i.value)) });
 		case "failed_resend": {
 			const sent = await resend(config, s, String(i.value ?? "")).catch(() => false);
 			return eventsAdminPage(config, ctx, "app", {}, sent ? { type: "success", message: "Sent. It's off the failed list." } : { type: "error", message: "The receiver still didn't take it. It stays on the list." });
@@ -647,13 +649,13 @@ async function action(
 		case "member_export": {
 			const id = String(i.value ?? "");
 			const m = await s.members.get(id);
-			if (!m) return membersPage(config);
+			if (!m) return customersPage(config, ctx.kv);
 			return memberDetail(config, m, { type: "success", message: "Export below." }, "privacy", await exportRequest(s, id, "staff"));
 		}
 		case "member_erase": {
 			const id = String(i.value ?? "");
 			await eraseMember(config, s, id, "staff");
-			return { ...(await membersPage(config)), toast: { type: "success", message: "Erased from the site." } };
+			return { ...(await customersPage(config, ctx.kv)), toast: { type: "success", message: "Erased from the site." } };
 		}
 		case "member_shopify_erase":
 		case "member_shopify_cancel": {
@@ -702,9 +704,22 @@ async function allMembers(): Promise<MemberRecord[]> {
 	return out;
 }
 
-async function membersPage(config: RedeemIDConfig) {
+/** "Resync all" on the Customers page (runs.ts). */
+const RESYNC: RunLabels = {
+	title: "Resync every customer from Shopify",
+	about: `Reads every customer here from Shopify again and updates their tags and profile, ${BULK_BATCH} at a time with a pause between, so Shopify's limits are never hit. Webhooks keep customers current; this catches up after missed ones. It changes nothing in Shopify. Leave this page open while it runs; if you leave, it pauses and Continue picks up where it stopped.`,
+	noun: "customers",
+	start: "Resync all from Shopify",
+	verb: "read",
+	missing: "no longer in Shopify",
+	prefix: "customers_resync",
+};
+const RESYNC_JOB = "customers-resync";
+
+async function customersPage(config: RedeemIDConfig, kv?: PluginContext["kv"]) {
 	const members = await allMembers();
 	const levels = config.levels ?? [];
+	const run = kv ? await loadRun(kv as RunKv, RESYNC_JOB).catch(() => null) : null;
 	const counts = levels.map((l) => ({
 		label: l.name,
 		value: String(members.filter((m) => m.status === "enabled" && levelsFor(m.tags, levels).includes(l.slug)).length),
@@ -716,40 +731,24 @@ async function membersPage(config: RedeemIDConfig) {
 	};
 	return {
 		blocks: [
-			{ type: "header", text: "Members" },
+			{ type: "header", text: "Customers" },
 			{
 				type: "context",
-				text: "Shopify customers who have signed in or that Shopify has sent. Levels come only from their Shopify tags; change tags in Shopify (or with Flow) and access follows.",
+				text: "Shopify customers who have signed in here or that Shopify has sent. Levels come only from their Shopify tags; change tags in Shopify (or with Flow) and access follows.",
 			},
-			adminConfigured()
-				? {
-						type: "actions",
-						elements: [
-							{
-								type: "button",
-								action_id: "members_resync",
-								label: `Resync ${BULK_BATCH} from Shopify`,
-								style: "secondary",
-								confirm: {
-									title: "Read members again from Shopify?",
-									text: `Reads the ${BULK_BATCH} members synced longest ago from Shopify and updates their tags. Click again for the next ${BULK_BATCH}.`,
-									confirm: "Resync",
-									deny: "Cancel",
-								},
-							},
-						],
-					}
-				: { type: "context", text: "Set the Admin API app's client ID (REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID) to resync members and edit their tags from here." },
 			{
 				type: "stats",
 				items: [
-					{ label: "Members", value: String(members.length) },
+					{ label: "Customers", value: String(members.length) },
 					{ label: "Turned off", value: String(members.filter((m) => m.status === "disabled").length) },
 					...counts,
 				],
 			},
+			adminConfigured()
+				? runBlock(run, RESYNC)
+				: { type: "context", text: "Set the Admin API app's client ID (REDEEMID_SHOPIFY_ADMIN_APP_CLIENT_ID) to resync customers and edit their tags from here." },
 			members.length === 0
-				? { type: "context", text: "No members yet. They appear here after their first sign-in or a Shopify customer webhook." }
+				? { type: "context", text: "No customers yet. They appear here after their first sign-in or a Shopify customer webhook." }
 				: {
 						type: "table",
 						page_action_id: "members_page",
@@ -820,34 +819,42 @@ function tabOf<T extends string>(tabs: readonly T[], v: unknown): T | undefined 
 const withoutHeader = (b: { blocks: unknown[] }) => b.blocks.filter((x, n) => !(n === 0 && (x as { type?: string }).type === "header"));
 
 /**
- * How this site talks to Shopify: Status (the values to copy into Shopify
- * and what the site reads from its environment), then one tab per setup
- * step, each with a check mark once done. Webhooks also holds the app's
- * subscriptions. Opens on the first step not done, or on Status.
+ * How this site talks to Shopify, in four tabs: Status (every step as a
+ * card), Store (the Shopify side: store, sign-in client, Admin API app and
+ * its scopes, Storefront token), Environment (what the site reads from its
+ * environment, and the template check) and Webhooks (registration and the
+ * subscriptions). Opens on Status unless a tab is named.
  */
-async function connectionPage(config: RedeemIDConfig, ctx: RouteContext, tab?: ConnectionTab, toast?: Toast) {
+async function connectionPage(config: RedeemIDConfig, ctx: RouteContext, tab: ConnectionTab = "status", toast?: Toast) {
 	const s = await memberStores();
-	const [facts, status, hooks] = await Promise.all([setupFacts(config, s, siteOrigin(ctx)), statusPage(config, ctx.request), webhookPanels(monitorEnv(config, s, ctx))]);
-	const panels = setupPanels(facts);
+	const [facts, environment, hooks] = await Promise.all([setupFacts(config, s, siteOrigin(ctx)), environmentTab(config), webhookPanels(monitorEnv(config, s, ctx))]);
 	const next = nextStep(facts);
 	const steps = requiredSteps(setupSteps(facts));
-	const open = tab ?? (next ? (STEP_TABS[next.key] as ConnectionTab) : "status");
-	const progress = next
-		? [{ type: "banner", variant: "alert", title: `Setup: ${steps.filter((x) => x.state === "done").length} of ${steps.length} steps done`, description: `Work through the tabs. Each one checks the site as it is, so set a secret, redeploy or restart, and press Check again. Next: ${next.title}.` }]
-		: [];
+	const done = steps.filter((x) => x.state === "done").length;
 	// The Webhooks step has its own Register button while it's to do.
-	const ownButton = panels.some((p) => p.tab === "webhooks" && JSON.stringify(p.blocks).includes('"setup_register"'));
+	const step = webhooksStep(facts);
+	const ownButton = JSON.stringify(step).includes('"setup_register"');
 	const subscriptions = ownButton ? hooks.subscriptions.filter((b) => !JSON.stringify(b).includes('"webhooks_register"')) : hooks.subscriptions;
+	const status = [
+		next
+			? { type: "banner", variant: "alert", title: `Setup: ${done} of ${steps.length} steps done`, description: `Next: ${next.title}. Each card checks the site as it is, so set a secret, redeploy or restart, and reload.` }
+			: { type: "banner", variant: "default", title: "Connected", description: "Every setup step is done. Customers can sign in with their store customer account." },
+		...customDomainBlocks(config),
+		statusCards(facts),
+		{ type: "actions", elements: [{ type: "button", action_id: "setup_check", value: "status", label: "Check again", style: "secondary" }] },
+	];
 	return {
 		blocks: [
 			{ type: "header", text: "Connection" },
-			{ type: "context", text: "How this site talks to Shopify: the values to copy into the store, and each setup step." },
+			{ type: "context", text: "How this site talks to Shopify." },
 			{
 				type: "tab",
-				default_tab: CONNECTION_TABS.indexOf(open),
+				default_tab: CONNECTION_TABS.indexOf(tab),
 				panels: [
-					{ label: "Status", blocks: [...progress, ...withoutHeader(status)] },
-					...panels.map((p) => (p.tab === "webhooks" ? { label: p.label, blocks: [...p.blocks, { type: "divider" }, { type: "header", text: "Subscriptions" }, ...subscriptions] } : { label: p.label, blocks: p.blocks })),
+					{ label: "Status", blocks: status },
+					{ label: "Store", blocks: storeTab(facts) },
+					{ label: "Environment", blocks: environment },
+					{ label: "Webhooks", blocks: [...step, { type: "divider" }, { type: "header", text: "Subscriptions" }, ...subscriptions] },
 				],
 			},
 		],
@@ -860,9 +867,9 @@ async function connectionPage(config: RedeemIDConfig, ctx: RouteContext, tab?: C
  * and whether deliveries are healthy. An action passes the App panel it
  * rebuilt (a filter or a page) or a deliveries cursor.
  */
-async function eventsAdminPage(config: RedeemIDConfig, ctx: RouteContext, tab: EventsTab = "webhook", given: { events?: { blocks: unknown[] }; cursor?: string } = {}, toast?: Toast) {
+async function eventsAdminPage(config: RedeemIDConfig, ctx: RouteContext, tab: EventsTab = "webhook", given: { events?: { blocks: unknown[] }; cursor?: string; back?: string[] } = {}, toast?: Toast) {
 	const s = await memberStores();
-	const [hooks, events] = await Promise.all([webhookPanels(monitorEnv(config, s, ctx), given.cursor), given.events ?? eventsPage(s)]);
+	const [hooks, events] = await Promise.all([webhookPanels(monitorEnv(config, s, ctx), given.cursor, given.back), given.events ?? eventsPage(s)]);
 	return {
 		blocks: [
 			{ type: "header", text: "Events" },
@@ -881,67 +888,46 @@ async function eventsAdminPage(config: RedeemIDConfig, ctx: RouteContext, tab: E
 	};
 }
 
-async function statusPage(config: RedeemIDConfig, request: Request) {
+/** Connection → Environment: what the site reads from its environment, and the template check. */
+async function environmentTab(config: RedeemIDConfig): Promise<unknown[]> {
 	const c = await checks(config);
-	const origin = new URL(request.url).origin;
 	const set = (v: boolean) => (v ? "Set" : "Missing");
 	const delivery = await lastDelivery().catch(() => null);
 	const unknown = unknownEnvNames();
-	const ready = c.discovery.startsWith("OK") && c.clientId;
-	return {
-		blocks: [
-			{ type: "header", text: "Status" },
-			ready
-				? { type: "banner", variant: "default", title: "Sign-in is ready", description: "Members can sign in with their store customer account." }
-				: { type: "banner", variant: "alert", title: "Sign-in isn't ready", description: "Set the missing values below as environment secrets, then reload. The tabs after Status walk through each one." },
-			...customDomainBlocks(config),
-			{ type: "header", text: "Shopify settings" },
-			{ type: "context", text: "Copy these into the store: the first three into the Customer Account API settings of the Headless storefront, the webhook URL into the app's webhook subscriptions." },
-			{
-				type: "redeemid_copy",
-				fields: [
-					{ label: "Callback URI", value: `${origin}/_emdash/api/auth/redeemid/callback` },
-					{ label: "JavaScript origin", value: origin },
-					{ label: "Logout URI", value: `${origin}/` },
-					{ label: "Webhook URL", value: `${origin}/_emdash/api/auth/redeemid/webhook` },
-				],
-			},
-			{ type: "divider" },
-			{ type: "header", text: "Environment" },
-			{ type: "context", text: "What the site reads from its environment. Secrets show only whether they're set." },
-			{
-				type: "redeemid_copy",
-				fields: [
-					{ label: "Store domain", value: c.domain || "Missing", hint: `${ENV.storeDomain} or shop`, copy: Boolean(c.domain) },
-					{ label: "Store discovery", value: c.discovery, copy: false },
-					{ label: "Customer Account API client ID", value: set(c.clientId), hint: ENV.clientId, copy: false },
-					{ label: "Webhook signing secret", value: set(c.webhookSecret), hint: ENV.webhookSecret, copy: false },
-					{ label: "Admin API app client ID (staff tools)", value: set(Boolean(env(ENV.adminClientId))), hint: ENV.adminClientId, copy: false },
-					{ label: "Storefront API access", value: c.storefront, hint: `${ENV.storefrontPrivateToken} or ${ENV.storefrontPublicToken}`, copy: false },
-					{ label: "Events", value: config.events?.url ? `${config.events.url}${env(ENV.eventsSecret) ? "" : " (secret missing)"}` : "Off", hint: config.events?.url ? ENV.eventsSecret : undefined, copy: Boolean(config.events?.url) },
-					{ label: "Last webhook", value: delivery ?? "None received yet", copy: false },
-					{ label: "Replacement text", value: textSummary(config), copy: false },
-					...(unknown.length ? [{ label: "Set but not used (check the name)", value: unknown.join(", "), copy: false }] : []),
-				],
-			},
-			...(textProblems(config).length
-				? [
-						{
-							type: "table",
-							page_action_id: "text_problems",
-							columns: [
-								{ key: "original", label: "Ignored replacement for" },
-								{ key: "problem", label: "Why" },
-							],
-							rows: textProblems(config),
-						},
-					]
-				: []),
-			{ type: "divider" },
-			{ type: "header", text: "Templates" },
-			...templateBlocks(config),
-		],
-	};
+	return [
+		{ type: "context", text: "What the site reads from its environment. Secrets show only whether they're set, never their values. The Store tab says where each one comes from." },
+		{
+			type: "redeemid_copy",
+			fields: [
+				{ label: "Store domain", value: c.domain || "Missing", hint: `${ENV.storeDomain} or shop`, copy: Boolean(c.domain) },
+				{ label: "Store discovery", value: c.discovery, copy: false },
+				{ label: "Customer Account API client ID", value: set(c.clientId), hint: ENV.clientId, copy: false },
+				{ label: "Webhook signing secret", value: set(c.webhookSecret), hint: ENV.webhookSecret, copy: false },
+				{ label: "Admin API app client ID (staff tools)", value: set(Boolean(env(ENV.adminClientId))), hint: ENV.adminClientId, copy: false },
+				{ label: "Storefront API access", value: c.storefront, hint: `${ENV.storefrontPrivateToken} or ${ENV.storefrontPublicToken}`, copy: false },
+				{ label: "Events", value: config.events?.url ? `${config.events.url}${env(ENV.eventsSecret) ? "" : " (secret missing)"}` : "Off", hint: config.events?.url ? ENV.eventsSecret : undefined, copy: Boolean(config.events?.url) },
+				{ label: "Last webhook", value: delivery ?? "None received yet", copy: false },
+				{ label: "Replacement text", value: textSummary(config), copy: false },
+				...(unknown.length ? [{ label: "Set but not used (check the name)", value: unknown.join(", "), copy: false }] : []),
+			],
+		},
+		...(textProblems(config).length
+			? [
+					{
+						type: "table",
+						page_action_id: "text_problems",
+						columns: [
+							{ key: "original", label: "Ignored replacement for" },
+							{ key: "problem", label: "Why" },
+						],
+						rows: textProblems(config),
+					},
+				]
+			: []),
+		{ type: "divider" },
+		{ type: "header", text: "Templates" },
+		...templateBlocks(config),
+	];
 }
 
 /**
@@ -971,7 +957,7 @@ export function customDomainBlocks(config: RedeemIDConfig): unknown[] {
 /** Status: templates that would show a gated body in full (see template-scan.ts). */
 function templateBlocks(config: RedeemIDConfig): unknown[] {
 	const found = templateFindings();
-	if (!found) return [{ type: "banner", variant: "alert", title: "Templates weren't checked", description: "Add redeemidGuard() to the integrations in astro.config.mjs. It gates pages and keeps members out of EmDash's own APIs, and checks the templates." }];
+	if (!found) return [{ type: "banner", variant: "alert", title: "Templates weren't checked", description: "Add redeemidGuard() to the integrations in astro.config.mjs. It gates pages and keeps customers out of EmDash's own APIs, and checks the templates." }];
 	const risky = gatedFindings(found, config);
 	const caching = cacheFindings(found, config);
 	const cacheRows = caching.length
@@ -1063,7 +1049,7 @@ async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 	const s = await summary(config, ctx);
 	const hooks = webhookWord(s);
 	const alerts: unknown[] = [];
-	if (!s.signIn) alerts.push({ type: "banner", variant: "error", title: "Sign-in isn't ready", description: "Members can't sign in until the store settings are complete. See Connection." });
+	if (!s.signIn) alerts.push({ type: "banner", variant: "error", title: "Sign-in isn't ready", description: "Customers can't sign in until the store settings are complete. See Connection." });
 	if (s.check?.problems.length) alerts.push({ type: "banner", variant: "alert", title: "Webhooks need attention", description: s.check.problems[0]!.text });
 	if (s.openRequests) alerts.push({ type: "banner", variant: "alert", title: `${s.openRequests} privacy ${s.openRequests === 1 ? "request is" : "requests are"} open`, description: "Staff need to finish them under Privacy." });
 	return {
@@ -1072,7 +1058,7 @@ async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 			{
 				type: "stats",
 				items: [
-					{ label: "Members", value: String(s.members.length), description: `${s.active} with a level` },
+					{ label: "Customers", value: String(s.members.length), description: `${s.active} with a level` },
 					{ label: "Sign-in", value: s.signIn ? "Ready" : "Not ready" },
 					{ label: "Webhooks", value: hooks.value, description: s.delivery ? `Last ${ago(s.delivery.receivedAt)}` : "None yet" },
 				],
@@ -1088,7 +1074,7 @@ async function statusWidget(config: RedeemIDConfig, ctx: PluginContext) {
 				type: "actions",
 				elements: [
 					{ type: "link", label: "Overview", target: page(OVERVIEW), appearance: "primary" },
-					{ type: "link", label: "Members", target: page("/members"), appearance: "secondary" },
+					{ type: "link", label: "Customers", target: page("/customers"), appearance: "secondary" },
 					{ type: "link", label: "Access", target: page("/access"), appearance: "secondary" },
 					{ type: "link", label: s.signIn && !s.check?.problems.length ? "Events" : "Connection", target: page(s.signIn && !s.check?.problems.length ? "/events/webhook" : "/connection"), appearance: "secondary" },
 				],
@@ -1118,7 +1104,6 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 		folders: (config.files ?? []).filter((f) => f.levels?.includes(l.slug)).length,
 	}));
 	const domain = storeDomain(config);
-	const shop = domain && !domain.startsWith("http") ? `https://${domain.replace(/^https?:\/\//, "")}` : null;
 	const alerts: unknown[] = [];
 	if (required.length && done < required.length)
 		alerts.push({ type: "banner", variant: s.signIn ? "default" : "alert", title: `Setup: ${done} of ${required.length} steps done`, description: `Next: ${required.find((x) => x.state !== "done")?.title ?? ""}.` });
@@ -1127,16 +1112,16 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 	return {
 		blocks: [
 			{ type: "header", text: "RedeemID" },
-			{ type: "context", text: `Members sign in with their store customer account, and their Shopify customer tags decide what they read. Version ${VERSION}.` },
+			{ type: "context", text: `Customers sign in with their store customer account, and their Shopify customer tags decide what they read. Version ${VERSION}.` },
 			...alerts,
 			{
 				type: "redeemid_cards",
 				items: [
 					{ title: "Sign-in", value: s.signIn ? "Ready" : "Not ready", tone: s.signIn ? "ok" : "error", text: domain ? `Store: ${domain.replace(/^https?:\/\//, "")}` : "No store set", link: page("/connection/status"), label: "Status" },
-					{ title: "Members", value: String(s.members.length), text: `${s.active} with a level, ${s.signedIn} signed in here`, link: page("/members"), label: "Members" },
+					{ title: "Customers", value: String(s.members.length), text: `${s.active} with a level, ${s.signedIn} signed in here`, link: page("/customers"), label: "Customers" },
 					{ title: "Webhooks", value: hooks.value, tone: hooks.tone, text: s.delivery ? `Last delivery ${ago(s.delivery.receivedAt)} (${s.delivery.topic})` : "None received yet", link: page("/events/webhook"), label: "Webhooks" },
 					{ title: "Access", value: count(s.levels.length, "level"), text: [count(rules.length, "rule"), count((config.features ?? []).length, "feature"), count((config.files ?? []).length, "protected folder")].join(", "), link: page("/access"), label: "Access" },
-					{ title: "Privacy", value: s.openRequests ? `${s.openRequests} open` : "Nothing open", tone: s.openRequests ? "warn" : undefined, text: "Exports and erasures from members, staff and Shopify", link: page("/privacy"), label: "Privacy" },
+					{ title: "Privacy", value: s.openRequests ? `${s.openRequests} open` : "Nothing open", tone: s.openRequests ? "warn" : undefined, text: "Exports and erasures from customers, staff and Shopify", link: page("/privacy"), label: "Privacy" },
 					{ title: "Setup", value: required.length ? `${done} of ${required.length}` : "Unknown", tone: required.length && done === required.length ? "ok" : "warn", text: done === required.length ? "Every step is done" : `Next: ${required.find((x) => x.state !== "done")?.title ?? ""}`, link: page("/connection"), label: "Setup" },
 				],
 			},
@@ -1147,7 +1132,7 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 						page_action_id: "overview_levels",
 						columns: [
 							{ key: "level", label: "Level" },
-							{ key: "members", label: "Members", format: "number" },
+							{ key: "members", label: "Customers", format: "number" },
 							{ key: "includes", label: "Includes" },
 							{ key: "features", label: "Features" },
 							{ key: "rules", label: "Rules", format: "number" },
@@ -1174,20 +1159,9 @@ async function overviewPage(config: RedeemIDConfig, ctx: PluginContext) {
 				}),
 			},
 			{ type: "actions", elements: [{ type: "link", label: "All app events", target: page("/events/app"), appearance: "secondary" }, { type: "link", label: "Reports", target: page("/reports"), appearance: "secondary" }] },
-			{ type: "header", text: "Resources" },
-			{
-				type: "redeemid_cards",
-				items: [
-					{ title: "Documentation", text: "Setting up the store, levels, rules, blocks and templates.", link: { kind: "external", url: "https://www.redeemid.com/docs/emdash/" }, label: "Read the docs" },
-					...(shop
-						? [
-								{ title: "Customers in Shopify", text: "Tags, subscriptions and orders live on the Shopify customer.", link: { kind: "external", url: `${shop}/admin/customers` }, label: "Open Shopify" },
-								{ title: "Shopify Flow", text: "Add and remove customer tags when orders, subscriptions or dates change.", link: { kind: "external", url: `${shop}/admin/apps/flow` }, label: "Open Flow" },
-							]
-						: []),
-					{ title: "Report a problem", text: "Bugs and questions about RedeemID for EmDash.", link: { kind: "external", url: "https://github.com/webmultipliers/redeemid-emdash/issues" }, label: "Open an issue" },
-				],
-			},
+			{ type: "divider" },
+			{ type: "context", text: "Guides, references and the Shopify screens you'll use alongside RedeemID are under Resources." },
+			{ type: "actions", elements: [{ type: "link", label: "Resources", target: page("/resources"), appearance: "secondary" }] },
 		],
 	};
 }

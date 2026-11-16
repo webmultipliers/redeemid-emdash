@@ -12,8 +12,8 @@ import { VERSION } from "./version.js";
  * Every page shares one sidebar folder, so RedeemID shows as a single
  * RedeemID entry under Plugins (opening to these pages) instead of loose
  * items mixed in with other plugins' pages. Overview comes first; then the
- * day-to-day pages (people, access and what happened), then Connection,
- * with Status and one tab per setup step.
+ * day-to-day pages (customers, access and what happened), then Connection
+ * and Resources.
  */
 const GROUP = "RedeemID";
 /**
@@ -23,16 +23,17 @@ const GROUP = "RedeemID";
 export const OVERVIEW = "/overview";
 export const PAGES = [
 	{ path: OVERVIEW, label: "Overview", icon: "identification-card", group: GROUP },
-	{ path: "/members", label: "Members", icon: "users", group: GROUP },
+	{ path: "/customers", label: "Customers", icon: "users", group: GROUP },
 	{ path: "/products", label: "Products", icon: "storefront", group: GROUP },
 	{ path: "/access", label: "Access", icon: "lock", group: GROUP },
 	{ path: "/reports", label: "Reports", icon: "chart", group: GROUP },
 	{ path: "/events", label: "Events", icon: "pulse", group: GROUP },
 	{ path: "/privacy", label: "Privacy", icon: "shield-check", group: GROUP },
 	{ path: "/connection", label: "Connection", icon: "plugs-connected", group: GROUP },
+	{ path: "/resources", label: "Resources", icon: "book-open", group: GROUP },
 ];
-/** Connection's tabs by address (/connection/sign-in), so a link can open one: Status, then a tab per setup step. */
-export const CONNECTION_TABS = ["status", "store", "sign-in", "app", "webhooks", "level", "try", "storefront"] as const;
+/** Connection's tabs by address (/connection/store), so a link can open one. */
+export const CONNECTION_TABS = ["status", "store", "environment", "webhooks"] as const;
 /** Events' tabs by address (/events/app). */
 export const EVENTS_TABS = ["webhook", "app", "health"] as const;
 export const TAB_PATHS = [...CONNECTION_TABS.map((t) => `/connection/${t}`), ...EVENTS_TABS.map((t) => `/events/${t}`)];

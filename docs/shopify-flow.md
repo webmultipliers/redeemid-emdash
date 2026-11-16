@@ -66,5 +66,5 @@ After a purchase, **Refresh membership** on the member card reads their tags aga
 1. Under **Plugins → RedeemID → Connection → Webhooks**, make sure `customer.tags_added` and `customer.tags_removed` show as Registered. The tab registers them for you.
 2. Buy the product with a test customer, using Shopify's Bogus Gateway or a 100% discount code.
 3. In Flow, open the workflow's **Recent runs**. The run should show the tag added.
-4. Open **Plugins → RedeemID → Members**, then the customer. The level should be on top and the tag under **Tags**.
+4. Open **Plugins → RedeemID → Customers**, then the customer. The level should be on top and the tag under **Tags**.
 5. Refund the order. The tag and the level should both go.

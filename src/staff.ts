@@ -4,20 +4,21 @@
  * registration and the access test.
  */
 
-import { adminConfigured, adminScopes, editTags, registerWebhooks, resync, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
+import { adminConfigured, editTags, registerWebhooks, resync, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
 import { applyEntryRule, describe, entryRuleFor, levelsFor, membership, passes, requirement, termTree, type Terms } from "./access.js";
 import { PROVIDER_ID, shopOrigin, type RedeemIDConfig } from "./config.js";
 import { levelChange } from "./events.js";
 import { featuresFor } from "./features.js";
 import { record } from "./log.js";
 import { recentRequests } from "./privacy.js";
+import type { BatchOutcome, Run } from "./runs.js";
 import { cleanTags, memberForUser, numericId, type MemberRecord, type Stores } from "./storage.js";
 
-/** Members resynced per click; well inside Shopify's query cost limits. */
 /**
- * Members per bulk resync click. Each one costs a database write, and on the
- * Workers Free plan one request may make only 50 database queries (EmDash's
- * own session and settings reads included), so a batch has to leave room.
+ * Customers per bulk resync batch, well inside Shopify's query cost limits.
+ * Each one costs a database write, and on the Workers Free plan one request
+ * may make only 50 database queries (EmDash's own session and settings reads
+ * included), so a batch has to leave room.
  */
 export const BULK_BATCH = 25;
 
@@ -158,7 +159,7 @@ export function memberDetail(config: RedeemIDConfig, m: MemberRecord, toast?: Bl
 			{
 				type: "actions",
 				elements: [
-					{ type: "button", action_id: "members_back", label: "\u2190 All members", style: "secondary" },
+					{ type: "button", action_id: "members_back", label: "\u2190 All customers", style: "secondary" },
 					...(admin ? [{ type: "button", action_id: "member_resync", label: "Resync from Shopify", style: "primary", value: m.customerId }] : []),
 					...(shop ? [{ type: "link", label: "Open in Shopify", target: { kind: "external", url: `${shop}/admin/customers/${m.customerId}` }, appearance: "secondary" }] : []),
 				],
@@ -242,7 +243,7 @@ export class LinkError extends Error {}
  */
 export async function staffLink(adapter: LinkAdapter, s: Stores, customerId: string, rawEmail: unknown): Promise<MemberRecord> {
 	const m = await s.members.get(customerId);
-	if (!m) throw new LinkError("That member is gone.");
+	if (!m) throw new LinkError("That customer is gone.");
 	if (m.userId) throw new LinkError("This customer is already linked. Unlink first.");
 	const email = String(rawEmail ?? "").trim().toLowerCase();
 	if (!email.includes("@")) throw new LinkError("Give the site user's email.");
@@ -265,7 +266,7 @@ export async function staffLink(adapter: LinkAdapter, s: Stores, customerId: str
 /** Undo a link: the customer's next sign-in picks a user by email again. */
 export async function staffUnlink(adapter: LinkAdapter, s: Stores, customerId: string): Promise<MemberRecord> {
 	const m = await s.members.get(customerId);
-	if (!m) throw new LinkError("That member is gone.");
+	if (!m) throw new LinkError("That customer is gone.");
 	if (await adapter.getOAuthAccount(PROVIDER_ID, customerId)) await adapter.deleteOAuthAccount(PROVIDER_ID, customerId);
 	const unlinked = { ...m, userId: null };
 	await s.members.put(customerId, unlinked);
@@ -282,7 +283,7 @@ function privacySection(customerId: string): unknown[] {
 		style: "danger",
 		value: customerId,
 		confirm: {
-			title: "Erase this member's data on the site?",
+			title: "Erase this customer's data on the site?",
 			text: "Removes their synced record and meter here. Their site user and everything in Shopify stay. If they sign in again they're linked again.",
 			confirm: "Erase",
 			deny: "Cancel",
@@ -309,7 +310,7 @@ function privacySection(customerId: string): unknown[] {
 			]
 		: [];
 	return [
-		{ type: "context", text: "Export shows everything RedeemID keeps about this member. Erasing removes it from the site; Shopify stays the record of the customer." },
+		{ type: "context", text: "Export shows everything RedeemID keeps about this customer. Erasing removes it from the site; Shopify stays the record of the customer." },
 		{ type: "actions", elements: [{ type: "button", action_id: "member_export", label: "Export data", style: "secondary", value: customerId }, erase] },
 		...(shopify.length
 			? [
@@ -328,7 +329,7 @@ export async function privacyPage(s: Stores, toast?: Blocks["toast"], extra: unk
 		toast,
 		blocks: [
 			{ type: "header", text: "Privacy requests" },
-			{ type: "context", text: "Exports and erasures of what RedeemID keeps, from members, staff and Shopify's compliance webhooks. Open requests need staff: send a Shopify data request's export to the store owner, then mark it done." },
+			{ type: "context", text: "Exports and erasures of what RedeemID keeps, from customers, staff and Shopify's compliance webhooks. Open requests need staff: send a Shopify data request's export to the store owner, then mark it done." },
 			items.length
 				? {
 						type: "table",
@@ -344,7 +345,7 @@ export async function privacyPage(s: Stores, toast?: Blocks["toast"], extra: unk
 						rows: items.map(({ id, data: r }) => ({
 							at: r.at,
 							kind: r.kind === "export" ? "Export" : "Erase",
-							source: { member: "Member, on the site", staff: "Staff", shopify: "Shopify" }[r.source] + (r.shopifyRequestId ? ` (request ${r.shopifyRequestId})` : "") + (r.note ? `: ${r.note}` : ""),
+							source: { member: "Customer, on the site", staff: "Staff", shopify: "Shopify" }[r.source] + (r.shopifyRequestId ? ` (request ${r.shopifyRequestId})` : "") + (r.note ? `: ${r.note}` : ""),
 							customer: r.customerId ?? "All",
 							status: r.status === "open" ? "Open" : "Done",
 							act:
@@ -380,6 +381,46 @@ export async function bulkResync(config: RedeemIDConfig, s: Stores): Promise<{ d
 	return { done: updated.length, missing: missing.length, changed };
 }
 
+/** Where a full resync stands: the last syncedAt read, and the ids read at exactly that time. */
+interface ResyncCursor {
+	after: string;
+	seen: string[];
+}
+
+/**
+ * One batch of "Resync all": the next BULK_BATCH customers last synced
+ * before the run began, oldest first. A customer read again moves past the
+ * start, and one Shopify no longer has is stepped over, so the run always
+ * ends. Used by runs.ts stepRun.
+ */
+export async function resyncBatch(config: RedeemIDConfig, s: Stores, run: Run): Promise<BatchOutcome> {
+	const at = (run.cursor ?? null) as ResyncCursor | null;
+	const page = await s.members.query({
+		where: { syncedAt: at ? { gte: at.after, lt: run.startedAt } : { lt: run.startedAt } } as never,
+		orderBy: { syncedAt: "asc" },
+		limit: Math.min(100, BULK_BATCH + (at?.seen.length ?? 0)),
+	});
+	const items = page.items.filter((r) => !at?.seen.includes(r.id)).slice(0, BULK_BATCH);
+	if (!items.length) return { read: 0, finished: true };
+	const before = new Map(items.map((r) => [r.data.customerId, [...r.data.tags]]));
+	const { updated, missing } = await resync(config, s, items.map((r) => r.data.customerId), "bulk resync");
+	let changed = 0;
+	for (const m of updated) {
+		const was = before.get(m.customerId) ?? [];
+		if (was.join("\n") !== m.tags.join("\n")) changed++;
+		await levelChange(config, was, m, "bulk resync");
+	}
+	const last = items.at(-1)!.data.syncedAt;
+	const seen = items.filter((r) => r.data.syncedAt === last).map((r) => r.id);
+	const cursor: ResyncCursor = { after: last, seen: at && at.after === last ? [...at.seen, ...seen] : seen };
+	return { read: items.length, changed, missing: missing.length, cursor, finished: items.length < BULK_BATCH };
+}
+
+/** Customers a new full resync would read. */
+export function resyncTotal(s: Stores, startedAt = new Date().toISOString()): Promise<number> {
+	return s.members.count({ syncedAt: { lt: startedAt } } as never);
+}
+
 export async function resyncOne(config: RedeemIDConfig, s: Stores, customerId: string, source: string): Promise<MemberRecord | null> {
 	const before = await s.members.get(customerId);
 	const { updated } = await resync(config, s, [customerId], source);
@@ -401,22 +442,21 @@ export async function tagEdit(config: RedeemIDConfig, s: Stores, customerId: str
 /** Webhooks: what Shopify sends to this site, and what's missing. */
 export async function webhooksSection(config: RedeemIDConfig, uri: string): Promise<unknown[]> {
 	if (!adminConfigured()) {
-		return [{ type: "context", text: "Set the Admin API app's client ID to check and register webhooks from here. Until then, add them in the app's settings." }];
+		return [{ type: "context", text: "Set the Admin API app's client ID and secret (see the Store tab), and RedeemID checks and registers its webhooks from here." }];
 	}
 	try {
-		const [subs, scope] = await Promise.all([webhookSubscriptions(config), adminScopes(config)]);
+		const subs = await webhookSubscriptions(config);
 		const rows = WEBHOOK_TOPICS.map((t) => {
 			const here = subs.find((s) => s.topic === t && s.uri === uri);
 			const elsewhere = subs.find((s) => s.topic === t && s.uri !== uri);
-			return { topic: t.toLowerCase().replace("_", "/").replace("customer/tags", "customer.tags"), state: here ? "Registered" : elsewhere ? `Goes to ${elsewhere.uri}` : "Missing" };
+			return { topic: t.toLowerCase().replace("_", "/").replace("customer/tags", "customer.tags"), state: here ? "Registered" : elsewhere ? "Sent to another site" : "Missing" };
 		});
 		const missing = rows.filter((r) => r.state !== "Registered").length;
 		return [
-			{ type: "section", text: `Admin API: connected (${scope || "no scopes reported"}).` },
-			{ type: "table", page_action_id: "webhooks", columns: [{ key: "topic", label: "Topic" }, { key: "state", label: "Sends here", format: "badge" }], rows },
+			{ type: "table", page_action_id: "webhooks", columns: [{ key: "topic", label: "Topic", format: "code" }, { key: "state", label: "Sent here", format: "badge" }], rows },
 			missing
 				? { type: "actions", elements: [{ type: "button", action_id: "webhooks_register", label: `Register ${missing} missing`, style: "primary", value: uri }] }
-				: { type: "context", text: "Every topic RedeemID needs is sent here. customers/redact is set in the app's compliance settings." },
+				: { type: "context", text: "Every topic RedeemID needs is sent here." },
 		];
 	} catch (e) {
 		return [{ type: "banner", variant: "alert", title: "Couldn't read webhooks from Shopify", description: (e as Error).message }];

@@ -1,19 +1,20 @@
 /**
- * RedeemID → Connection: connecting a store, step by step, from the admin
- * alone, one tab per step. Each step says what to do in Shopify (with the exact values
- * to paste), what to set on the site, and has a button for whatever
- * RedeemID can do itself: register the webhooks, add the first level.
+ * RedeemID → Connection: connecting a store from the admin alone. Status
+ * sums up every step as cards; Store holds what to do in Shopify (with the
+ * exact values to paste and the Admin API scopes, each checked), and
+ * Webhooks registers the topics through the Admin API app. The endpoint is
+ * set by RedeemID itself, so staff never type it.
  *
  * Nothing about progress is stored. Each step's state comes from the site
- * as it is (setupFacts), so opening Connection again picks up where things stand
- * and it always agrees with the Status tab.
+ * as it is (setupFacts), so opening Connection again picks up where things
+ * stand.
  *
  * Secrets stay where they are today, in the site's environment: the wizard
  * checks them and gives the command to set each one, and never stores one.
  * It writes only what staff can already write (a level, through Access) and
  * never grants access: levels still come only from Shopify tags.
  *
- * setupSteps() and setupPanels() are pure.
+ * setupSteps(), statusCards(), storeTab() and webhooksStep() are pure.
  */
 
 import { adminConfigured, adminScopes, grantedScopes, topicName, webhookSubscriptions, WEBHOOK_TOPICS } from "./admin-api.js";
@@ -26,6 +27,14 @@ export type Blocks = { blocks: unknown[]; toast?: Toast };
 
 /** Scopes the Admin API app needs for staff tools and webhook registration. */
 export const SETUP_SCOPES = ["read_customers", "write_customers"] as const;
+
+/** Every Admin API scope RedeemID uses, and what for, as the Store tab lists them. */
+export const SCOPES: Array<{ scope: string; use: string; required: boolean; products?: boolean }> = [
+	{ scope: "read_customers", use: "Resyncs, customer lookups and the customer webhooks", required: true },
+	{ scope: "write_customers", use: "Tag edits from a customer's Tags tab", required: true },
+	{ scope: "read_customer_merge", use: "The customers/merge webhook", required: false },
+	{ scope: "read_products", use: "Product entry updates (the products webhooks)", required: false, products: true },
+];
 
 export const CALLBACK = "/_emdash/api/auth/redeemid/callback";
 export const WEBHOOK = "/_emdash/api/auth/redeemid/webhook";
@@ -54,6 +63,8 @@ export interface SetupFacts {
 	/** Members who have signed in on this site. */
 	signedIn: number;
 	storefront: boolean;
+	/** Product entries are on (they add read_products to the scopes). */
+	products?: boolean;
 }
 
 export type StepState = "done" | "todo" | "waiting" | "optional";
@@ -108,6 +119,7 @@ export async function setupFacts(config: RedeemIDConfig, s: Stores, origin: stri
 		levels: (config.levels ?? []).map((l) => ({ name: l.name, tags: levelTags(l) })),
 		signedIn,
 		storefront: Boolean(env(ENV.storefrontPrivateToken) || env(ENV.storefrontPublicToken)),
+		products: config.products !== false,
 	};
 }
 
@@ -143,6 +155,7 @@ export function setupSteps(f: SetupFacts): Step[] {
 }
 
 const BADGE: Record<StepState, string> = { done: "Done", todo: "To do", waiting: "Waiting", optional: "Optional" };
+const TONE: Partial<Record<StepState, "ok" | "warn">> = { done: "ok", todo: "warn" };
 
 function secretCommand(names: string[]): unknown {
 	return {
@@ -156,139 +169,179 @@ function secretCommand(names: string[]): unknown {
 	};
 }
 
-function stepBlocks(step: Step, f: SetupFacts): unknown[] {
-	const out: unknown[] = [{ type: "header", text: `${step.title}: ${BADGE[step.state]}` }];
-	if (step.state === "waiting") return [...out, { type: "context", text: step.waitingFor ?? "" }];
+/** The steps that count toward "set up" (Storefront is optional). */
+export const requiredSteps = (steps: Step[]) => steps.filter((s) => s.key !== "storefront");
+
+/** The first step not done, or null once every required one is. Pure. */
+export function nextStep(f: SetupFacts): Step | null {
+	return requiredSteps(setupSteps(f)).find((s) => s.state !== "done") ?? null;
+}
+
+const missingNames = (f: SetupFacts) => (f.webhooksMissing ?? []).map(topicName);
+const loginUrl = (f: SetupFacts) => `${f.origin}/_emdash/api/auth/redeemid/login?return=%2F`;
+const firstTag = (f: SetupFacts) => f.levels.find((l) => l.tags.length)?.tags[0] ?? "member";
+
+/** One line on where a step stands, for its card. */
+function summary(step: Step, f: SetupFacts): string {
+	if (step.state === "waiting") return step.waitingFor ?? "";
 	switch (step.key) {
 		case "store":
-			if (step.state === "done") return [...out, { type: "context", text: `Connected to ${f.domain}.` }];
-			return [
-				...out,
-				{
-					type: "section",
-					text: f.domain
-						? `RedeemID couldn't read ${f.domain}'s sign-in settings: ${f.discovery}. Check the domain (the store's myshopify.com domain, or its custom customer-account domain), and that the store uses the new customer accounts (Shopify admin, Settings, Customer accounts).`
-						: "Tell RedeemID which store to use: its myshopify.com domain, such as my-store.myshopify.com. The store must use the new customer accounts (Shopify admin, Settings, Customer accounts); classic accounts can't sign in.",
-				},
-				secretCommand([ENV.storeDomain]),
-				{ type: "context", text: "Or set `shop` in the RedeemID config in astro.config.mjs." },
-			];
+			return step.state === "done" ? `Connected to ${f.domain}.` : f.domain ? `Couldn't read ${f.domain}: ${f.discovery}` : "Set the store's myshopify.com domain.";
 		case "sign_in":
-			if (step.state === "done") return [...out, { type: "context", text: `Client ID set${f.clientSecret ? ", with a client secret (confidential client)" : " (public client)"}.` }];
-			return [
-				...out,
-				{
-					type: "section",
-					text: "In Shopify admin, open Sales channels, then Headless (add the channel if it isn't there), and Create storefront. Name it after this site. Open its Customer Account API settings, pick a client type (Public needs no secret; Confidential gives one) and, under Application setup, add these:",
-				},
-				{
-					type: "redeemid_copy",
-					fields: [
-						{ label: "Callback URI", value: `${f.origin}${CALLBACK}` },
-						{ label: "JavaScript origin (public clients)", value: f.origin },
-						{ label: "Logout URI", value: `${f.origin}/` },
-					],
-				},
+			return step.state === "done" ? (f.clientSecret ? "Confidential client, with a secret." : "Public client.") : "Create the sign-in client in the Headless channel.";
+		case "app":
+			if (step.state === "done") return "Connected, with every scope it needs.";
+			if (f.admin === "ok") return `Missing ${missingScopes(f).join(" and ")}.`;
+			if (f.admin) return `Shopify refused it: ${f.admin}`;
+			return "Set the app's client ID and secret.";
+		case "webhooks":
+			return step.state === "done" ? `Shopify sends all ${WEBHOOK_TOPICS.length} topics.` : `${missingNames(f).length} of ${WEBHOOK_TOPICS.length} topics aren't sent yet.`;
+		case "level":
+			return step.state === "done" ? f.levels.map((l) => l.name).join(", ") : "Add a level and the Shopify tag that gives it.";
+		case "try":
+			return step.state === "done" ? `${f.signedIn} signed in here.` : `In Shopify, tag a test customer "${firstTag(f)}". Then sign in as them in a private window: staff accounts can't sign in through the store.`;
+		case "storefront":
+			return step.state === "done" ? "Storefront API token set." : "Only for selling on the site.";
+	}
+	return "";
+}
+
+const page = (path: string) => ({ kind: "plugin-page" as const, path });
+
+/** Where each step's card leads. */
+function cardLink(step: Step, f: SetupFacts): { link: unknown; label: string } {
+	switch (step.key) {
+		case "webhooks":
+			return { link: page("/connection/webhooks"), label: "Webhooks" };
+		case "level":
+			return { link: page("/access"), label: "Access" };
+		case "try":
+			return step.state === "todo" ? { link: { kind: "external", url: loginUrl(f) }, label: "Sign in as a customer" } : { link: page("/customers"), label: "Customers" };
+		default:
+			return { link: page("/connection/store"), label: "Store" };
+	}
+}
+
+/** Status: every step as a card, with where it stands and where to go. Pure. */
+export function statusCards(f: SetupFacts): unknown {
+	return {
+		type: "redeemid_cards",
+		items: setupSteps(f).map((step) => ({ title: step.title, value: BADGE[step.state], ...(TONE[step.state] ? { tone: TONE[step.state] } : {}), text: summary(step, f), ...cardLink(step, f) })),
+	};
+}
+
+/** The Store tab's scopes table: each scope, what it's for, and whether the app holds it. Pure. */
+export function scopesTable(f: SetupFacts): unknown {
+	return {
+		type: "table",
+		page_action_id: "setup_scopes",
+		columns: [
+			{ key: "scope", label: "Scope", format: "code" },
+			{ key: "use", label: "Used for" },
+			{ key: "need", label: "Needed" },
+			{ key: "granted", label: "Granted", format: "badge" },
+		],
+		rows: SCOPES.filter((x) => !x.products || f.products).map((x) => ({
+			scope: x.scope,
+			use: x.use,
+			need: x.required ? "Required" : "Optional",
+			granted: f.admin === "ok" ? (f.scopes.includes(x.scope) ? "Granted" : "Missing") : "Not checked",
+		})),
+	};
+}
+
+const heading = (step: Step) => ({ type: "header", text: `${step.title}: ${BADGE[step.state]}` });
+
+/**
+ * Store: what to set up in Shopify and on the site for the store, the
+ * sign-in client, the Admin API app (with its scopes) and the optional
+ * Storefront token. Pure.
+ */
+export function storeTab(f: SetupFacts): unknown[] {
+	const steps = setupSteps(f);
+	const step = (k: Step["key"]) => steps.find((s) => s.key === k)!;
+	const store = step("store");
+	const signIn = step("sign_in");
+	const app = step("app");
+	const storefront = step("storefront");
+	const out: unknown[] = [
+		{ type: "context", text: "The Shopify side of the connection: the store, the sign-in client customers use, the Admin API app behind the staff tools and webhooks, and the optional Storefront token. Secrets live in the site's environment; each section gives the command to set them." },
+		heading(store),
+	];
+	if (store.state === "done") out.push({ type: "context", text: `Connected to ${f.domain}.` });
+	else
+		out.push(
+			{
+				type: "section",
+				text: f.domain
+					? `RedeemID couldn't read ${f.domain}'s sign-in settings: ${f.discovery}. Check the domain (the store's myshopify.com domain, or its custom customer-account domain), and that the store uses the new customer accounts (Shopify admin, Settings, Customer accounts).`
+					: "Tell RedeemID which store to use: its myshopify.com domain, such as my-store.myshopify.com. The store must use the new customer accounts (Shopify admin, Settings, Customer accounts); classic accounts can't sign in.",
+			},
+			secretCommand([ENV.storeDomain]),
+			{ type: "context", text: "Or set `shop` in the RedeemID config in astro.config.mjs." },
+		);
+
+	out.push({ type: "divider" }, heading(signIn));
+	if (signIn.state === "waiting") out.push({ type: "context", text: signIn.waitingFor ?? "" });
+	else {
+		out.push(
+			signIn.state === "done"
+				? { type: "context", text: `Client ID set${f.clientSecret ? ", with a client secret (confidential client)" : " (public client)"}. These are the values in its Customer Account API settings:` }
+				: {
+						type: "section",
+						text: "In Shopify admin, open Sales channels, then Headless (add the channel if it isn't there), and Create storefront. Name it after this site. Open its Customer Account API settings, pick a client type (Public needs no secret; Confidential gives one) and, under Application setup, add these:",
+					},
+			{
+				type: "redeemid_copy",
+				fields: [
+					{ label: "Callback URI", value: `${f.origin}${CALLBACK}` },
+					{ label: "JavaScript origin (public clients)", value: f.origin },
+					{ label: "Logout URI", value: `${f.origin}/` },
+				],
+			},
+		);
+		if (signIn.state !== "done")
+			out.push(
 				{ type: "section", text: "Copy the Client ID (and the Client secret for a confidential client) and set them on the site:" },
 				secretCommand([ENV.clientId, `${ENV.clientSecret}   # confidential clients only`]),
 				{ type: "context", text: "Shopify only accepts https callback URIs, so a local site needs a tunnel to sign in for real." },
-			];
-		case "app": {
-			if (step.state === "done") return [...out, { type: "context", text: `Admin API connected (${f.scopes.join(", ")}).` }];
+			);
+	}
+
+	out.push({ type: "divider" }, heading(app));
+	if (app.state === "waiting") out.push({ type: "context", text: app.waitingFor ?? "" });
+	else {
+		out.push({ type: "context", text: "RedeemID uses an Admin API app for the staff tools (resyncs, tag edits, customer lookups) and to register its webhooks; Shopify signs the webhooks with the app's client secret. It needs these scopes:" }, scopesTable(f));
+		if (app.state !== "done") {
 			const why =
 				f.webhookSecret && f.adminClientId && f.admin && f.admin !== "ok"
 					? `Shopify refused the app: ${f.admin} The app must be installed on this store and be in the same Shopify organization.`
 					: f.admin === "ok"
 						? `The app is connected but lacks ${missingScopes(f).join(" and ")}. Add the scopes, release a new version and let the store accept it.`
-						: "RedeemID uses an Admin API app for the staff tools (resyncs, tag edits, member lookups) and to register webhooks, and Shopify signs webhooks with its client secret.";
-			return [
-				...out,
-				{ type: "section", text: why },
-				{
-					type: "section",
-					text: "In the Shopify Dev Dashboard (dev.shopify.com), create an app (or use one that already sends this store's webhooks), give it the Admin API scopes read_customers and write_customers (and read_customer_merge, for customers/merge), release it and install it on the store. Then copy its Client ID and Client secret:",
-				},
-				secretCommand([ENV.adminClientId, ENV.webhookSecret]),
-			];
+						: "In the Shopify Dev Dashboard (dev.shopify.com), create an app (or use one this store already has), give it the scopes above, release it and install it on the store. Then copy its Client ID and Client secret:";
+			out.push({ type: "section", text: why }, secretCommand([ENV.adminClientId, ENV.webhookSecret]));
 		}
-		case "webhooks": {
-			if (step.state === "done") return [...out, { type: "context", text: `Every topic RedeemID needs is sent to ${f.origin}${WEBHOOK}.` }];
-			const missing = f.webhooksMissing ?? [];
-			return [
-				...out,
-				{ type: "section", text: `${missing.length} of ${WEBHOOK_TOPICS.length} topics aren't sent to this site yet: ${missing.map(topicName).join(", ")}. RedeemID can register them through the app.` },
-				{
-					type: "context",
-					text: "Webhooks set in the app's own configuration (Dev Dashboard version or shopify.app.toml) don't show in the Admin API. Each of those topics counts here once Shopify has sent one, so registering them again isn't needed.",
-				},
-				{ type: "actions", elements: [{ type: "button", action_id: "setup_register", label: `Register ${missing.length} webhooks`, style: "primary" }] },
-				{
-					type: "context",
-					text: `Shopify's privacy topics (customers/data_request, customers/redact, shop/redact) can't be registered this way: add them to the app's configuration under [webhooks.privacy_compliance], pointing at ${f.origin}${WEBHOOK}.`,
-				},
-			];
-		}
-		case "level":
-			if (step.state === "done") return [...out, { type: "context", text: `Levels: ${f.levels.map((l) => `${l.name} (${l.tags.join(", ")})`).join("; ")}. Change them under Access.` }];
-			return [
-				...out,
-				{ type: "section", text: "A level is what members hold: a name, and the Shopify customer tag that gives it. Shopify Flow or your subscription app puts the tag on customers who buy." },
-				{
-					type: "form",
-					block_id: "setup_level",
-					fields: [
-						{ type: "text_input", action_id: "name", label: "Level name", placeholder: "Members" },
-						{ type: "text_input", action_id: "tags", label: "Shopify tag", placeholder: "member" },
-					],
-					submit: { label: "Add level", action_id: "setup_level" },
-				},
-			];
-		case "try": {
-			if (step.state === "done") return [...out, { type: "context", text: `${f.signedIn === 1 ? "A member has" : `${f.signedIn} members have`} signed in. You're set up.` }];
-			const tag = f.levels.find((l) => l.tags.length)?.tags[0] ?? "member";
-			return [
-				...out,
-				{
-					type: "section",
-					text: `In Shopify, add the tag "${tag}" to a test customer. Then open the link below in a private window and sign in with that customer's email: you're signed in here as staff, and staff accounts can't sign in through the store. Come back and press Check again.`,
-				},
-				{ type: "actions", elements: [{ type: "link", label: "Sign in as a member", target: { kind: "external", url: `${f.origin}/_emdash/api/auth/redeemid/login?return=%2F` }, appearance: "secondary" }] },
-			];
-		}
-		case "storefront":
-			if (step.state === "done") return [...out, { type: "context", text: "Storefront API token set." }];
-			return [
-				...out,
-				{ type: "section", text: "Only for selling on the site (Plan cards, the shop, the cart). In the same Headless storefront, open Storefront API and copy the private access token:" },
-				secretCommand([ENV.storefrontPrivateToken]),
-			];
 	}
+
+	out.push({ type: "divider" }, heading(storefront));
+	if (storefront.state === "done") out.push({ type: "context", text: "Storefront API token set." });
+	else out.push({ type: "section", text: "Only for selling on the site (Plan cards, the shop, the cart). In the same Headless storefront, open Storefront API and copy the private access token:" }, secretCommand([ENV.storefrontPrivateToken]));
+
+	if ([store, signIn, app, storefront].some((s) => s.state !== "done")) out.push({ type: "actions", elements: [{ type: "button", action_id: "setup_check", value: "store", label: "Check again", style: "secondary" }] });
 	return out;
 }
 
-/** Connection's tab address for each step (/connection/sign-in). */
-export const STEP_TABS: Record<Step["key"], string> = { store: "store", sign_in: "sign-in", app: "app", webhooks: "webhooks", level: "level", try: "try", storefront: "storefront" };
-const SHORT: Record<Step["key"], string> = { store: "Store", sign_in: "Sign-in", app: "Admin app", webhooks: "Webhooks", level: "First level", try: "Try it", storefront: "Storefront" };
-
-/** The steps that count toward "set up" (Storefront is optional). */
-export const requiredSteps = (steps: Step[]) => steps.filter((s) => s.key !== "storefront");
-
-/**
- * One tab per step, for Connection: the step, with a Check again button
- * until it's done. Labels carry a check mark once done. Pure.
- */
-export function setupPanels(f: SetupFacts): Array<{ tab: string; label: string; blocks: unknown[] }> {
-	return setupSteps(f).map((step) => ({
-		tab: STEP_TABS[step.key],
-		label: step.state === "done" ? `${SHORT[step.key]} ✓` : SHORT[step.key],
-		blocks: [
-			...stepBlocks(step, f),
-			...(step.state === "done" ? [] : [{ type: "actions", elements: [{ type: "button", action_id: "setup_check", value: STEP_TABS[step.key], label: "Check again", style: "secondary" }] }]),
-		],
-	}));
-}
-
-/** Where Connection opens: the first step not done, or null once every required one is. Pure. */
-export function nextStep(f: SetupFacts): Step | null {
-	return requiredSteps(setupSteps(f)).find((s) => s.state !== "done") ?? null;
+/** Webhooks: where registration stands, with Register while topics are missing. Pure. */
+export function webhooksStep(f: SetupFacts): unknown[] {
+	const step = setupSteps(f).find((s) => s.key === "webhooks")!;
+	const out: unknown[] = [heading(step)];
+	if (step.state === "waiting") return [...out, { type: "context", text: step.waitingFor ?? "" }];
+	if (step.state === "done") return [...out, { type: "context", text: `Shopify sends every topic RedeemID needs (${WEBHOOK_TOPICS.length}). RedeemID registered them through the Admin API app, pointing at this site.` }];
+	const missing = missingNames(f);
+	return [
+		...out,
+		{ type: "section", text: `${missing.length} of ${WEBHOOK_TOPICS.length} topics aren't sent to this site yet: ${missing.join(", ")}. RedeemID registers them through the Admin API app and points them at this site itself.` },
+		{ type: "actions", elements: [{ type: "button", action_id: "setup_register", label: `Register ${missing.length} webhooks`, style: "primary" }, { type: "button", action_id: "setup_check", value: "webhooks", label: "Check again", style: "secondary" }] },
+		{ type: "context", text: "Webhooks set in the app's own configuration (Dev Dashboard version or shopify.app.toml) don't show in the Admin API. Each of those topics counts here once Shopify has sent one." },
+	];
 }

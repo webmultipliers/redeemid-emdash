@@ -120,8 +120,8 @@ export function accessMap(input: AccessMapInput): MapRow[] {
 
 	const ordered = [...levels].sort((a, b) => closure(a.slug, levels).length - closure(b.slug, levels).length);
 	const rows: MapRow[] = [
-		{ id: "everyone", name: "Everyone", who: "Visitors and members alike", includes: [], chain: [], items: gather([{ id: "everyone" }]) },
-		{ id: "signed-in", name: "Signed in", who: "Any member who signs in, whatever their tags", includes: [], chain: ["everyone"], items: gather([{ id: "signed-in" }, { id: "everyone", via: "Everyone" }]) },
+		{ id: "everyone", name: "Everyone", who: "Visitors and customers alike", includes: [], chain: [], items: gather([{ id: "everyone" }]) },
+		{ id: "signed-in", name: "Signed in", who: "Any customer who signs in, whatever their tags", includes: [], chain: ["everyone"], items: gather([{ id: "signed-in" }, { id: "everyone", via: "Everyone" }]) },
 	];
 	for (const l of ordered) {
 		const chain = closure(l.slug, levels);

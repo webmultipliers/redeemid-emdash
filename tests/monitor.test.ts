@@ -12,7 +12,7 @@ vi.mock("../src/admin-api.js", async (orig) => ({
 
 import type { RedeemIDConfig } from "../src/config.js";
 import { LOG_DAYS, record, setLogSink, timed, type LogEntry } from "../src/log.js";
-import { eventsPage, filterId, REQUEST_DAYS, tidy, healthCheck, lastCheck, parseFilter, reportsPage, saveMonitor, webhookPanels, type Kv, type MonitorEnv } from "../src/monitor.js";
+import { eventsPage, EVENTS_PAGE, filterId, REQUEST_DAYS, tidy, healthCheck, lastCheck, parseFilter, reportsPage, saveMonitor, webhookPanels, type Kv, type MonitorEnv } from "../src/monitor.js";
 import { POST } from "../src/routes/webhook.js";
 import { emptyMember } from "../src/storage.js";
 import { sign } from "../src/webhooks.js";
@@ -179,8 +179,30 @@ describe("webhook health", () => {
 		const p = await webhookPanels(monitor());
 		for (const text of ["customers/update", "Processed"]) expect(JSON.stringify(p.received)).toContain(text);
 		for (const text of ["Check now", "Email warnings to", "No email provider"]) expect(JSON.stringify(p.health)).toContain(text);
-		expect(JSON.stringify(p.subscriptions)).toContain("Endpoint:");
+		// RedeemID sets the endpoint itself, so the page never asks staff to.
+		expect(JSON.stringify(p.subscriptions)).not.toContain("/_emdash/api/auth/redeemid/webhook");
+		expect(JSON.stringify(p.subscriptions)).toContain("signature is checked");
 		expect(p.attention).toBe(false);
+	});
+});
+
+describe("paging", () => {
+	it("pages App events 25 at a time with Previous and Next, keeping the filter", async () => {
+		for (let n = 0; n < 60; n++) await record({ event: "staff.resync", label: `n${n}`, status: "ok" });
+		const first = await eventsPage(store.stores, { event: "staff.resync" });
+		const table = first.blocks.find((b) => (b as { type: string }).type === "table") as { rows: unknown[]; next_cursor?: string };
+		expect(table.rows).toHaveLength(EVENTS_PAGE);
+		expect(table.next_cursor).toBeUndefined();
+		const buttons = (b: { blocks: unknown[] }) => (b.blocks.find((x) => (x as { type: string }).type === "actions" && JSON.stringify(x).includes("events_page")) as { elements: Array<{ label: string; value: { cursor: string; back: string[]; filter: string } }> }).elements;
+		expect(buttons(first).map((e) => e.label)).toEqual(["Next"]);
+		const next = buttons(first)[0]!.value;
+		expect(next.filter).toBe("events:staff.resync:0");
+		const second = await eventsPage(store.stores, parseFilter(next.filter), next.cursor, undefined, next.back);
+		expect(buttons(second).map((e) => e.label)).toEqual(["Previous", "Next"]);
+		expect(JSON.stringify(second)).toContain("Page 2, 25 per page");
+		const prev = buttons(second)[0]!.value;
+		expect(prev.cursor).toBe("");
+		expect(prev.back).toEqual([]);
 	});
 });
 
