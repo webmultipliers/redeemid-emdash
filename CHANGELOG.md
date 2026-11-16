@@ -13,6 +13,7 @@ RedeemID is pre-1.0, so any 0.0.x release can change things. Lines marked **Upgr
 - Product entries' own pages get Product structured data in `<EmDashHead>`, through EmDash's `page:metadata` hook, built only from Shopify's fields. Pass `schema={false}` to `<Product heading="h1">` on those pages so there's one product.
 - A [Permissions and trust](docs/trust.md) guide: why RedeemID is native, its capabilities, every host it calls, what it keeps and for how long, and how to take it out. A SECURITY.md says how to report a problem.
 - This changelog now lives in the repository and the npm package, with **Upgrade** and **Security** lines.
+- The admin speaks German, Spanish, French, Japanese and Brazilian Portuguese: RedeemID's pages, the Access panel and column, and the product field follow the language picked in EmDash (then the browser's). Anything not yet translated stays in English.
 - Releases are staged on npm with provenance, so npm shows which workflow run built each version.
 
 ## 0.0.37 (2026-11-16)

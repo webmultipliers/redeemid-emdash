@@ -232,6 +232,12 @@ try {
 		});
 	const overview = await adminPage("/overview");
 	check("Overview comes first with status cards, members by level and recent activity", overview.res.status === 200 && overview.text.includes('"type":"redeemid_cards"') && overview.text.includes("Explore the access map") && overview.text.includes("Recent activity"), overview.text.slice(0, 300));
+	const overviewFr = await admin.go("/_emdash/api/plugins/redeemid/admin", {
+		method: "POST",
+		headers: { "content-type": "application/json", "x-emdash-request": "1", origin: SITE, "accept-language": "fr-FR,fr;q=0.9" },
+		body: JSON.stringify({ type: "page_load", page: "/overview" }),
+	});
+	check("the admin speaks the staff member's language, keeping ids and paths", overviewFr.res.status === 200 && overviewFr.text.includes("Activité récente") && !overviewFr.text.includes("Recent activity") && overviewFr.text.includes('"path":"/resources"'), overviewFr.text.slice(0, 300));
 	const dashCard = await adminPage("widget:status");
 	check("the dashboard card counts customers and links into RedeemID", dashCard.text.includes('"label":"Customers"') && dashCard.text.includes('"path":"/customers"') && dashCard.text.includes('"path":"/overview"'), dashCard.text.slice(0, 300));
 	check("Overview points to Resources instead of listing them", overview.text.includes('"path":"/resources"') && !overview.text.includes("Report a problem"), overview.text.slice(0, 300));
