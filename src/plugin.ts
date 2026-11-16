@@ -29,6 +29,7 @@ import type { PluginContext, ResolvedPlugin, RouteContext } from "emdash";
 import { definePlugin } from "emdash";
 
 import { levelsFor, SIGNED_IN, topLevels, type Terms } from "./access.js";
+import { accessLabels, parseColumnInput } from "./access-column.js";
 import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, isAccessAction, type AccessEnv, type PanelEntry } from "./access-admin.js";
 import { deleteAccess, entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
 import { env, ENV, shopOrigin, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
@@ -48,7 +49,8 @@ import { record } from "./log.js";
 import { resend } from "./events.js";
 import { eventRow, eventsPage, healthCheck, HEALTH_TASK, lastCheck, parseFilter, reportsPage, saveMonitor, WEBHOOK_PATH, webhookPanels, type MonitorEnv } from "./monitor.js";
 import { z } from "astro/zod";
-import { contentEntries, guardSave, productOptions, productsCollection, readProduct } from "./products.js";
+import { productMetadata, type PageForSchema } from "./product-schema.js";
+import { browseProducts, contentEntries, guardSave, productOptions, productsCollection, readProduct } from "./products.js";
 import { isProductsAction, productsAction, productsPage, type ProductsEnv } from "./products-admin.js";
 import { AgentError, explainAccess, findProducts, getCollection, getMember, getProduct, getRules, levelChanges, listLevels, siteHealth, type ExplainInput } from "./agents.js";
 
@@ -240,6 +242,17 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 				if (event.name !== HEALTH_TASK) return;
 				await healthCheck(monitorEnv(await live(), await memberStores(), ctx));
 			},
+			// Product entries' own pages get Product structured data in <EmDashHead>, from Shopify's fields.
+			"page:metadata": async (event: { page: PageForSchema & { kind: string } }) => {
+				const page = event.page;
+				const collection = productsCollection(code);
+				if (page.kind !== "content" || !collection || page.content?.collection !== collection) return null;
+				const config = await live();
+				if (config.schema === false) return null;
+				const { getDb } = await import("emdash/runtime");
+				const entry = await contentEntries(await getDb(), collection).byId(page.content.id).catch(() => null);
+				return entry && entry.status === "published" ? productMetadata(page, entry.data) : null;
+			},
 			"content:beforeSave": async (event) => {
 				// Product entries: only Shopify changes Shopify's fields.
 				if (event.collection !== productsCollection(code)) return;
@@ -288,6 +301,37 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 					} catch (e) {
 						return { blocks: [{ type: "banner", variant: "error", title: "RedeemID couldn't load access", description: (e as Error).message }] };
 					}
+				},
+			},
+			// The Shopify product field widget (admin.ts `fields.product`): search the store's products.
+			"product-picker": {
+				permission: "content:edit_own",
+				request: { body: "json" as const },
+				handler: async (ctx: RouteContext) => {
+					const raw = (ctx.input ?? {}) as { query?: unknown; after?: unknown };
+					const query = typeof raw.query === "string" ? raw.query.slice(0, 100) : "";
+					const after = typeof raw.after === "string" ? raw.after.slice(0, 500) : null;
+					try {
+						const page = await browseProducts(await live(), { query, after }, 10);
+						return { items: page.items.map((p) => ({ handle: p.handle, title: p.title, image: p.image_url, price: p.price, currency: p.currency, available: p.available })), next: page.next };
+					} catch (e) {
+						return { items: [], next: null, error: (e as Error).message };
+					}
+				},
+			},
+			// The Access column in content lists (admin.ts): one ask per page of rows.
+			"access-list": {
+				permission: "content:edit_own",
+				request: { body: "json" as const },
+				handler: async (ctx: RouteContext) => {
+					const ask = parseColumnInput(ctx.input);
+					if (!ask) return { labels: {} };
+					const emdash = await import("emdash");
+					const labels = await accessLabels(await live(), ask.collection, ask.ids, async (ids) => {
+						const all = (await emdash.getAllTermsForEntries(ask.collection, ids)) as Map<string, Record<string, Array<{ slug: string; id: string; parentId?: string }>>>;
+						return new Map([...all].map(([id, byTax]) => [id, Object.fromEntries(Object.entries(byTax).map(([tax, list]) => [tax, list.map((t) => ({ slug: t.slug, id: t.id, parentId: t.parentId ?? null }))]))]));
+					});
+					return { labels };
 				},
 			},
 			admin: {

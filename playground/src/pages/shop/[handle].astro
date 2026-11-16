@@ -18,8 +18,9 @@ const p = config ? await product(config, handle, undefined, storeContext(config,
 if (!p) Astro.response.status = 404;
 ---
 
-<Base title={p?.seo?.title || p?.title || "Product"} description={p?.seo?.description || p?.description.slice(0, 160) || null} image={p?.image?.url ?? null}>
-	<Product handle={handle} heading="h1"><p>PRODUCT-FALLBACK</p></Product>
+<Base title={p?.seo?.title || p?.title || "Product"} description={p?.seo?.description || p?.description.slice(0, 160) || null} image={p?.image?.url ?? null} content={entry ? { collection: "products", id: entry.data.id, slug: entry.data.slug } : undefined}>
+	{/* With an entry, RedeemID's page:metadata hook prints the Product data in the head. */}
+	<Product handle={handle} heading="h1" schema={!entry}><p>PRODUCT-FALLBACK</p></Product>
 	{p && entry?.data.content && <section class="story" data-product-story><PortableText value={entry.data.content} /></section>}
 	{p && <Recommendations handle={handle} productHref="/shop/{handle}/" />}
 </Base>
