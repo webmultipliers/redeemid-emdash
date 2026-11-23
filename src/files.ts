@@ -5,6 +5,13 @@
  * middleware calls fileAccess() before EmDash answers, refuses readers
  * without access, and marks allowed downloads private so no cache keeps them.
  *
+ * EmDash 1.6 stores media in the route cache for a year, and a cached copy is
+ * served without running any code. So while any folder is protected, the
+ * guard keeps every file and image response out of the route cache (a file
+ * can be moved into a protected folder later, and EmDash purges a file's
+ * copies only when it is replaced or deleted). Saving access settings purges
+ * the copies of files in protected folders.
+ *
  *   files: [
  *     { folder: "Gold downloads", levels: ["gold"] },
  *     { folder: "Member downloads", levels: [] },            // any signed-in member
@@ -213,6 +220,48 @@ export function keysFromUrl(url: URL): string[] | null {
 		}
 	}
 	return out.length ? [...new Set(out)] : null;
+}
+
+/** EmDash's route cache tag for a stored file and its image variants (EmDash 1.6+). */
+export function mediaCacheTag(key: string): string {
+	return `emdash:media:${key}`;
+}
+
+/**
+ * Storage keys of every file in a folder a rule protects. A route cache keeps
+ * EmDash's media for a year (EmDash 1.6+), so after rules change, the copies
+ * stored while a file was public are purged by these keys' tags.
+ */
+export async function protectedKeys(db: unknown, config: RedeemIDConfig | null): Promise<string[]> {
+	const folders = [...new Set((config?.files ?? []).map((r) => r.folder.trim().toLowerCase()).filter(Boolean))];
+	if (!folders.length || !db) return [];
+	const k = db as {
+		selectFrom(t: string): {
+			innerJoin(t: string, a: string, b: string): { select(c: string[]): { execute(): Promise<Array<Record<string, unknown>>> } };
+		};
+	};
+	const rows = await k.selectFrom("media").innerJoin("media_folders", "media_folders.id", "media.folder_id").select(["media.storage_key as key", "media_folders.name as folder"]).execute();
+	return rows
+		.filter((r) => typeof r.key === "string" && typeof r.folder === "string" && folders.includes((r.folder as string).trim().toLowerCase()))
+		.map((r) => r.key as string);
+}
+
+/** Purge the route cache's copies of files in protected folders. Never throws: it follows a save that already happened. */
+export async function purgeProtectedFiles(
+	cache: { enabled?: boolean; invalidate?(o: { tags: string[] }): Promise<unknown> } | undefined,
+	db: unknown,
+	config: RedeemIDConfig | null,
+): Promise<number> {
+	if (!cache?.enabled || !cache.invalidate) return 0;
+	try {
+		// Cloudflare ignores tags over 1024 characters, and EmDash doesn't store those files.
+		const tags = (await protectedKeys(db, config)).map(mediaCacheTag).filter((t) => t.length <= 1024);
+		for (let i = 0; i < tags.length; i += 100) await cache.invalidate({ tags: tags.slice(i, i + 100) });
+		return tags.length;
+	} catch (e) {
+		console.error("[redeemid] couldn't purge cached files:", (e as Error).message);
+		return 0;
+	}
 }
 
 /** Decide a download that may name several keys: the first protected one decides. */

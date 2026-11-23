@@ -136,3 +136,7 @@ Upload files into a folder in the EmDash media library (names match without rega
 A rule lets in members who hold any of its `levels` or `features`. With `entries: true` it also lets in whoever can read a published entry that uses the file. Staff can always download, disabled members can't, and a file that can't be checked isn't served.
 
 Limits: only EmDash's file route is checked, so don't give the storage bucket a public URL. Image services that fetch without the reader's cookies, such as a CDN resizer, are refused. Moving a file out of the folder makes it public again.
+
+**Route cache.** With a route cache provider, EmDash keeps media files and resized images in it for a year and serves them without running any code. While any folder is protected, RedeemID keeps every file and image response out of the route cache, because a file can be moved into a protected folder later. Saving access settings in the admin (or an entry's Access panel) purges the stored copies of files in protected folders, so after adding a rule or moving files into a protected folder, save once.
+
+**Files linked from text.** `entries: true` finds an entry's files through EmDash's media usage index. Since EmDash 1.6 that index also counts files linked from text and URL fields, not only images. Entries saved before the upgrade aren't re-indexed on their own: run `npx emdash media repair-usage --all` once (or save those entries again), or members may be refused a file an entry links to.

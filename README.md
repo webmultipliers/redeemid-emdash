@@ -32,7 +32,7 @@ Selling a membership is ordinary Shopify: a product, a checkout, and a Flow work
 
 ## Requirements
 
-- EmDash 1.5 or later with Astro 6 or later, on Node or Cloudflare Workers (the Workers free plan is enough).
+- EmDash 1.6 or later with Astro 6 or later, on Node or Cloudflare Workers (the Workers free plan is enough).
 - A Shopify store with the new customer accounts, the Headless sales channel, and an Admin API app on the store (staff tools, resyncs, tag edits, and registering and signing webhooks).
 - HTTPS. Shopify only accepts `https` callback URIs, so a local site needs a tunnel to sign in for real.
 

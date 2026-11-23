@@ -6,6 +6,12 @@ RedeemID is pre-1.0, so any 0.0.x release can change things. Lines marked **Upgr
 
 ## Unreleased
 
+## 0.0.40 (2026-11-23)
+
+- **Security:** EmDash 1.6 keeps media files and resized images in the route cache for a year, and a stored copy is served without any check. A protected file a member or editor opened could then reach anyone. While any folder is protected, RedeemID now keeps file and image responses out of the route cache, and saving access settings purges stored copies of files in protected folders. If your site ran EmDash 1.6 with 0.0.39, a route cache and protected files, update and then save the Access page once.
+- **Upgrade:** RedeemID now needs EmDash 1.6 or later, and its `@cloudflare/kumo` peer is 2.19.0, the version EmDash 1.6's admin uses. Update `emdash`, `@emdash-cms/cloudflare` (on Workers) and `@redeemid/emdash` together.
+- **Upgrade:** with `entries: true` protected files, run `npx emdash media repair-usage --all` once after moving to EmDash 1.6, so files linked from entry text count as used by those entries.
+
 ## 0.0.39 (2026-11-16)
 
 - The admin speaks German, Spanish, French, Japanese and Brazilian Portuguese: RedeemID's pages, the Access panel and column, and the product field follow the language picked in EmDash (then the browser's). Anything not yet translated stays in English.
