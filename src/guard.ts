@@ -22,7 +22,11 @@
  *
  * A request that saves access settings (the Access page, an entry's Access
  * panel) purges the pages cacheEntry() and cachePage() let in, by their
- * `redeemid` tag, so they follow the new rules.
+ * `redeemid` tag, so they follow the new rules, and the stored copies of
+ * files in protected folders.
+ *
+ * While any folder is protected, file and image responses stay out of the
+ * route cache, which EmDash 1.6 otherwise fills with media for a year.
  */
 
 import { defineMiddleware } from "astro:middleware";
@@ -30,12 +34,12 @@ import { defineMiddleware } from "astro:middleware";
 import { signInUrl } from "./access.js";
 import { arrival } from "./arrivals.js";
 import { readCart } from "./cart.js";
-import { keysFromUrl, pathAccess, refusal } from "./files.js";
-import { keptOut, purgeRouteCache } from "./route-cache.js";
+import { keysFromUrl, pathAccess, purgeProtectedFiles, refusal } from "./files.js";
+import { keptOut, noRouteCache, purgeRouteCache } from "./route-cache.js";
 import { guardSearch, SEARCH_PATH, SUGGEST_PATH } from "./search-guard.js";
-import { accessWrites } from "./settings.js";
+import { accessWrites, withSaved } from "./settings.js";
 import { AFTER_LOGOUT_COOKIE, readAfterLogout } from "./routes/shared.js";
-import { shareConfig, siteConfig } from "./site-config.js";
+import { codeConfig, shareConfig, siteConfig } from "./site-config.js";
 import { refreshProductOptions } from "./products.js";
 
 /** EmDash's admin manifest, which carries the editor's block fields. */
@@ -105,7 +109,13 @@ type Context = Parameters<Parameters<typeof defineMiddleware>[0]>[0];
 export const onRequest = defineMiddleware(async (context, next) => {
 	const writes = accessWrites();
 	const res = await guard(context, next);
-	if (accessWrites() !== writes) await purgeRouteCache(context.cache);
+	// Files, pages and code that asked to stay out of the route cache (set after the route set its own hint).
+	if (keptOut(context.locals)) context.cache?.set(false);
+	if (accessWrites() !== writes) {
+		await purgeRouteCache(context.cache);
+		const db = (context.locals as { emdash?: { db?: unknown } }).emdash?.db;
+		if (db) await purgeProtectedFiles(context.cache, db, await withSaved(codeConfig(context.locals), db).catch(() => null));
+	}
 	return res;
 });
 
@@ -117,6 +127,8 @@ async function guard(context: Context, next: Next): Promise<Response> {
 	// Protected files: checked for everyone, on every download.
 	const keys = config?.files?.length || config?.unavailable ? keysFromUrl(url) : null;
 	if (keys) {
+		// A stored copy would reach the next reader unchecked (EmDash 1.6 caches media for a year).
+		noRouteCache(context);
 		let verdict;
 		try {
 			verdict = await pathAccess(await withUser(context), config, keys);

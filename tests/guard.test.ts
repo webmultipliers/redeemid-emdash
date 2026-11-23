@@ -70,3 +70,47 @@ describe("private pages", () => {
 		expect(out.headers.get("cache-control")).toBe("private, no-store");
 	});
 });
+
+describe("media and the route cache", () => {
+	// Any Kysely chain: every call returns the chain, and no row is found.
+	const db: unknown = new Proxy(() => {}, {
+		get: (_t, p) => (p === "then" ? undefined : p === "executeTakeFirst" ? async () => undefined : p === "execute" ? async () => [] : db),
+		apply: () => db,
+	});
+	function request(path: string, files: boolean) {
+		const calls: unknown[] = [];
+		const config = { authProviders: [{ id: "redeemid", config: { shop: "x.myshopify.com", ...(files ? { files: [{ folder: "Gold", levels: ["gold"] }] } : {}) } }] };
+		const context = {
+			url: new URL(`https://site.test${path}`),
+			locals: { user: null, emdash: { config, db } },
+			session: { get: async () => undefined, set() {} },
+			cookies: { get: () => undefined },
+			cache: { set: (o: unknown) => calls.push(o) },
+		};
+		// EmDash 1.6's file and image routes store media in the route cache for a year.
+		const route = async () => {
+			context.cache.set({ maxAge: 31_536_000, tags: ["emdash:media:abc.png"] });
+			return new Response("bytes", { headers: { "content-type": "image/png" } });
+		};
+		return { context, calls, route };
+	}
+	const run = async (path: string, files: boolean) => {
+		const { onRequest } = await import("../src/guard.js");
+		const { context, calls, route } = request(path, files);
+		const res = await (onRequest as unknown as (c: unknown, n: () => Promise<Response>) => Promise<Response>)(context, route);
+		return { res, calls };
+	};
+
+	it("keeps files out of the route cache while a folder is protected", async () => {
+		for (const path of ["/_emdash/api/media/file/abc.png", "/_image?href=%2F_emdash%2Fapi%2Fmedia%2Ffile%2Fabc.png&w=200"]) {
+			const { res, calls } = await run(path, true);
+			expect(res.status).toBe(200);
+			expect(calls.at(-1)).toBe(false);
+		}
+	});
+
+	it("leaves EmDash's media caching alone when no folder is protected", async () => {
+		const { calls } = await run("/_emdash/api/media/file/abc.png", false);
+		expect(calls.at(-1)).toEqual({ maxAge: 31_536_000, tags: ["emdash:media:abc.png"] });
+	});
+});

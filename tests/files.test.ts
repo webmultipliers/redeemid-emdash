@@ -4,7 +4,7 @@ vi.mock("emdash/api/route-utils", () => ({ getAuthProviderStorage: () => null })
 vi.mock("virtual:emdash/config", () => ({ default: {} }));
 
 import type { RedeemIDConfig } from "../src/config.js";
-import { fileAccess, keysFromPath, keysFromUrl, refusal, ruleFor } from "../src/files.js";
+import { fileAccess, keysFromPath, keysFromUrl, purgeProtectedFiles, refusal, ruleFor } from "../src/files.js";
 
 describe("keysFromPath", () => {
 	it("returns the key after every decoding layer", () => {
@@ -79,5 +79,28 @@ describe("bodyClauses", () => {
 		];
 		expect(bodyClauses(body)).toEqual([["pro"], ["signed-in"]]);
 		expect(bodyClauses([{ _type: "redeemid-paywall", levels: ["gold"] }, { _type: "block" }])).toEqual([]);
+	});
+});
+
+describe("purgeProtectedFiles", () => {
+	const rows = [
+		{ key: "gold.pdf", folder: "Gold Downloads" },
+		{ key: "free.png", folder: "Photos" },
+		{ key: "x".repeat(1100), folder: "gold downloads" },
+	];
+	const db = { selectFrom: () => ({ innerJoin: () => ({ select: () => ({ execute: async () => rows }) }) }) };
+	const config: RedeemIDConfig = { files: [{ folder: "Gold Downloads", levels: ["gold"] }] };
+
+	it("purges the cached copies of files in protected folders only", async () => {
+		const purged: string[][] = [];
+		const cache = { enabled: true, invalidate: async (o: { tags: string[] }) => void purged.push(o.tags) };
+		expect(await purgeProtectedFiles(cache, db, config)).toBe(1);
+		expect(purged).toEqual([["emdash:media:gold.pdf"]]);
+	});
+
+	it("does nothing without a route cache or protected folders", async () => {
+		const cache = { enabled: true, invalidate: async () => { throw new Error("should not purge"); } };
+		expect(await purgeProtectedFiles({ enabled: false }, db, config)).toBe(0);
+		expect(await purgeProtectedFiles(cache, db, {})).toBe(0);
 	});
 });
