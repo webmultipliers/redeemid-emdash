@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RedeemIDConfig } from "../src/config.js";
-import { cacheFindings, gatedFindings, scanTemplate } from "../src/template-scan.js";
+import { bodyFindings, cacheFindings, gatedFindings, scannable, scanTemplate } from "../src/template-scan.js";
 
 const page = `---
 import { getEmDashEntry } from "emdash";
@@ -87,5 +87,34 @@ if (Astro.cache?.enabled) Astro.cache.set(menu.cacheHint);
 
 	it("leaves pages that use the helpers alone", () => {
 		expect(scanTemplate("q.astro", cached.replace("if (Astro.cache?.enabled) Astro.cache.set(cacheHint);", 'await cacheEntry(Astro, "posts", entry, cacheHint);'))).toBeNull();
+	});
+});
+
+describe("endpoints that send raw bodies", () => {
+	const feed = `import { getEmDashCollection } from "emdash";
+export async function GET() {
+	const { entries } = await getEmDashCollection("posts");
+	return rss({ items: entries.map((p) => ({ title: p.data.title, content: html(p.data.content) })) });
+}`;
+	const base = { shop: "s.myshopify.com", levels: [{ slug: "member", name: "Member", tags: ["member"] }] };
+
+	it("scans endpoints under src/pages, not other scripts", () => {
+		expect(scannable("src/pages/rss.xml.ts")).toBe(true);
+		expect(scannable("src/pages/blog/[slug].astro")).toBe(true);
+		expect(scannable("src/lib/feed.ts")).toBe(false);
+	});
+
+	it("lists a feed that sends .data.content without readableBody()", () => {
+		expect(scanTemplate("src/pages/rss.xml.ts", feed)).toEqual({ file: "src/pages/rss.xml.ts", lines: [], body: [4], collections: ["posts"] });
+		expect(scanTemplate("src/pages/rss.xml.ts", `import { readableBody } from "@redeemid/emdash/body";\n${feed}`)).toBeNull();
+		expect(scanTemplate("src/lib/feed.ts", feed)).toBeNull();
+	});
+
+	it("matters only while the collection is gated", () => {
+		const found = [scanTemplate("src/pages/rss.xml.ts", feed)!];
+		expect(bodyFindings(found, base)).toEqual([]);
+		expect(bodyFindings(found, { ...base, rules: [{ collection: "posts", levels: ["member"] }] })[0]?.gated).toEqual(["posts"]);
+		// A feed isn't a <PortableText> template.
+		expect(gatedFindings(found, { ...base, rules: [{ collection: "posts", levels: ["member"] }] })).toEqual([]);
 	});
 });

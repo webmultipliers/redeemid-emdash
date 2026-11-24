@@ -84,7 +84,7 @@ import Notices from "@redeemid/emdash/components/Notices.astro";
 <Content value={post.data.content} collection="posts" terms={post.data.terms} id={post.id} title={post.data.title} />
 ```
 
-Use `<Content>` in place of `<PortableText>` for every body that may be locked, because plain `<PortableText>` shows everything. You don't have to find them by hand: `redeemidGuard()` scans the site's `.astro` files at build time, and Connection → Environment names each template, with its line, that renders a gated collection's body with `<PortableText>`. While any rule is on, it also lists templates whose collection it can't tell (such as a component given the body as a prop), so you can check them.
+Use `<Content>` in place of `<PortableText>` for every body that may be locked, because plain `<PortableText>` shows everything. You don't have to find them by hand: `redeemidGuard()` scans the site's `.astro` files at build time, and Connection → Environment names each template, with its line, that renders a gated collection's body with `<PortableText>`. While any rule is on, it also lists templates whose collection it can't tell (such as a component given the body as a prop), so you can check them. It checks endpoints under `src/pages` too, such as `rss.xml.ts`: one that sends `.data.content` without `readableBody()` is listed, since it would send the locked part (see [feeds](content.md)).
 
 ## 6. Check it
 

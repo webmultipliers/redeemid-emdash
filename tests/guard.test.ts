@@ -7,7 +7,7 @@ import { memberMayUse } from "../src/guard.js";
 
 describe("member guard", () => {
 	it("refuses EmDash's content API and admin to members", () => {
-		for (const p of ["/_emdash/api/content/posts", "/_emdash/api/search/stats", "/_emdash/api/searchx", "/_emdash/admin", "/_emdash/api/mcp"]) {
+		for (const p of ["/_emdash/api/content/posts", "/_emdash/api/search/stats", "/_emdash/api/searchx", "/_emdash/admin", "/_emdash/api/mcp", "/_emdash/api/plugins/other/read", "/_emdash/api/plugins/redeemid/list-levels"]) {
 			expect(memberMayUse(p)).toBe(false);
 		}
 	});
@@ -17,6 +17,7 @@ describe("member guard", () => {
 			expect(memberMayUse(p)).toBe(true);
 		}
 		expect(memberMayUse("/_emdash/api/sections", ["/_emdash/api/sections"])).toBe(true);
+		expect(memberMayUse("/_emdash/api/plugins/forms/submit", ["/_emdash/api/plugins/forms/"])).toBe(true);
 		expect(memberMayUse("/_emdash/api/contentx")).toBe(false);
 	});
 });

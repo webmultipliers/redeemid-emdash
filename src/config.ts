@@ -230,7 +230,9 @@ export interface RedeemIDConfig {
 	schema?: false;
 	/**
 	 * Extra /_emdash path prefixes signed-in members may use. Everything else
-	 * under /_emdash is refused to Subscribers (see guard.ts).
+	 * under /_emdash is refused to Subscribers (see guard.ts), other plugins'
+	 * routes included: list a plugin's public route here
+	 * ("/_emdash/api/plugins/forms/submit") for members to reach it.
 	 */
 	memberPaths?: string[];
 	/**

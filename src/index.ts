@@ -37,7 +37,7 @@ import type { AuthProviderDescriptor } from "emdash";
 
 import { PROVIDER_ID, type RedeemIDConfig } from "./config.js";
 import { STORAGE_CONFIG } from "./storage.js";
-import { scanTemplate, type TemplateFinding } from "./template-scan.js";
+import { scannable, scanTemplate, type TemplateFinding } from "./template-scan.js";
 
 export type { LevelConfig, RedeemIDConfig, RuleConfig } from "./config.js";
 export type { MemberRecord } from "./storage.js";
@@ -120,8 +120,10 @@ function templateScan(root: URL, srcDir: URL) {
 				for (const d of items) {
 					const path = join(dir, d.name);
 					if (d.isDirectory() && d.name !== "node_modules") walk(path);
-					else if (d.isFile() && d.name.endsWith(".astro")) {
-						const found = scanTemplate(relative(base, path).split("\\").join("/"), readFileSync(path, "utf8"));
+					else if (d.isFile()) {
+						const file = relative(base, path).split("\\").join("/");
+						if (!scannable(file)) continue;
+						const found = scanTemplate(file, readFileSync(path, "utf8"));
 						if (found) out.push(found);
 					}
 				}
