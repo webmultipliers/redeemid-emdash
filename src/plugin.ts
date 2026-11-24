@@ -30,7 +30,7 @@ import { definePlugin } from "emdash";
 
 import { levelsFor, SIGNED_IN, topLevels, type Terms } from "./access.js";
 import { accessLabels, parseColumnInput } from "./access-column.js";
-import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, isAccessAction, type AccessEnv, type PanelEntry } from "./access-admin.js";
+import { accessAction, accessPage, entryPanel, entrySave, entrySlugChanged, inheritTranslationRule, isAccessAction, translationsOf, type AccessEnv, type PanelEntry } from "./access-admin.js";
 import { deleteAccess, entryKey, loadAccess, onLevels, withSaved } from "./settings.js";
 import { env, ENV, shopOrigin, storeDomain, unknownEnvNames, type LevelConfig, type RedeemIDConfig } from "./config.js";
 import { discover } from "./shopify.js";
@@ -267,7 +267,13 @@ export function createPlugin(code: RedeemIDConfig = {}): ResolvedPlugin {
 				const id = typeof event.content.id === "string" ? event.content.id : null;
 				if (!id) return;
 				const slug = typeof event.content.slug === "string" ? event.content.slug : null;
-				await entrySlugChanged((await memberStores()).access, event.collection, id, slug).catch(() => undefined);
+				const store = (await memberStores()).access;
+				await entrySlugChanged(store, event.collection, id, slug).catch(() => undefined);
+				// A new translation takes the rule its translations share.
+				const translations = await translationsOf(event.collection, id);
+				if (await inheritTranslationRule(store, event.collection, id, slug, translations).catch(() => false)) {
+					await record({ event: "settings.saved", label: `entry rule (${event.collection}) from its translation`, status: "ok", origin: "staff" }).catch(() => undefined);
+				}
 			},
 			"content:afterDelete": async (event) => {
 				const store = (await memberStores()).access;
@@ -454,10 +460,20 @@ async function panelEntry(ctx: RouteContext, collection: string, id: string): Pr
 	const terms: Terms = {};
 	for (const t of (await emdash.getTaxonomyDefs()) as Array<{ name: string; collections: string[] }>) {
 		if (!(t.collections ?? []).includes(collection)) continue;
-		const list = (await emdash.getEntryTerms(collection, id, t.name)) as Array<{ slug: string; id: string; parentId?: string }>;
-		if (list.length) terms[t.name] = list.map((x) => ({ slug: x.slug, id: x.id, parentId: x.parentId ?? null }));
+		const list = (await emdash.getEntryTerms(collection, id, t.name)) as Array<{ slug: string; id: string; parentId?: string; translationGroup?: string | null }>;
+		if (list.length) terms[t.name] = list.map((x) => ({ slug: x.slug, id: x.id, parentId: x.parentId ?? null, translationGroup: x.translationGroup ?? null }));
 	}
-	return { collection, id, slug: item?.slug ?? null, terms };
+	return { collection, id, slug: item?.slug ?? null, terms, body: bodyOf(item?.data), translations: await translationsOf(collection, id) };
+}
+
+/** The entry's Portable Text body: its `content` field, else the first field holding text blocks. */
+function bodyOf(data: Record<string, unknown> | null | undefined): unknown[] | null {
+	if (!data) return null;
+	if (Array.isArray(data.content)) return data.content;
+	for (const v of Object.values(data)) {
+		if (Array.isArray(v) && v.some((b) => (b as { _type?: string })?._type === "block")) return v;
+	}
+	return null;
 }
 
 export default createPlugin;

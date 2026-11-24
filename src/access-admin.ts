@@ -17,6 +17,7 @@ import type { StorageCollection } from "emdash";
 
 import { applyEntryRule, badgeColor, describe, requirement, ruleSource, SIGNED_IN, termTree, type Requirement, type Terms } from "./access.js";
 import { accessMap, type MapGo } from "./access-map.js";
+import { splitAtPaywall, teaser } from "./blocks-names.js";
 import { accessTest } from "./staff.js";
 import { groupsOf, type FeatureConfig, type FileRule, type LevelConfig, type MeterConfig, type RedeemIDConfig, type RuleConfig, type TagGroup } from "./config.js";
 import {
@@ -934,6 +935,59 @@ export interface PanelEntry {
 	id: string;
 	slug: string | null;
 	terms: Terms;
+	/** The entry's Portable Text body, for the "nothing before the wall" warning. */
+	body?: unknown[] | null;
+	/** The entry's other translations, which share its rule. */
+	translations?: Array<{ id: string; slug: string | null }>;
+}
+
+/**
+ * Would a locked entry show nothing before the wall? True when the body has
+ * no text before its first Paywall break, or, with no break, when the
+ * content type's teaser gives none. A body not yet loaded counts as fine.
+ */
+export function opensBare(body: unknown[] | null | undefined, teaserWords: number): boolean {
+	if (!Array.isArray(body)) return false;
+	const split = splitAtPaywall(body);
+	const open = split.paywall ? split.open : teaser(body, teaserWords);
+	return !open.some((b) => (b as { _type?: string })?._type === "block");
+}
+
+/**
+ * The entry's other translations (id and slug), when the site has several
+ * locales. They share one rule: locking one translation locks them all, so a
+ * forgotten locale can't leak what the rule locks.
+ */
+export async function translationsOf(collection: string, id: string): Promise<Array<{ id: string; slug: string | null }>> {
+	try {
+		const emdash = await import("emdash");
+		if (!emdash.isI18nEnabled()) return [];
+		const { translations } = await emdash.getTranslations(collection, id);
+		return translations.filter((t) => t.id !== id).map((t) => ({ id: t.id, slug: t.slug ?? null }));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * A new or saved translation takes the rule its translations already share,
+ * unless it has its own. Returns whether it took one.
+ */
+export async function inheritTranslationRule(
+	store: StorageCollection<AccessRecord>,
+	collection: string,
+	id: string,
+	slug: string | null,
+	translations: Array<{ id: string; slug: string | null }>,
+): Promise<boolean> {
+	if (translations.length === 0 || (await store.get(entryKey(id)))) return false;
+	for (const t of translations) {
+		const rule = (await store.get(entryKey(t.id))) as EntryRule | null;
+		if (rule?.kind !== "entry" || rule.collection !== collection) continue;
+		await putAccess(store, entryKey(id), { ...rule, entryId: id, slug });
+		return true;
+	}
+	return false;
 }
 
 const MODES = [
@@ -959,10 +1013,21 @@ export async function entryPanel(env: AccessEnv, entry: PanelEntry, toast?: Toas
 	const own = env.saved.entries.find((e) => e.entryId === entry.id && e.collection === entry.collection) ?? null;
 	const now = applyEntryRule(site, own);
 	const hasLevels = levels.length > 0;
+	const bare = now !== null && opensBare(entry.body, config.teaser?.[entry.collection] ?? 0);
 	return {
 		toast,
 		blocks: [
 			{ type: "section", text: `Right now: ${words(now, levels)}.` },
+			...(bare
+				? [
+						{
+							type: "banner",
+							variant: "alert",
+							title: "Visitors see only the wall",
+							description: "Nothing in this entry is open to read first, so visitors and search engines get no preview. Add a Paywall break after the opening paragraphs, or set teaser words for this content type on the Access page.",
+						},
+					]
+				: []),
 			{ type: "context", text: own && own.mode !== "inherit" ? "Set by: this entry's own rule." : `Set by: ${ruleSource(rules, entry.collection, entry.terms, tree)}.` },
 			{
 				type: "form",
@@ -980,6 +1045,9 @@ export async function entryPanel(env: AccessEnv, entry: PanelEntry, toast?: Toas
 				submit: { label: "Save access", action_id: "entry_save" },
 			},
 			{ type: "context", text: "With a Paywall break in the body, everyone reads up to it and this rule covers the rest. Members only blocks can lock parts to their own levels." },
+			...(entry.translations?.length
+				? [{ type: "context", text: entry.translations.length === 1 ? "This rule also covers the entry's other translation." : `This rule also covers the entry's ${entry.translations.length} other translations.` }]
+				: []),
 		],
 	};
 }
@@ -1013,9 +1081,15 @@ export async function entrySave(env: AccessEnv, entry: PanelEntry, values: Recor
 	rule.lockedUntil = isoDay(values.locked_until);
 	rule.openUntil = isoDay(values.open_until);
 	const empty = mode === "inherit" && !rule.drip && rule.meter !== false && !rule.lockedUntil && !rule.openUntil;
-	if (empty) await deleteAccess(env.store, entryKey(entry.id));
-	else await putAccess(env.store, entryKey(entry.id), rule);
-	env.saved = { ...env.saved, entries: [...env.saved.entries.filter((e) => e.entryId !== entry.id), ...(empty ? [] : [rule])] };
+	// One rule for the entry and every translation of it.
+	const all = [{ id: entry.id, slug: entry.slug }, ...(entry.translations ?? [])];
+	const rules = all.map((t) => ({ ...rule, entryId: t.id, slug: t.slug }));
+	for (const r of rules) {
+		if (empty) await deleteAccess(env.store, entryKey(r.entryId));
+		else await putAccess(env.store, entryKey(r.entryId), r);
+	}
+	const ids = new Set(all.map((t) => t.id));
+	env.saved = { ...env.saved, entries: [...env.saved.entries.filter((e) => !ids.has(e.entryId)), ...(empty ? [] : rules)] };
 	return entryPanel(env, entry, { type: "success", message: empty ? "This entry follows the site rules." : "Access saved." });
 }
 

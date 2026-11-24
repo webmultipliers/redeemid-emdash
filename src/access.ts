@@ -66,7 +66,7 @@ export interface Verdict {
 }
 
 /** A term as EmDash hydrates it onto an entry, or just its slug. */
-export type TermRef = { slug: string; id?: string; parentId?: string | null } | string;
+export type TermRef = { slug: string; id?: string; parentId?: string | null; translationGroup?: string | null } | string;
 export type Terms = Record<string, TermRef[] | undefined>;
 
 /** Parent slug by term slug, per taxonomy, for walking up a hierarchy. */
@@ -458,8 +458,9 @@ export async function termTree(rules: RuleConfig[] = [], collection: string, ter
 	});
 	if (wanted.length === 0) return tree;
 	try {
-		const { getTaxonomyTerms } = await import("emdash");
-		for (const [taxonomy] of wanted) {
+		const { getTaxonomyTerms, isI18nEnabled } = await import("emdash");
+		const ruled = isI18nEnabled() ? await ruledGroups(forCollection, wanted.map(([t]) => t)) : null;
+		for (const [taxonomy, list] of wanted) {
 			type Node = { id: string; slug: string; parentId?: string | null; children?: Node[] };
 			const flat: Node[] = [];
 			const walk = (list: Node[]) => list.forEach((n) => (flat.push(n), walk(n.children ?? [])));
@@ -469,11 +470,61 @@ export async function termTree(rules: RuleConfig[] = [], collection: string, ter
 			tree[taxonomy] = Object.fromEntries(
 				flat.map((n) => [n.slug, n.parentId ? (byId.get(n.parentId) ?? byGroup.get(n.parentId) ?? null) : null]),
 			);
+			const groups = ruled?.get(taxonomy);
+			if (groups?.size) {
+				const named = new Set(forCollection.filter((r) => r.taxonomy === taxonomy).map((r) => r.term!));
+				aliasTranslations(tree[taxonomy], groups, named, [...flat, ...(list ?? []).filter((t): t is Exclude<TermRef, string> => typeof t !== "string")]);
+			}
 		}
 	} catch {
 		// No term lists (outside an EmDash request): only direct term rules apply.
 	}
 	return tree;
+}
+
+/**
+ * Term translations. On a site with several locales each translation of a
+ * term has its own slug ("investigations", "enquetes"), but rules name one.
+ * Point every translation's slug at the slug a rule names in the same
+ * translation group, so a rule covers the term in every locale and a
+ * forgotten translation can't open what the rule locks. `groups` maps a
+ * translation group to the slug its rule names; `named` holds every slug a
+ * rule names (those keep their own rule).
+ */
+export function aliasTranslations(
+	tree: Record<string, string | null>,
+	groups: Map<string, string>,
+	named: Set<string>,
+	nodes: Array<{ slug: string; id?: string; translationGroup?: string | null }>,
+): void {
+	for (const n of nodes) {
+		if (!n.slug || named.has(n.slug)) continue;
+		const target = groups.get(n.translationGroup ?? n.id ?? "");
+		if (target && target !== n.slug) tree[n.slug] = target;
+	}
+}
+
+/** Translation group → the slug a rule names, per taxonomy (all locales). */
+async function ruledGroups(rules: RuleConfig[], taxonomies: string[]): Promise<Map<string, Map<string, string>>> {
+	const out = new Map<string, Map<string, string>>();
+	const slugs = [...new Set(rules.filter((r) => r.taxonomy && r.term && taxonomies.includes(r.taxonomy)).map((r) => r.term!))];
+	if (slugs.length === 0) return out;
+	const { getDb } = await import("emdash/runtime");
+	const db = (await getDb()) as unknown as {
+		selectFrom(t: "taxonomies"): {
+			select(c: string[]): {
+				where(c: string, op: "in", v: string[]): { where(c: string, op: "in", v: string[]): { execute(): Promise<Array<{ name: string; slug: string; id: string; translation_group: string | null }>> } };
+			};
+		};
+	};
+	const rows = await db.selectFrom("taxonomies").select(["name", "slug", "id", "translation_group"]).where("name", "in", taxonomies).where("slug", "in", slugs).execute();
+	for (const r of rows) {
+		if (!rules.some((x) => x.taxonomy === r.name && x.term === r.slug)) continue;
+		const map = out.get(r.name) ?? new Map<string, string>();
+		map.set(r.translation_group ?? r.id, r.slug);
+		out.set(r.name, map);
+	}
+	return out;
 }
 
 /**
@@ -591,11 +642,13 @@ export function signOutUrl(returnTo = "/"): string {
  * The entry's verdict with drip and the meter applied, for the entry's own
  * page. Drip narrows a granted verdict; the meter opens a locked one for a
  * signed-in reader while the period has room, and never opens a drip entry.
+ * `meter: false` applies drip only: nothing is counted and the meter opens nothing.
  */
 export async function readEntry(
 	astro: AstroLike,
 	entry: { collection: string; terms?: Terms; id?: string; ruleId?: string },
 	override?: { required: string[][] },
+	options: { meter?: boolean } = {},
 ): Promise<Verdict> {
 	const verdict = await canRead(astro, entry, override);
 	const locals = astro.locals as Locals;
@@ -613,6 +666,8 @@ export async function readEntry(
 		return verdict;
 	}
 
+	// Feeds, lists and JSON never use up (or open with) the meter.
+	if (options.meter === false) return verdict;
 	const meter = config.meter;
 	const user = locals.user;
 	const db = locals.emdash?.db;

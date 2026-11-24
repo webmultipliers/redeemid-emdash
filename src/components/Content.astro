@@ -36,9 +36,10 @@
  */
 import { PortableText } from "emdash/ui";
 
-import { canRead, entryRequirement, entryRuleFor, readEntry, viewer, type Terms, type Verdict } from "../access.js";
+import { entryRuleFor, type Terms, type Verdict } from "../access.js";
+import { bodyParts } from "../body.js";
 import { noRouteCache } from "../route-cache.js";
-import { holdsItem, sections, soldItem, splitAtPaywall, teaser } from "../blocks-names.js";
+import { sections } from "../blocks-names.js";
 import { siteConfig } from "../site-config.js";
 import { text } from "../text.js";
 import LockedPanel from "./LockedPanel.astro";
@@ -54,43 +55,12 @@ interface Props {
 }
 
 const { value, collection = "", terms, id, title } = Astro.props;
-const split = splitAtPaywall(value);
 const config = await siteConfig(Astro.locals);
-const entryRule = await entryRequirement(config, collection, terms, id);
-// Bought on its own: the whole entry, no meter, no drip.
-const item = soldItem(value);
-const reader = item ? (await viewer(Astro)).member : null;
-const owned = Boolean(reader && reader.status !== "disabled" && holdsItem(item, reader.tags));
-// The rest after a break follows the entry's rule, and the break does
-// nothing when no rule covers the entry.
-const required = split.paywall ? entryRule : undefined;
-const verdict: Verdict | { allowed: true; reason: "open" } =
-	owned || (split.paywall && required === null)
-		? { allowed: true, reason: "open" }
-		: id
-			? await readEntry(Astro, { collection, terms, id }, required ? { required } : undefined)
-			: await canRead(Astro, { collection, terms }, required ? { required } : undefined);
-const words = config?.teaser?.[collection] ?? 0;
-const shown = split.paywall ? split.open : verdict.allowed ? split.open : teaser(split.open, words);
-const rest = verdict.allowed ? split.locked : [];
-
-// Each "Members only" part gets its own verdict.
-async function parts(blocks: unknown[]) {
-	const out: Array<{ blocks: unknown[]; verdict?: Verdict }> = [];
-	for (const section of sections(blocks)) {
-		if (!section.members || owned) {
-			out.push({ blocks: section.blocks });
-			continue;
-		}
-		const needs = section.levels.length ? [section.levels] : (entryRule ?? [[]]);
-		out.push({ blocks: section.blocks, verdict: await canRead(Astro, { collection, terms, id }, { required: needs }) });
-	}
-	return out;
-}
-const before = await parts(shown);
-const after = await parts(rest);
+// The same filter as readableBody(), with the meter on for the entry's own page.
+const { verdict, entryRule, before, after, paywall, item } = await bodyParts(Astro, { value, collection, terms, id }, { meter: Boolean(id) });
+const required = paywall ? entryRule : undefined;
 // Google's paywalled-content markup, on the entry's own page when any of it is locked.
-const lockedEntry = Boolean(split.paywall ? required : entryRule) || sections(value ?? []).some((s) => s.members);
+const lockedEntry = Boolean(paywall ? required : entryRule) || sections(value ?? []).some((s) => s.members);
 const schema =
 	id && lockedEntry && config?.schema !== false
 		? JSON.stringify({
