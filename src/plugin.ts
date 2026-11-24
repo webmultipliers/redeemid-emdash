@@ -43,7 +43,7 @@ import { loadRun, runBlock, runText, startRun, stepRun, stopRun, type RunKv, typ
 import { resourcesPage } from "./resources.js";
 import { bulkResync, BULK_BATCH, memberDetail, resyncBatch, resyncTotal, privacyPage, registerWebhooks, resyncOne, staffLink, staffUnlink, tagEdit } from "./staff.js";
 import { textProblems } from "./text.js";
-import { cacheFindings, gatedFindings, templateFindings } from "./template-scan.js";
+import { bodyFindings, cacheFindings, gatedFindings, templateFindings } from "./template-scan.js";
 import { nextStep, requiredSteps, setupFacts, setupSteps, statusCards, storeTab, webhooksStep, WEBHOOK } from "./setup.js";
 import { record } from "./log.js";
 import { adminLocale, localize } from "./i18n.js";
@@ -1029,6 +1029,27 @@ function templateBlocks(config: RedeemIDConfig): unknown[] {
 	if (!found) return [{ type: "banner", variant: "alert", title: "Templates weren't checked", description: "Add redeemidGuard() to the integrations in astro.config.mjs. It gates pages and keeps customers out of EmDash's own APIs, and checks the templates." }];
 	const risky = gatedFindings(found, config);
 	const caching = cacheFindings(found, config);
+	const sending = bodyFindings(found, config);
+	const bodyRows = sending.length
+		? [
+				{
+					type: "banner",
+					variant: sending.some((f) => f.gated.length) ? "error" : "alert",
+					title: "An endpoint sends whole bodies",
+					description: "These files under src/pages (a feed or a JSON route) send an entry's data.content as it is, locked part included. Pass it through readableBody() from @redeemid/emdash/body first: it returns only what the reader may read.",
+				},
+				{
+					type: "table",
+					page_action_id: "template_body_findings",
+					columns: [
+						{ key: "file", label: "File" },
+						{ key: "lines", label: "Line" },
+						{ key: "collections", label: "Gated collection" },
+					],
+					rows: sending.map((f) => ({ file: f.file, lines: (f.body ?? []).join(", "), collections: f.gated.join(", ") || "Not found in the file" })),
+				},
+			]
+		: [];
 	const cacheRows = caching.length
 		? [
 				{ type: "banner", variant: "alert", title: "A template caches gated pages itself", description: "These templates call Astro.cache.set() on pages of a gated collection. With the route cache on, one reader's copy then reaches everyone, and pages keep old rules after an Access save. Use cacheEntry(Astro, collection, entry, cacheHint) on entry pages and cachePage(Astro, cacheHint) on lists, from @redeemid/emdash/cache." },
@@ -1044,7 +1065,7 @@ function templateBlocks(config: RedeemIDConfig): unknown[] {
 				},
 			]
 		: [];
-	if (!risky.length) return [{ type: "context", text: "Templates: none renders a gated collection's body with EmDash's PortableText. Bodies go through RedeemID's Content." }, ...cacheRows];
+	if (!risky.length) return [{ type: "context", text: "Templates: none renders a gated collection's body with EmDash's PortableText. Bodies go through RedeemID's Content." }, ...bodyRows, ...cacheRows];
 	const sure = risky.filter((f) => f.gated.length);
 	return [
 		sure.length
@@ -1060,6 +1081,7 @@ function templateBlocks(config: RedeemIDConfig): unknown[] {
 			],
 			rows: risky.map((f) => ({ file: f.file, lines: f.lines.join(", "), collections: f.gated.join(", ") || "Not found in the file" })),
 		},
+		...bodyRows,
 		...cacheRows,
 	];
 }

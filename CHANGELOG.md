@@ -10,6 +10,7 @@ RedeemID is pre-1.0, so any 0.0.x release can change things. Lines marked **Upgr
 
 - **Security:** on sites with several locales, access now follows translations. An entry's Access panel rule is saved for every translation of the entry, and a translation made later takes it. A term rule covers the term's translations too, so a French post in "Enquêtes" is locked like an English one in "Investigations". Before, a translation with its own id or term slug was open. If your site uses EmDash translations, update, then open each entry with its own rule and press **Save access** once so its existing translations get the rule.
 - `readableBody()` (in `@redeemid/emdash/body`) is the body filter `<Content>` uses, for anything else that sends a body: an RSS feed, a JSON route, a Markdown copy. It returns the blocks the reader may read, applies drip and never uses the meter. API version 1.7.0.
+- The template check (Connection → Environment) now looks at endpoints under `src/pages` too: a feed or JSON route that sends a gated collection's `.data.content` without `readableBody()` is listed with its line.
 - The Access panel warns when a locked entry shows visitors nothing before the wall (no text before the Paywall break, and no teaser), since search engines then get no preview either.
 
 ## 0.0.40 (2026-11-23)

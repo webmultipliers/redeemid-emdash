@@ -4,6 +4,10 @@
  * every rule, Paywall break and Members only part, so a gated collection
  * rendered that way reaches every visitor in full.
  *
+ * Also endpoints under src/pages (an RSS feed, a JSON route) that send an
+ * entry's `.data.content` without passing it through readableBody()
+ * (body.ts): EmDash has no content filter, so the locked part goes too.
+ *
  * Also templates that call `Astro.cache.set()` themselves on a gated
  * collection's pages instead of cacheEntry()/cachePage() (route-cache.ts):
  * the route cache then serves one reader's copy to everyone.
@@ -25,6 +29,8 @@ export interface TemplateFinding {
 	lines: number[];
 	/** Lines that call Astro.cache.set() directly; absent when there are none. */
 	cache?: number[];
+	/** In an endpoint, lines that read `.data.content` with no readableBody() in the file; absent when there are none. */
+	body?: number[];
 	/** Collections the file loads with getEmDashEntry or getEmDashCollection. */
 	collections: string[];
 }
@@ -34,18 +40,30 @@ const LOADS = /getEmDash(?:Entry|Collection)\(\s*["'`]([\w-]+)["'`]/g;
 
 const CACHE_SET = /\bAstro\.cache\??\.set\(/;
 
-/** One template's finding, or null when it neither renders <PortableText> from emdash/ui nor sets a cache hint. */
+/** A route file that isn't a page template: src/pages/rss.xml.ts and the like. */
+const ENDPOINT = /(^|\/)src\/pages\/.*\.(ts|js|mjs)$/;
+const BODY = /\.data\??\.content\b/;
+
+/** Files the build scans: templates, and endpoints under src/pages. */
+export function scannable(file: string): boolean {
+	return file.endsWith(".astro") || ENDPOINT.test(file);
+}
+
+/** One file's finding, or null when it renders no <PortableText> from emdash/ui, sets no cache hint and sends no raw body. */
 export function scanTemplate(file: string, source: string): TemplateFinding | null {
 	const fromUi = FROM_EMDASH_UI.test(source);
+	const endpoint = ENDPOINT.test(file) && !/\breadableBody\b/.test(source);
 	const lines: number[] = [];
 	const cache: number[] = [];
+	const body: number[] = [];
 	source.split("\n").forEach((line, i) => {
 		if (fromUi && /<PortableText[\s/>]/.test(line)) lines.push(i + 1);
 		if (CACHE_SET.test(line)) cache.push(i + 1);
+		if (endpoint && BODY.test(line)) body.push(i + 1);
 	});
-	if (!lines.length && !cache.length) return null;
+	if (!lines.length && !cache.length && !body.length) return null;
 	const collections = [...new Set([...source.matchAll(LOADS)].map((m) => m[1]!))].sort();
-	return cache.length ? { file, lines, cache, collections } : { file, lines, collections };
+	return { file, lines, ...(cache.length ? { cache } : {}), ...(body.length ? { body } : {}), collections };
 }
 
 /** Collections some rule or entry rule can lock: "*" when the site default does. */
@@ -91,6 +109,23 @@ export function cacheFindings(findings: TemplateFinding[], config: RedeemIDConfi
 	return findings.flatMap((f) => {
 		const hit = f.collections.filter((c) => all || gated.has(c));
 		return f.cache?.length && hit.length ? [{ ...f, gated: hit }] : [];
+	});
+}
+
+/**
+ * Endpoints that send a gated collection's raw body (an RSS feed, a JSON
+ * route). Files whose collection we can't see are listed too while any
+ * collection is gated, as for templates.
+ */
+export function bodyFindings(findings: TemplateFinding[], config: RedeemIDConfig): GatedFinding[] {
+	const gated = gatedCollections(config);
+	if (!gated.size) return [];
+	const all = gated.has("*");
+	return findings.flatMap((f) => {
+		if (!f.body?.length) return [];
+		if (!f.collections.length) return [{ ...f, gated: [] }];
+		const hit = f.collections.filter((c) => all || gated.has(c));
+		return hit.length ? [{ ...f, gated: hit }] : [];
 	});
 }
 
