@@ -6,6 +6,12 @@ RedeemID is pre-1.0, so any 0.0.x release can change things. Lines marked **Upgr
 
 ## Unreleased
 
+## 0.0.41 (2026-11-24)
+
+- **Security:** on sites with several locales, access now follows translations. An entry's Access panel rule is saved for every translation of the entry, and a translation made later takes it. A term rule covers the term's translations too, so a French post in "Enquêtes" is locked like an English one in "Investigations". Before, a translation with its own id or term slug was open. If your site uses EmDash translations, update, then open each entry with its own rule and press **Save access** once so its existing translations get the rule.
+- `readableBody()` (in `@redeemid/emdash/body`) is the body filter `<Content>` uses, for anything else that sends a body: an RSS feed, a JSON route, a Markdown copy. It returns the blocks the reader may read, applies drip and never uses the meter. API version 1.7.0.
+- The Access panel warns when a locked entry shows visitors nothing before the wall (no text before the Paywall break, and no teaser), since search engines then get no preview either.
+
 ## 0.0.40 (2026-11-23)
 
 - **Security:** EmDash 1.6 keeps media files and resized images in the route cache for a year, and a stored copy is served without any check. A protected file a member or editor opened could then reach anyone. While any folder is protected, RedeemID now keeps file and image responses out of the route cache, and saving access settings purges stored copies of files in protected folders. If your site ran EmDash 1.6 with 0.0.39, a route cache and protected files, update and then save the Access page once.

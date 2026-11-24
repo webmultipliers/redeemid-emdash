@@ -117,6 +117,7 @@ The admin pages, the Access panel and column, and the product field show in the 
 | `@redeemid/emdash/text` | `STRINGS`, the list of every replaceable string |
 | `@redeemid/emdash/cache` | `cacheEntry()`, `cachePage()`, `noRouteCache()` and `CACHE_TAG`, for Astro's route cache (see [caching](production.md#caching)) |
 | `@redeemid/emdash/search` | `readableResults()`, for a search page that calls EmDash's `search()` |
+| `@redeemid/emdash/body` | `readableBody()`, the body a reader may read, for feeds, JSON routes and other outputs |
 | `@redeemid/emdash/contract` | The stable API as a list, and `API_VERSION` |
 
 The full developer API (stable exports, JSON routes, the browser client and its events, MCP tools) is in [docs/developer-api.md](developer-api.md).

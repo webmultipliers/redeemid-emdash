@@ -103,7 +103,8 @@ Set the secrets, open **Plugins → RedeemID → Connection** in the admin, and 
 
 - Shopify is the only source of entitlements. Nothing on the site grants access.
 - Levels read the mirrored tags as they are, however old. They change only when Shopify sends new ones.
-- Locked content never reaches the content API, site search, feeds or the sitemap for readers kept out, nor a page that renders bodies with `<Content>`. The end-to-end test checks each of these.
+- Locked content never reaches the content API, site search or the sitemap for readers kept out, nor a page that renders bodies with `<Content>`, nor a feed or JSON route that passes bodies through `readableBody()`. The end-to-end test checks the first three.
+- One rule covers every translation of an entry or a term, so a forgotten locale can't open what the rule locks.
 - Staff accounts can't sign in through the store, and customers can't create the first admin account on a new site.
 - Webhooks are checked against the app's signature before anything changes.
 - Access fails closed: when the saved access settings can't be read, a server keeps the ones it last read, and with none it locks every entry.

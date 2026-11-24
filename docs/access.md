@@ -73,6 +73,10 @@ The panel can also hold the entry back for some days of membership, keep the met
 
 Every content list in the admin (Posts, Pages and any other content type) also gets an **Access** column. It shows who can read each entry, from the same rules the site enforces: **Free** in plain text, or a badge such as **Members**, **Gold** or **Silver or Gold**. It counts the content type, the entry's terms and parent terms, and its own Access panel rule with today's dates. A Paywall break or Members only part in the body doesn't change the label, since the label covers the entry's rule. The column asks once for each page of the list, and it's there for anyone who can edit content.
 
+**Translations.** On a site with several locales, an entry's rule covers all its translations: saving the panel on one saves it for every translation, and a translation made later takes it. Term rules cover a term's translations too, so a rule for "investigations" also locks entries in its French translation "enquetes". A forgotten locale can't open what a rule locks.
+
+Every saved entry's panel also warns when the entry is locked but shows visitors nothing before the wall (no text before the Paywall break, and no teaser for its content type). Search engines then see nothing to index either, so add a break after the opening paragraphs or set teaser words.
+
 Moving an entry to the trash keeps its rule for a restore but frees its slug, so a new entry that takes the slug doesn't inherit the rule.
 
 ## Meter and drip

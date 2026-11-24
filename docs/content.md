@@ -67,6 +67,27 @@ const results = q ? await readableResults(Astro, q, (await search(q)).items) : [
 ---
 ```
 
+**Feeds, JSON and other outputs.** Anything that sends a body somewhere other than `<Content>` (an RSS or Atom feed, a JSON route, a Markdown copy, an email digest) must not hand over `post.data.content` as it is: EmDash has no content filter, so the locked part would go too. Pass the body through `readableBody()`, the same filter `<Content>` uses:
+
+```ts
+// src/pages/rss.xml.ts
+import { getEmDashCollection } from "emdash";
+import { readableBody } from "@redeemid/emdash/body";
+
+export async function GET(context) {
+	const { entries } = await getEmDashCollection("posts");
+	const items = [];
+	for (const post of entries) {
+		const { blocks, whole } = await readableBody(context, { value: post.data.content, collection: "posts", terms: post.data.terms, id: post.id });
+		// toHtml: your Portable Text to HTML step.
+		items.push({ title: post.data.title, link: `/posts/${post.id}/`, content: toHtml(blocks), locked: !whole });
+	}
+	// …build the feed from items
+}
+```
+
+It returns the blocks this reader may read: what precedes the Paywall break (or the teaser) for readers the rule keeps out, everything for readers it lets in, minus Members only parts they can't read. `whole` says whether anything was held back, so a feed can add a "Read the rest on the site" link. Drip applies; the meter is never used, so a feed never counts or opens a read. Feed readers send no cookies, so a feed gets what a visitor sees.
+
 `siteConfig(Astro.locals)` is the config for this request: your code's config with the Access page's saved settings laid over it. Pass it to the functions that take a `config`, such as `entryRequirement()`, `readPreferences()` and the storefront and catalog calls.
 
 ## Replacement text
