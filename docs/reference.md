@@ -23,7 +23,7 @@ Pass one object to both `redeemid(config)` and `redeemidPlugin(config)`. `levels
 | `market` | `{ country?, language? }` | Local prices: a fixed two-letter `country`, or `"visitor"` for each visitor's own. |
 | `checkout` | `{ signIn?: false }` | `signIn: false` stops passing a member's store sign-in to checkout. |
 | `schema` | `false` | Turn off the paywalled-content JSON-LD. |
-| `memberPaths` | `string[]` | Extra `/_emdash` path prefixes signed-in members may use. Everything else there is refused to them. |
+| `memberPaths` | `string[]` | Extra `/_emdash` path prefixes signed-in members may use. Everything else there is refused to them, other plugins' routes included: list a plugin's public route, such as `/_emdash/api/plugins/forms/submit`, for signed-in members to reach it. Visitors aren't affected. |
 | `products` | `false` \| `{ collection?, follow? }` | Product entries: the collection they live in (default `"products"`), and `follow: "all"` to add products Shopify creates later. `false` turns them off. See [product entries](products.md). |
 | `entries` | `{ ["collection:id"]: EntryRule }` | Entries' own rules. Usually set in the editor's Access panel. |
 | `allowInsecureShop` | `boolean` | Local tests only: lets `shop` be an `http://` fake store. Never set it on a live site. |

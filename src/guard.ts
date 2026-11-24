@@ -47,13 +47,17 @@ const MANIFEST_PATH = "/_emdash/api/manifest";
 
 const SUBSCRIBER = 10;
 
-/** Paths signed-in members still need. Everything else under /_emdash is refused. */
+/**
+ * Paths signed-in members still need. Everything else under /_emdash is
+ * refused, other plugins' routes included: a plugin route that lets the
+ * Subscriber role in could hand a member any entry's body. Add one with
+ * config `memberPaths` (e.g. "/_emdash/api/plugins/forms/submit").
+ */
 export const MEMBER_PATHS = [
 	"/_emdash/api/auth/redeemid/",
 	"/_emdash/api/auth/logout",
 	"/_emdash/api/media/file/",
 	"/_emdash/api/comments",
-	"/_emdash/api/plugins/",
 ];
 
 /** Exact paths members may use: site search (results filtered by the guard) and its title suggestions. */
